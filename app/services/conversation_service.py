@@ -94,9 +94,10 @@ def _generate_followup(user_reply: str, scenario: dict, utterances: list[dict]) 
         f"Q: {u['question']}\nA: {u['text']}" for u in utterances
     )
     system = (
-        "You are a native English speaker in the scenario. "
-        "Based on the conversation history, ask a short follow-up question "
-        "to help guide the user toward the goal. One sentence only."
+        "You are a native English speaker having a real conversation in the given situation. "
+        "First, respond naturally to what the user just said — acknowledge their answer, answer any question they asked, or react like a real person would. "
+        "Then, if there is still missing information needed, naturally weave in the next question. "
+        "Keep it short and conversational, like a real back-and-forth. Two sentences max."
     )
     missing = [item for item in scenario["required_info"]
                if item.lower() not in " ".join(u["text"].lower() for u in utterances)]
@@ -117,8 +118,8 @@ def _generate_closing(scenario: dict, utterances: list[dict]) -> str:
     system = (
         "You are a native English speaker wrapping up a conversation in the given situation. "
         "The user has successfully completed their goal. "
-        "Give a natural, brief closing line — like a real person would say at the end of this interaction. "
-        "One or two sentences only. Do not ask any more questions."
+        "Give a natural, brief closing statement — like a real person in this role would say to wrap things up. "
+        "No questions. Statements only. One or two sentences."
     )
     user = (
         f"Situation: {scenario['situation']}\n"
@@ -126,6 +127,23 @@ def _generate_closing(scenario: dict, utterances: list[dict]) -> str:
         "How do you wrap up this interaction naturally?"
     )
     return chat(system, user, max_tokens=96)
+
+
+def _generate_fail_reason(scenario: dict, utterances: list[dict]) -> str:
+    all_text = " ".join(u["text"] for u in utterances)
+    missing = [item for item in scenario["required_info"]
+               if item.lower() not in all_text.lower()]
+    system = (
+        "You are a Korean language assistant. "
+        "The user failed to complete a scenario because they didn't communicate all required information. "
+        "Write a short, friendly explanation in Korean (1-2 sentences) about what information was missing."
+    )
+    user = (
+        f"목표: {scenario['goal']}\n"
+        f"전달하지 못한 정보: {missing}\n"
+        f"유저의 대화 내용: {all_text}"
+    )
+    return chat(system, user, max_tokens=128)
 
 
 def _analyze_utterance(text: str, scenario: dict, question: str) -> dict:
@@ -144,7 +162,8 @@ def _analyze_utterance(text: str, scenario: dict, question: str) -> dict:
     )
     raw = chat(system, user, max_tokens=256)
     try:
-        return json.loads(raw)
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        return json.loads(cleaned)
     except json.JSONDecodeError:
         return {"comprehension_score": 50, "native_perception": raw[:100], "better_expression": ""}
 
@@ -165,8 +184,9 @@ def _check_cleared(utterances: list[dict], required_info: list[str]) -> bool:
         f"User's conversation text:\n{all_text}\n\n"
         f"Has the user clearly communicated ALL of these items?"
     )
-    raw = chat(system, user, max_tokens=32)
+    raw = chat(system, user, max_tokens=64)
     try:
-        return json.loads(raw).get("cleared", False)
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        return json.loads(cleaned).get("cleared", False)
     except json.JSONDecodeError:
-        return False
+        return "true" in raw.lower()

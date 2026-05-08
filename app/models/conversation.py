@@ -28,6 +28,7 @@ class NextResponseData(BaseModel):
     done: bool
     cleared: bool | None = None
     next_question: str | None = None
+    closing_message: str | None = None
     audio_base64: str | None = None
     utterance: dict | None = None
 

@@ -9,6 +9,7 @@ class FeedbackData(BaseModel):
     cleared: bool  # 시나리오 클리어 여부
     total_comprehension: int  # 전체 발화 이해도 평균
     utterances: list[Utterance]  # 발화마다 피드백 반복
+    fail_reason: str | None = None  # cleared=false일 때 실패 이유 (한글)
 
 
 class FeedbackResponse(BaseModel):
