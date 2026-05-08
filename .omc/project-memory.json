@@ -1,0 +1,146 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778154139601,
+  "projectRoot": "/Users/yewonniy/Desktop/saynow",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "requirements.txt"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "pip",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": "camelCase/PascalCase",
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 3,
+      "lastAccessed": 1778154139594,
+      "keyFiles": [
+        "__init__.py",
+        "config.py",
+        "main.py"
+      ]
+    },
+    "app/api": {
+      "path": "app/api",
+      "purpose": "API routes",
+      "fileCount": 1,
+      "lastAccessed": 1778154139594,
+      "keyFiles": [
+        "__init__.py"
+      ]
+    },
+    "app/data": {
+      "path": "app/data",
+      "purpose": "Data files",
+      "fileCount": 1,
+      "lastAccessed": 1778154139595,
+      "keyFiles": [
+        "scenarios.json"
+      ]
+    },
+    "app/models": {
+      "path": "app/models",
+      "purpose": "Data models",
+      "fileCount": 4,
+      "lastAccessed": 1778154139595,
+      "keyFiles": [
+        "__init__.py",
+        "conversation.py",
+        "feedback.py"
+      ]
+    },
+    "app/services": {
+      "path": "app/services",
+      "purpose": "Business logic services",
+      "fileCount": 6,
+      "lastAccessed": 1778154139595,
+      "keyFiles": [
+        "__init__.py",
+        "conversation_service.py",
+        "feedback_service.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "app/services/conversation_service.py",
+      "accessCount": 10,
+      "lastAccessed": 1778212663203,
+      "type": "file"
+    },
+    {
+      "path": "app/api/routes/conversation.py",
+      "accessCount": 4,
+      "lastAccessed": 1778210177908,
+      "type": "file"
+    },
+    {
+      "path": "app/data/scenarios.json",
+      "accessCount": 3,
+      "lastAccessed": 1778212450668,
+      "type": "file"
+    },
+    {
+      "path": "app/api/routes/tts.py",
+      "accessCount": 2,
+      "lastAccessed": 1778210177776,
+      "type": "file"
+    },
+    {
+      "path": "app/api/routes/stt.py",
+      "accessCount": 2,
+      "lastAccessed": 1778210177846,
+      "type": "file"
+    },
+    {
+      "path": "app/api/routes/feedback.py",
+      "accessCount": 2,
+      "lastAccessed": 1778210177884,
+      "type": "file"
+    },
+    {
+      "path": "app/api/routes/scenario.py",
+      "accessCount": 2,
+      "lastAccessed": 1778210177945,
+      "type": "file"
+    },
+    {
+      "path": "app/models/conversation.py",
+      "accessCount": 2,
+      "lastAccessed": 1778210595019,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
