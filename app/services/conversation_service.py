@@ -58,7 +58,8 @@ def next_turn(session_id: str, stt_text: str, response_time_sec: float) -> dict:
     if cleared or exhausted:
         session["cleared"] = cleared
         session["done"] = True
-        return {"done": True, "cleared": cleared, "utterance": utterance.model_dump()}
+        closing = _generate_closing(scenario, session["utterances"]) if cleared else None
+        return {"done": True, "cleared": cleared, "closing_message": closing, "utterance": utterance.model_dump()}
 
     next_q = _generate_followup(stt_text, scenario, session["utterances"])
     session["question_count"] += 1
@@ -73,21 +74,17 @@ def get_session(session_id: str) -> dict | None:
 
 def _generate_opening(scenario) -> str:
     # 첫 질문 생성하는 프롬프트
-    
     system = (
-        "You are a native English speaker playing a role in the scenario. "
-        "Your goal is to help the user complete their objective through natural conversation. "
-        "You must ask a natural opening QUESTION that is directly relevant to the user's goal. "
-        "No need to ask small talk questions, but you can say simple greetings - ask something that helps them achieve their objective. "
-        "Keep it concise and natural. One sentence only."
+        "You are a native English speaker playing a role in the given situation. "
+        "Start the conversation with a single, natural opening line — the kind a real person in this role would actually say. "
+        "Do NOT hint at what the user should say or mention specific items they need to provide. "
+        "Just open the conversation naturally, as if you have no idea what the user wants yet."
     )
     user = (
-        f"Scenario: {scenario.situation}\n"
-        f"User's goal: {scenario.goal}\n"
-        f"Required information to collect: {scenario.required_info}\n"
-        f"What opening question would you ask to begin guiding the user toward their goal?"
+        f"Situation: {scenario.situation}\n"
+        "What is your natural opening line?"
     )
-    return chat(system, user, max_tokens=128)
+    return chat(system, user, max_tokens=64)
 
 
 def _generate_followup(user_reply: str, scenario: dict, utterances: list[dict]) -> str:
@@ -101,13 +98,34 @@ def _generate_followup(user_reply: str, scenario: dict, utterances: list[dict]) 
         "Based on the conversation history, ask a short follow-up question "
         "to help guide the user toward the goal. One sentence only."
     )
+    missing = [item for item in scenario["required_info"]
+               if item.lower() not in " ".join(u["text"].lower() for u in utterances)]
     user = (
         f"Scenario: {scenario['situation']}\n"
         f"Goal: {scenario['goal']}\n"
+        f"Information still needed: {missing}\n"
         f"Conversation so far:\n{history}\n"
         f"Latest user reply: {user_reply}"
     )
     return chat(system, user, max_tokens=128)
+
+
+def _generate_closing(scenario: dict, utterances: list[dict]) -> str:
+    history = "\n".join(
+        f"Q: {u['question']}\nA: {u['text']}" for u in utterances
+    )
+    system = (
+        "You are a native English speaker wrapping up a conversation in the given situation. "
+        "The user has successfully completed their goal. "
+        "Give a natural, brief closing line — like a real person would say at the end of this interaction. "
+        "One or two sentences only. Do not ask any more questions."
+    )
+    user = (
+        f"Situation: {scenario['situation']}\n"
+        f"Conversation:\n{history}\n"
+        "How do you wrap up this interaction naturally?"
+    )
+    return chat(system, user, max_tokens=96)
 
 
 def _analyze_utterance(text: str, scenario: dict, question: str) -> dict:

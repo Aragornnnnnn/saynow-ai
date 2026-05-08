@@ -42,6 +42,8 @@ def next_turn(body: NextRequest):
         )
         if not result["done"] and "next_question" in result:
             result["audio_base64"] = synthesize(result["next_question"])
+        elif result["done"] and result.get("closing_message"):
+            result["audio_base64"] = synthesize(result["closing_message"])
         return NextResponse(success=True, data=result)
     except ValueError as e:
         return NextResponse(success=False, error=str(e))
