@@ -39,10 +39,10 @@ jobs:
 
       - name: Configure SSH
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/saynow-prod-deploy
+          echo "$SSH_KEY_B64" | base64 --decode > ~/.ssh/saynow-prod-deploy
           chmod 600 ~/.ssh/saynow-prod-deploy
           ssh-keyscan -H "${{ vars.EC2_HOST }}" >> ~/.ssh/known_hosts
 
