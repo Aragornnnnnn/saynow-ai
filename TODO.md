@@ -10,8 +10,8 @@
 
 ## 2. 세션 관리 제거
 
-- [ ] `conversation_service.py`의 `_sessions` in-memory 딕셔너리 제거
-- [ ] `start_session`, `next_turn`, `get_session` 함수 제거
+- [x] `conversation_service.py`의 `_sessions` in-memory 딕셔너리 제거
+- [x] `start_session`, `next_turn`, `get_session` 함수 제거
 - [x] AI 서버를 stateless하게 재설계 (요청마다 컨텍스트를 받아 처리)
 
 ## 3. STT 통합
@@ -37,7 +37,7 @@
 
 ## 6. 슬롯 기반 클리어 판단 로직 변경
 
-- [ ] 기존 `_check_cleared` (required_info 문자열 리스트 평가) 제거
+- [x] 기존 `_check_cleared` (required_info 문자열 리스트 평가) 제거
 - [x] 신규: 이번 턴 발화에서 새로 채워진 slotKey/slotValue 추출하는 LLM 프롬프트 작성
 - [x] 신규: 모든 슬롯이 채워졌는지 판단해 `scenarioStatus` 결정하는 로직 작성
 
@@ -52,7 +52,7 @@
 - [x] 응답 필드 추가 (turn별): `scoreDelta` (이전 턴 대비 점수 변화)
 - [x] 응답 필드 추가 (turn별): `improvedUnderstoodScore` (betterExpression 사용 시 예상 점수)
 - [x] 응답 필드 추가 (turn별): `reason` (한글 피드백 이유)
-- [ ] 기존 `fail_reason` 제거 (turn별 `reason`으로 대체)
+- [x] 기존 `fail_reason` 제거 (turn별 `reason`으로 대체)
 
 ## 9. TTS 필드명 변경
 
@@ -60,8 +60,8 @@
 
 ## 10. Pydantic 모델 정리
 
-- [ ] `StartRequest`, `StartResponse`, `StartResponseData` 제거
-- [ ] `NextRequest`, `NextResponse`, `NextResponseData` 제거
+- [x] `StartRequest`, `StartResponse`, `StartResponseData` 제거
+- [x] `NextRequest`, `NextResponse`, `NextResponseData` 제거
 - [x] `TurnEvaluationRequest`, `TurnEvaluationResponse` 신규 작성
 - [x] `SessionFeedbackRequest`, `SessionFeedbackResponse` 신규 작성
-- [ ] `FeedbackData`, `Utterance` 모델 신규 필드에 맞게 수정
+- [x] `FeedbackData`, `Utterance` 모델 신규 필드에 맞게 수정
