@@ -13,6 +13,8 @@ def evaluate_turn(
     scenario_id: str,
     scenario_situation: str,
     scenario_goal: str,
+    required_keys: list[str],
+    max_follow_up_count: int,
     current_question: str,
     filled_slots: list[FilledSlot],
     conversation_history: list[dict],
@@ -24,7 +26,8 @@ def evaluate_turn(
 
     # 2. 시나리오에서 required_info(슬롯 키 목록) 로드
     scenario = get_by_id(scenario_id)
-    required_keys = scenario.required_info if scenario else []
+    if not scenario:
+        raise ValueError(f"Scenario '{scenario_id}' not found")
 
     # 3. 이번 턴에서 새로 채워진 슬롯 추출
     existing_keys = {s.slotKey for s in filled_slots}
@@ -35,6 +38,8 @@ def evaluate_turn(
 
     # 5. scenarioStatus 결정
     all_covered = all(key in all_filled_keys for key in required_keys)
+    follow_up_count = _count_follow_ups(conversation_history)
+
     scenario_status = "SUCCESS" if all_covered else "IN_PROGRESS"
 
     # 6. 다음 질문 or 결과 메시지 생성
@@ -47,6 +52,16 @@ def evaluate_turn(
             scenarioStatus="SUCCESS",
             filledSlots=new_slots,
             resultMessage=TtsContent(messageText=closing_text, ttsAudio=tts_audio),
+        )
+    elif follow_up_count >= max_follow_up_count:
+        failure_text = _generate_failure(scenario_situation, conversation_history, transcript)
+        tts_audio = synthesize(failure_text)
+        return TurnEvaluationResponse(
+            transcript=transcript,
+            sttConfidence=stt_confidence,
+            scenarioStatus="FAILURE",
+            filledSlots=new_slots,
+            resultMessage=TtsContent(messageText=failure_text, ttsAudio=tts_audio),
         )
     else:
         missing_keys = [k for k in required_keys if k not in all_filled_keys]
@@ -61,6 +76,12 @@ def evaluate_turn(
             filledSlots=new_slots,
             nextQuestion=TtsContent(questionText=next_q_text, ttsAudio=tts_audio),
         )
+
+
+def _count_follow_ups(history: list[dict]) -> int:
+    assistant_turns = sum(1 for turn in history if turn.get("role") == "assistant")
+    # 시작 질문 1회는 제외하고, 이후 꼬리질문만 계산한다.
+    return max(0, assistant_turns - 1)
 
 
 def _extract_slots(
@@ -129,6 +150,26 @@ def _generate_closing(
         "You are a native English speaker wrapping up a conversation. "
         "The user has successfully provided all needed information. "
         "Give a brief, natural closing statement. One or two sentences. No questions."
+    )
+    user = (
+        f"Situation: {situation}\n"
+        f"Conversation:\n{history_str}\n"
+        f"User's last reply: {last_reply}"
+    )
+    return chat(system, user, max_tokens=96)
+
+
+def _generate_failure(
+    situation: str,
+    history: list[dict],
+    last_reply: str,
+) -> str:
+    history_str = "\n".join(
+        f"{'AI' if h['role'] == 'assistant' else 'User'}: {h['content']}" for h in history
+    )
+    system = (
+        "You are a native English speaker ending a conversation because the scenario was not completed in time. "
+        "Give a brief, natural failure message. One or two sentences. No questions."
     )
     user = (
         f"Situation: {situation}\n"

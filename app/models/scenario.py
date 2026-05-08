@@ -11,6 +11,10 @@ class Scenario(BaseModel):
     required_info: list[str] # ex: ["음료 종류", "사이즈", "추가 옵션"] 클리어 판단 기준 (유저한테는 안 보임)
     max_questions: int = 5 # 최대 꼬리 질문 수 
 
+    @property
+    def max_follow_up_count(self) -> int:
+        return self.max_questions
+
 
 class ScenarioListResponse(BaseModel):
     success: bool  # API 요청 성공 여부

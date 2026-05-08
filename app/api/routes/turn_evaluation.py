@@ -1,7 +1,10 @@
 # 턴 평가 라우터 — POST /api/v1/turn-evaluations
-import json
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
-from app.models.turn_evaluation import FilledSlot, ConversationTurn, TurnEvaluationResponse
+from app.models.turn_evaluation import (
+    FilledSlot,
+    TurnEvaluationRequest,
+    TurnEvaluationResponse,
+)
 from app.services.turn_evaluation_service import evaluate_turn
 
 router = APIRouter()
@@ -10,34 +13,47 @@ router = APIRouter()
 @router.post("/api/v1/turn-evaluations", response_model=TurnEvaluationResponse)
 async def turn_evaluation(
     audio: UploadFile = File(...),
-    scenarioId: str = Form(...),
-    scenarioSituation: str = Form(...),
-    scenarioGoal: str = Form(...),
-    currentQuestion: str = Form(...),
-    filledSlots: str = Form(default="[]"),
-    conversationHistory: str = Form(default="[]"),
+    payload: str = Form(...),
 ):
     try:
-        slots: list[FilledSlot] = [FilledSlot(**s) for s in json.loads(filledSlots)]
-    except (json.JSONDecodeError, Exception) as e:
-        raise HTTPException(status_code=422, detail=f"Invalid filledSlots JSON: {e}")
-
-    try:
-        history: list[dict] = json.loads(conversationHistory)
-        history = [ConversationTurn(**h).model_dump() for h in history]
-    except (json.JSONDecodeError, Exception) as e:
-        raise HTTPException(status_code=422, detail=f"Invalid conversationHistory JSON: {e}")
+        request = TurnEvaluationRequest.model_validate_json(payload)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid payload JSON: {e}")
 
     audio_bytes = await audio.read()
     filename = audio.filename or "audio.webm"
+    slots: list[FilledSlot] = _parse_filled_slots(request.currentFilledSlots)
+    history = [turn.model_dump() for turn in request.conversationHistory]
+    required_keys = [slot.slotKey for slot in request.scenario.requiredSlots]
 
-    return evaluate_turn(
-        audio_bytes=audio_bytes,
-        filename=filename,
-        scenario_id=scenarioId,
-        scenario_situation=scenarioSituation,
-        scenario_goal=scenarioGoal,
-        current_question=currentQuestion,
-        filled_slots=slots,
-        conversation_history=history,
-    )
+    try:
+        return evaluate_turn(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            scenario_id=request.scenario.scenarioId,
+            scenario_situation=request.scenario.situationDescription,
+            scenario_goal=request.scenario.successGoal,
+            required_keys=required_keys,
+            max_follow_up_count=request.scenario.maxFollowUpCount,
+            current_question=request.currentQuestion.questionText,
+            filled_slots=slots,
+            conversation_history=history,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _parse_filled_slots(raw: dict | list | None) -> list[FilledSlot]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [FilledSlot(**slot) for slot in raw if isinstance(slot, dict)]
+    if isinstance(raw, dict):
+        slots: list[FilledSlot] = []
+        for slot_key, slot_value in raw.items():
+            if isinstance(slot_value, dict) and "slotValue" in slot_value:
+                slots.append(FilledSlot(slotKey=slot_key, slotValue=str(slot_value["slotValue"])))
+            else:
+                slots.append(FilledSlot(slotKey=slot_key, slotValue=str(slot_value)))
+        return slots
+    return []
