@@ -4,7 +4,6 @@ from app.core.llm import chat
 from app.models.turn_evaluation import FilledSlot, TtsContent, TurnEvaluationResponse
 from app.services.stt_service import transcribe_with_confidence
 from app.services.tts_service import synthesize
-from app.services.scenario_service import get_by_id
 
 
 def evaluate_turn(
@@ -24,25 +23,20 @@ def evaluate_turn(
     transcript = stt_result["text"].strip()
     stt_confidence = stt_result["confidence"]
 
-    # 2. 시나리오에서 required_info(슬롯 키 목록) 로드
-    scenario = get_by_id(scenario_id)
-    if not scenario:
-        raise ValueError(f"Scenario '{scenario_id}' not found")
-
-    # 3. 이번 턴에서 새로 채워진 슬롯 추출
+    # 2. 이번 턴에서 새로 채워진 슬롯 추출
     existing_keys = {s.slotKey for s in filled_slots}
     new_slots = _extract_slots(transcript, required_keys, filled_slots)
 
-    # 4. 누적 슬롯 (기존 + 신규)
+    # 3. 누적 슬롯 (기존 + 신규)
     all_filled_keys = existing_keys | {s.slotKey for s in new_slots}
 
-    # 5. scenarioStatus 결정
+    # 4. scenarioStatus 결정
     all_covered = all(key in all_filled_keys for key in required_keys)
     follow_up_count = _count_follow_ups(conversation_history)
 
     scenario_status = "SUCCESS" if all_covered else "IN_PROGRESS"
 
-    # 6. 다음 질문 or 결과 메시지 생성
+    # 5. 다음 질문 or 결과 메시지 생성
     if scenario_status == "SUCCESS":
         closing_text = _generate_closing(scenario_situation, conversation_history, transcript)
         tts_audio = synthesize(closing_text)
