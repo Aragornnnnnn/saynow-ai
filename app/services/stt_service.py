@@ -25,7 +25,14 @@ def transcribe_with_confidence(audio_bytes: bytes, filename: str = "audio.webm")
     import math
     segments = getattr(response, "segments", None) or []
     if segments:
-        avg_logprob = sum(s.avg_logprob for s in segments) / len(segments)
+        logprobs = [
+            segment.get("avg_logprob") if isinstance(segment, dict) else getattr(segment, "avg_logprob", None)
+            for segment in segments
+        ]
+        logprobs = [logprob for logprob in logprobs if logprob is not None]
+        if not logprobs:
+            return {"text": text, "confidence": 0.5}
+        avg_logprob = sum(logprobs) / len(logprobs)
         confidence = round(min(1.0, max(0.0, math.exp(avg_logprob))), 4)
     else:
         confidence = 0.5  # segment 없으면 중립값
