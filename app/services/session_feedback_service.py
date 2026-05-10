@@ -45,25 +45,21 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
     )
 
 
+# 대화 분석 — LLM에게 STT된 유저 발화 (userTranscript)에 대한 이해도 점수, 원어민 인식 내용, 개선 표현 요청
 def _analyze_utterance(transcript: str, request: SessionFeedbackRequest, turn) -> dict:
     system = (
-        "You are an English language expert analyzing how well a non-native speaker communicated. "
+        "You are an English language expert evaluating a non-native speaker's utterance. "
         "Respond ONLY with valid JSON matching this schema exactly:\n"
         '{"comprehension_score": <0-100 int>, "native_perception": "<string>", "better_expression": "<string>"}\n'
-        "comprehension_score: how well a native American English speaker would understand the reply (0=not at all, 100=perfectly).\n"
-        "native_perception: a short phrase describing what the native speaker actually heard/understood.\n"
-        "better_expression: one improved alternative sentence, more natural and clear for a native speaker."
+        "comprehension_score: rate the utterance on grammar correctness, naturalness, and fluency as a native American English speaker would judge it. "
+        "Deduct points for: unnatural phrasing, missing articles, awkward word order, overly literal or robotic expressions. "
+        "Do NOT give 100 unless the utterance is completely natural and idiomatic. "
+        "A grammatically understandable but unnatural reply should score 60-80.\n"
+        "native_perception: a short phrase describing what the native speaker actually heard/understood from the reply.\n"
+        "better_expression: one improved alternative — more natural, idiomatic, and fluent for a native speaker."
     )
     user = (
-        f"Scenario title: {request.scenario.title}\n"
-        f"Scenario situation: {request.scenario.situationDescription}\n"
-        f"Scenario goal: {request.scenario.successGoal}\n"
-        f"Scenario result: {request.scenarioResult}\n"
-        f"Filled slots: {_format_filled_slots(request)}\n"
-        f"Turn index: {turn.turnIndex}\n"
         f"Question asked: {turn.questionText}\n"
-        f"Speech started after ms: {turn.speechStartedAfterMs}\n"
-        f"Recording duration ms: {turn.recordingDurationMs}\n"
         f"User's reply: {transcript}"
     )
     raw = chat(system, user, max_tokens=256)

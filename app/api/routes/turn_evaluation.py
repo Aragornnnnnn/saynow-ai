@@ -29,7 +29,7 @@ router = APIRouter()
 
 **response DTO**
 - `transcript`: STT로 변환된 유저 발화 텍스트
-- `sttConfidence`: 이해도 (0~ 1.0 사이)
+- `sttConfidence`: 음성 인식 정확도 (0~ 1.0 사이) ex) sttConfidence = 0.58 → "이 오디오에서 내가 들은 게 맞는지 58% 확신"
 - `scenarioStatus`: 대화 상태 (IN_PROGRESS, SUCCESS, FAILURE)
 - `filledSlots`: 현재까지 채워진 슬롯 목록
 - `nextQuestion`: 다음 질문 (scenarioStatus=IN_PROGRESS인 경우)
