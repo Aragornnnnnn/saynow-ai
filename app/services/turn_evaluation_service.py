@@ -25,7 +25,7 @@ def evaluate_turn(
 
     # 2. 이번 턴에서 새로 채워진 슬롯 추출
     existing_keys = {s.slotKey for s in filled_slots}
-    new_slots = _extract_slots(transcript, required_keys, filled_slots)
+    new_slots = _extract_slots(transcript, required_keys, filled_slots, conversation_history)
 
     # 3. 누적 슬롯 (기존 + 신규)
     all_filled_keys = existing_keys | {s.slotKey for s in new_slots}
@@ -82,21 +82,26 @@ def _extract_slots(
     transcript: str,
     required_keys: list[str],
     existing_slots: list[FilledSlot],
+    history: list[dict],
 ) -> list[FilledSlot]:
-    """이번 턴 발화에서 새로 채워진 슬롯만 추출"""
     existing_summary = ", ".join(f"{s.slotKey}={s.slotValue}" for s in existing_slots) or "none"
     keys_list = "\n".join(f"- {k}" for k in required_keys)
+    history_str = "\n".join(
+        f"{'AI' if h['role'] == 'assistant' else 'User'}: {h['content']}" for h in history
+    )
     system = (
-        "You are an information extractor. Given a user's spoken reply, extract any values "
-        "that match the required slot keys. Return ONLY valid JSON: "
+        "You are an information extractor. Given the full conversation history and the user's latest reply, "
+        "extract any values that match the required slot keys. Return ONLY valid JSON: "
         '{"slots": [{"slotKey": "...", "slotValue": "..."}]}\n'
-        "Only include slots newly mentioned in this reply. "
-        "Do not repeat slots already filled. If nothing new is mentioned, return {\"slots\": []}."
+        "Check the entire conversation — a slot may have been mentioned in an earlier turn, not just the latest reply. "
+        "Do not repeat slots already listed in 'Already filled slots'. "
+        "If nothing new is found, return {\"slots\": []}."
     )
     user = (
         f"Required slot keys:\n{keys_list}\n\n"
         f"Already filled slots: {existing_summary}\n\n"
-        f"User's reply: {transcript}"
+        f"Conversation history:\n{history_str}\n\n"
+        f"User's latest reply: {transcript}"
     )
     raw = chat(system, user, max_tokens=256)
     try:
@@ -107,11 +112,12 @@ def _extract_slots(
         return []
 
 
+# 꼬리 질문 생성하는 함수
 def _generate_followup(
-    user_reply: str,
-    situation: str,
-    missing_keys: list[str],
-    history: list[dict],
+    user_reply: str, # 현재 턴에서 유저가 말한 내용 (STT 변환된 텍스트)
+    situation: str, # 시나리오 상황 설명. 예: "You are ordering coffee at a cafe"
+    missing_keys: list[str], #  아직 채워지지 않은 슬롯 키 목록. 예: ["hot_or_iced", "size"]. LLM이 이 정보를 기준으로 뭘 물어볼지 결정
+    history: list[dict], # 현재 턴 이전까지의 전체 대화 기록. [{"role": "assistant", "content": "..."}, {"role": "user", "content": "..."}] 형태
 ) -> str:
     history_str = "\n".join(
         f"{'AI' if h['role'] == 'assistant' else 'User'}: {h['content']}" for h in history
@@ -119,19 +125,22 @@ def _generate_followup(
     missing_str = ", ".join(missing_keys)
     system = (
         "You are a native English speaker having a real conversation in the given situation. "
+        "Before generating a response, carefully review the full conversation history. "
+        "Do NOT ask about anything the user has already mentioned in any previous turn. "
         "First, respond naturally to what the user just said. "
-        "Then naturally weave in a question to gather the still-missing information. "
+        "Then ask only about information that is genuinely absent from the entire conversation. "
         "Two sentences max. No lists."
     )
     user = (
         f"Situation: {situation}\n"
         f"Conversation so far:\n{history_str}\n"
         f"User just said: {user_reply}\n"
-        f"Still need: {missing_str}"
+        f"Still need (verify against history before asking): {missing_str}"
     )
     return chat(system, user, max_tokens=128)
 
 
+# 슬롯 모두 충족 시 (= 시나리오 클리어 시) 자연스러운 마무리 멘트 생성 (SUCCESS)
 def _generate_closing(
     situation: str,
     history: list[dict],
@@ -153,6 +162,7 @@ def _generate_closing(
     return chat(system, user, max_tokens=96)
 
 
+# 질문 횟수 초과 시 (= 시나리오 실패 시) 종료 발화 생성 (FAILURE)
 def _generate_failure(
     situation: str,
     history: list[dict],
