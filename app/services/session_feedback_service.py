@@ -111,16 +111,18 @@ def _generate_summary(request: SessionFeedbackRequest) -> str:
     all_text = "\n".join(f"- Q{t.turnIndex}: {t.questionText}\n  A: {t.userTranscript}" for t in request.turns)
     system = (
         "당신은 영어 학습 피드백 전문가입니다. "
-        "전체 대화를 보고 한국어로 2-3문장 종합 피드백을 작성하세요. "
-        "전반적인 의사소통 수준, 잘한 점, 개선할 점을 포함하세요."
+        "아래는 영어 학습자가 롤플레이에서 말한 전체 대화입니다. "
+        "학습자의 발화(A)만 분석하여 한국어로 2-3문장 종합 피드백을 작성하세요. "
+        "다음 세 가지를 포함하세요:\n"
+        "1. 전체적인 영어 수준 한 줄 평\n"
+        "2. 여러 턴에서 반복적으로 나타난 문법/표현 패턴 (예: 관사 누락, 직역 표현 등)\n"
+        "3. 다음 연습에서 집중하면 좋을 한 가지 포인트\n"
+        "턴별 세부 피드백은 쓰지 마세요. AI(Q)의 발화는 평가 대상이 아닙니다."
     )
     user = (
         f"시나리오: {request.scenario.title}\n"
-        f"상황: {request.scenario.situationDescription}\n"
-        f"목표: {request.scenario.successGoal}\n"
         f"결과: {request.scenarioResult}\n"
-        f"채워진 슬롯: {_format_filled_slots(request)}\n"
-        f"대화 목록:\n{all_text}"
+        f"대화 (Q=AI, A=학습자):\n{all_text}"
     )
     return chat(system, user, max_tokens=256)
 
