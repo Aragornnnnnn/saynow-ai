@@ -9,3 +9,7 @@ venv/
 dist/
 build/
 .pytest_cache/
+.omc/
+.claude/
+*.aiff
+*.webm
