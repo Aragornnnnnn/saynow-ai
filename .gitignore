@@ -13,3 +13,4 @@ build/
 .claude/
 *.aiff
 *.webm
+logs/
