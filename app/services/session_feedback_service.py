@@ -75,7 +75,7 @@ def _estimate_improved_score(better_expression: str, scenario_goal: str, questio
         "You are an English language expert. "
         "If the user had said the following improved expression, what comprehension_score (0-100) "
         "would a native American English speaker give? "
-        f"The score MUST be between {min(100, original_score + 5)} and 100. "
+        f"The score MUST be between {min(100, original_score + 5)} and {min(100, original_score + 15)}. "
         'Respond ONLY with valid JSON: {"score": <int>}'
     )
     user = (
@@ -87,7 +87,7 @@ def _estimate_improved_score(better_expression: str, scenario_goal: str, questio
     try:
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         result = int(json.loads(cleaned).get("score", original_score + 5))
-        return min(100, max(original_score + 5, result))
+        return min(100, original_score + 15, max(original_score + 5, result))
     except (json.JSONDecodeError, ValueError):
         return min(100, original_score + 5)
 
