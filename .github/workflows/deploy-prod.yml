@@ -60,7 +60,8 @@ jobs:
 
                   sudo rsync -a --delete /tmp/saynow-deploy/app/ /opt/saynow/app/
                   sudo cp /tmp/saynow-deploy/requirements.txt /opt/saynow/requirements.txt
-                  sudo chown -R saynow:saynow /opt/saynow/app /opt/saynow/requirements.txt
+                  sudo mkdir -p /opt/saynow/logs
+                  sudo chown -R saynow:saynow /opt/saynow/app /opt/saynow/requirements.txt /opt/saynow/logs
 
                   sudo -u saynow /opt/saynow/venv/bin/pip install -r /opt/saynow/requirements.txt --quiet
 

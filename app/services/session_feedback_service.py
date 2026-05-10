@@ -14,17 +14,16 @@ logger = get_logger("session_feedback")
 
 def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
     turn_feedbacks: list[TurnFeedback] = []
-    prev_score = 0
     scenario_goal = request.scenario.successGoal
 
-    for i, turn in enumerate(request.turns):
+    for turn in request.turns:
         analysis = _analyze_utterance(turn.userTranscript, request, turn)
         score = analysis["comprehension_score"]
         logger.info("턴 분석 | turnIndex: %d | transcript: %s | understoodScore: %d | betterExpression: %s", turn.turnIndex, turn.userTranscript, score, analysis.get("better_expression", ""))
-        score_delta = score - prev_score if i > 0 else 0
         improved_score = _estimate_improved_score(
             analysis["better_expression"], scenario_goal, turn.questionText, score
         )
+        score_delta = improved_score - score
         reason = _generate_turn_reason(
             turn.userTranscript, score, analysis["better_expression"], turn.questionText
         )
@@ -38,7 +37,6 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
                 reason=reason,
             )
         )
-        prev_score = score
 
     total = round(sum(t.understoodScore for t in turn_feedbacks) / len(turn_feedbacks)) if turn_feedbacks else 0
     logger.info("세션 피드백 | session_id: %s | totalUnderstoodScore: %d | turns: %d", request.sessionId, total, len(turn_feedbacks))
@@ -61,7 +59,11 @@ def _analyze_utterance(transcript: str, request: SessionFeedbackRequest, turn) -
         "Deduct points for: unnatural phrasing, missing articles, awkward word order, overly literal or robotic expressions. "
         "Do NOT give 100 unless the utterance is completely natural and idiomatic. "
         "A grammatically understandable but unnatural reply should score 60-80.\n"
-        "native_perception: a short phrase describing what the native speaker actually heard/understood from the reply.\n"
+        "native_perception: 원어민이 이 발화를 듣고 어떤 내용으로 이해했는지 한국어로 설명하세요. "
+        "반드시 '외국인은 [구체적인 내용]으로 이해했어요.' 형식으로 작성하세요. "
+        "예(이해 잘 된 경우): '외국인은 아이스 아메리카노를 달라는 것으로 이해했어요.' "
+        "예(이해 부족한 경우): '외국인은 뭔가를 원한다는 건 알았지만 정확히 무엇인지 파악하기 어려웠어요.' "
+        "이해 수준에 따라 자연스럽게 표현하되, 반드시 구체적인 내용을 포함하세요. 1문장으로 작성하세요.\n"
         "better_expression: one improved alternative that is slightly more natural — aim for a small, achievable improvement (5-10 points better, never exceeding 100), not a perfect rewrite. Keep it close to the user's original phrasing and level."
     )
     user = (
