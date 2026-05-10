@@ -1,9 +1,11 @@
 # 세션 피드백 라우터 — POST /api/v1/session-feedbacks
 from fastapi import APIRouter
+from app.core.logger import get_logger
 from app.models.session_feedback import SessionFeedbackRequest, SessionFeedbackResponse
 from app.services.session_feedback_service import build_feedback
 
 router = APIRouter()
+logger = get_logger("route.session_feedback")
 
 
 @router.post(
@@ -30,4 +32,9 @@ router = APIRouter()
 """,
 )
 async def session_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
-    return build_feedback(request)
+    logger.info("POST /api/v1/session-feedbacks (최종 피드백 생성 api) | session_id: %s | scenario: %s | turns: %d", request.sessionId, request.scenario.scenarioId, len(request.turns))
+    try:
+        return build_feedback(request)
+    except Exception as e:
+        logger.error("[500] 세션 피드백 생성 실패 — LLM 분석 또는 응답 JSON 파싱 단계에서 문제 발생 가능 | session_id: %s | error: %s", request.sessionId, e)
+        raise

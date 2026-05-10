@@ -1,5 +1,6 @@
 # 턴 평가 라우터 — POST /api/v1/turn-evaluations
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
+from app.core.logger import get_logger
 from app.models.turn_evaluation import (
     FilledSlot,
     TurnEvaluationRequest,
@@ -8,6 +9,7 @@ from app.models.turn_evaluation import (
 from app.services.turn_evaluation_service import evaluate_turn
 
 router = APIRouter()
+logger = get_logger("route.turn_evaluation")
 
 
 @router.post(
@@ -48,7 +50,10 @@ async def turn_evaluation(
     try:
         request = TurnEvaluationRequest.model_validate_json(payload)
     except Exception as e:
+        logger.error("[422] 요청 payload JSON 파싱 실패 — multipart form의 payload 필드가 올바른 JSON 형식인지 확인 필요 | error: %s | payload_preview: %s", e, payload[:200])
         raise HTTPException(status_code=422, detail=f"Invalid payload JSON: {e}")
+
+    logger.info("POST /api/v1/turn-evaluations (꼬리질문 생성 api) | session_id: %s | scenario: %s | turnIndex: %d", request.sessionId, request.scenario.scenarioId, request.turn.turnIndex)
 
     audio_bytes = await audio.read()
     filename = audio.filename or "audio.webm"
@@ -70,6 +75,7 @@ async def turn_evaluation(
             conversation_history=history,
         )
     except ValueError as e:
+        logger.error("[400] 턴 평가 처리 실패 — STT 변환, 슬롯 추출, 또는 꼬리질문 생성 단계에서 문제 발생 가능 | session_id: %s | error: %s", request.sessionId, e)
         raise HTTPException(status_code=400, detail=str(e))
 
 

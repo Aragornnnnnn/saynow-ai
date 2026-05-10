@@ -1,8 +1,10 @@
 # STT 서비스 — 오디오 바이트를 OpenAI Whisper API로 전송해 영어 텍스트 및 신뢰도로 변환
 import openai
 from app.config import settings
+from app.core.logger import get_logger
 
 _client = openai.OpenAI(api_key=settings.openai_api_key)
+logger = get_logger("stt")
 
 
 def transcribe(audio_bytes: bytes, filename: str = "audio.webm") -> str:
@@ -20,6 +22,7 @@ def transcribe_with_confidence(audio_bytes: bytes, filename: str = "audio.webm")
         response_format="verbose_json",
     )
     text = response.text
+    logger.info("STT 결과 | transcript: %s", text)
 
     # segment별 avg_logprob → confidence (0~1) 평균
     import math
@@ -37,4 +40,5 @@ def transcribe_with_confidence(audio_bytes: bytes, filename: str = "audio.webm")
     else:
         confidence = 0.5  # segment 없으면 중립값
 
+    logger.info("STT 신뢰도 | confidence: %.4f", confidence)
     return {"text": text, "confidence": confidence}

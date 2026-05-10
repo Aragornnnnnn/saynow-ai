@@ -1,11 +1,15 @@
 # 세션 피드백 서비스 — 전체 대화 턴을 분석해 최종 피드백 응답 생성
 import json
 from app.core.llm import chat
+from app.core.logger import get_logger
 from app.models.session_feedback import (
     SessionFeedbackRequest,
     SessionFeedbackResponse,
     TurnFeedback,
 )
+
+
+logger = get_logger("session_feedback")
 
 
 def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
@@ -16,6 +20,7 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
     for i, turn in enumerate(request.turns):
         analysis = _analyze_utterance(turn.userTranscript, request, turn)
         score = analysis["comprehension_score"]
+        logger.info("턴 분석 | turnIndex: %d | transcript: %s | understoodScore: %d | betterExpression: %s", turn.turnIndex, turn.userTranscript, score, analysis.get("better_expression", ""))
         score_delta = score - prev_score if i > 0 else 0
         improved_score = _estimate_improved_score(
             analysis["better_expression"], scenario_goal, turn.questionText, score
@@ -36,6 +41,7 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
         prev_score = score
 
     total = round(sum(t.understoodScore for t in turn_feedbacks) / len(turn_feedbacks)) if turn_feedbacks else 0
+    logger.info("세션 피드백 | session_id: %s | totalUnderstoodScore: %d | turns: %d", request.sessionId, total, len(turn_feedbacks))
     summary = _generate_summary(request)
 
     return SessionFeedbackResponse(
