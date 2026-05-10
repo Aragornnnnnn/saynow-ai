@@ -10,7 +10,37 @@ from app.services.turn_evaluation_service import evaluate_turn
 router = APIRouter()
 
 
-@router.post("/api/v1/turn-evaluations", response_model=TurnEvaluationResponse)
+@router.post(
+    "/api/v1/turn-evaluations",
+    response_model=TurnEvaluationResponse,
+    summary="턴 단위 발화 평가",
+    description="""
+유저의 오디오 발화를 STT로 변환한 뒤, 시나리오 컨텍스트에 맞게 이해도를 평가하고 다음 질문을 생성합니다.
+
+**Request DTO 형식**: `multipart/form-data`
+- `audio`: 녹음된 오디오 파일 (webm, mp4 등)
+- `payload`: JSON 문자열 (TurnEvaluationRequest 모델 -> sessionId, scenario, currentQuestion, currentFilledSlots, turn, conversationHistory 포함)
+
+**처리 흐름**
+1. 음성 녹음본 → Whisper STT → transcript 추출
+2. 시나리오 슬롯 기준으로 이해도 분석 (LLM)
+3. 미충족 슬롯이 있으면 꼬리질문 생성 → TTS 변환
+4. 모든 슬롯 충족 또는 maxFollowUpCount 소진 시 종료
+
+**response DTO**
+- `transcript`: STT로 변환된 유저 발화 텍스트
+- `sttConfidence`: 이해도 (0~ 1.0 사이)
+- `scenarioStatus`: 대화 상태 (IN_PROGRESS, SUCCESS, FAILURE)
+- `filledSlots`: 현재까지 채워진 슬롯 목록
+- `nextQuestion`: 다음 질문 (scenarioStatus=IN_PROGRESS인 경우)
+- `resultMessage`: 시나리오가 끝났을 때 (SUCCESS or FAILURE) nextQuestion 대신 나오는 마무리 메세지.
+
+**scenarioStatus 값**
+- `IN_PROGRESS`: 대화 진행 중
+- `SUCCESS`: 필수 슬롯 모두 충족
+- `FAILURE`: 질문 횟수 초과로 실패
+""",
+)
 async def turn_evaluation(
     audio: UploadFile = File(...),
     payload: str = Form(...),
