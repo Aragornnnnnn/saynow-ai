@@ -58,6 +58,15 @@
 
 - [x] 응답의 `audio_base64` → `ttsAudio` 로 필드명 통일
 
+## 11. 피드백 점수 보정
+
+- [ ] `improvedUnderstoodScore`가 `understoodScore`보다 낮게 나오는 버그 수정
+  - 프롬프트에 "개선된 표현의 점수는 원래 점수 이상이어야 한다" 명시
+  - 코드에서 `max(original_score, improved_score)`로 클램프 처리
+- [ ] `betterExpression` 생성 시 유저 수준에 맞는 표현으로 제한
+  - 현재 understoodScore 대비 5~10점 향상되는 수준의 표현만 생성하도록 프롬프트 수정
+  - 너무 높은 수준의 표현 제안 시 유저가 따라하기 어렵고 피드백이 괴리감을 줌
+
 ## 10. Pydantic 모델 정리
 
 - [x] `StartRequest`, `StartResponse`, `StartResponseData` 제거

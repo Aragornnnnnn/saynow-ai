@@ -21,7 +21,7 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
             analysis["better_expression"], scenario_goal, turn.questionText
         )
         reason = _generate_turn_reason(
-            turn.userTranscript, score, analysis["better_expression"], scenario_goal
+            turn.userTranscript, score, analysis["better_expression"], turn.questionText
         )
         turn_feedbacks.append(
             TurnFeedback(
@@ -91,15 +91,23 @@ def _estimate_improved_score(better_expression: str, scenario_goal: str, questio
 
 
 def _generate_turn_reason(
-    transcript: str, score: int, better_expression: str, scenario_goal: str
+    transcript: str, score: int, better_expression: str, question: str
 ) -> str:
     system = (
         "당신은 영어 학습 피드백 전문가입니다. "
+        "아래 발화는 음성을 STT로 변환한 텍스트입니다. "
         "유저의 발화에 대해 한국어로 1문장 피드백을 작성하세요. "
-        "점수가 낮으면 부족한 점을, 높으면 잘한 점을 간단히 언급하세요."
+        "평가 기준은 다음과 같습니다:\n"
+        "- 문법 오류 (관사 누락, 시제, 어순, 복수형 등)\n"
+        "- 표현의 자연스러움 (직역투, 어색한 단어 선택 등)\n"
+        "- 맥락 적절성 (질문에 맞게 대답했는지)\n"
+        "절대 평가하지 말아야 할 것: 대문자/소문자, 구두점, 철자 — 이것들은 음성에 존재하지 않습니다. "
+        "내용이 맞는지(시나리오 목표 달성 여부)는 평가하지 마세요. 어떻게 말했는지만 평가하세요. "
+        "개선 사항을 제시할 때는, 반드시 유저의 실제 표현과 개선된 표현을 구체적으로 언급하세요. "
+        "예: '\"I want\" 대신 \"I'd like\"을 쓰면 더 자연스럽습니다.' 처럼 구체적인 표현을 명시하세요."
     )
     user = (
-        f"목표: {scenario_goal}\n"
+        f"AI 질문: {question}\n"
         f"유저 발화: {transcript}\n"
         f"이해도 점수: {score}/100\n"
         f"더 나은 표현: {better_expression}"
