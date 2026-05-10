@@ -18,7 +18,7 @@ def build_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
         score = analysis["comprehension_score"]
         score_delta = score - prev_score if i > 0 else 0
         improved_score = _estimate_improved_score(
-            analysis["better_expression"], scenario_goal, turn.questionText
+            analysis["better_expression"], scenario_goal, turn.questionText, score
         )
         reason = _generate_turn_reason(
             turn.userTranscript, score, analysis["better_expression"], turn.questionText
@@ -56,7 +56,7 @@ def _analyze_utterance(transcript: str, request: SessionFeedbackRequest, turn) -
         "Do NOT give 100 unless the utterance is completely natural and idiomatic. "
         "A grammatically understandable but unnatural reply should score 60-80.\n"
         "native_perception: a short phrase describing what the native speaker actually heard/understood from the reply.\n"
-        "better_expression: one improved alternative — more natural, idiomatic, and fluent for a native speaker."
+        "better_expression: one improved alternative that is slightly more natural — aim for a small, achievable improvement (5-10 points better, never exceeding 100), not a perfect rewrite. Keep it close to the user's original phrasing and level."
     )
     user = (
         f"Question asked: {turn.questionText}\n"
@@ -70,11 +70,12 @@ def _analyze_utterance(transcript: str, request: SessionFeedbackRequest, turn) -
         return {"comprehension_score": 50, "native_perception": raw[:100], "better_expression": ""}
 
 
-def _estimate_improved_score(better_expression: str, scenario_goal: str, question: str) -> int:
+def _estimate_improved_score(better_expression: str, scenario_goal: str, question: str, original_score: int) -> int:
     system = (
         "You are an English language expert. "
         "If the user had said the following improved expression, what comprehension_score (0-100) "
         "would a native American English speaker give? "
+        f"The score MUST be between {min(100, original_score + 5)} and 100. "
         'Respond ONLY with valid JSON: {"score": <int>}'
     )
     user = (
@@ -85,9 +86,10 @@ def _estimate_improved_score(better_expression: str, scenario_goal: str, questio
     raw = chat(system, user, max_tokens=64)
     try:
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return int(json.loads(cleaned).get("score", 85))
+        result = int(json.loads(cleaned).get("score", original_score + 5))
+        return min(100, max(original_score + 5, result))
     except (json.JSONDecodeError, ValueError):
-        return 85
+        return min(100, original_score + 5)
 
 
 def _generate_turn_reason(
@@ -120,7 +122,8 @@ def _generate_summary(request: SessionFeedbackRequest) -> str:
     system = (
         "당신은 영어 학습 피드백 전문가입니다. "
         "아래는 영어 학습자가 롤플레이에서 말한 전체 대화입니다. "
-        "학습자의 발화(A)만 분석하여 한국어로 2-3문장 종합 피드백을 작성하세요. "
+        "학습자의 발화(A)만 분석하여 한국어로 2-3문장 줄글로 종합 피드백을 작성하세요. "
+        "번호나 글머리 기호 없이 자연스러운 문장으로 작성하세요. "
         "다음 세 가지를 포함하세요:\n"
         "1. 전체적인 영어 수준 한 줄 평\n"
         "2. 여러 턴에서 반복적으로 나타난 문법/표현 패턴 (예: 관사 누락, 직역 표현 등)\n"
