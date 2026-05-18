@@ -1,7 +1,9 @@
 # 작업 체크리스트
 
-- [x] 최종 피드백 요청 모델을 문서 payload 기준으로 검증하는 테스트 추가.
-- [x] AI 서버 최종 피드백 요청 스키마를 문서 payload 기준으로 변경.
-- [x] AI 서버 최종 피드백 서비스가 새 필드명을 사용하도록 변경.
-- [x] AI 서버 테스트 실행.
-- [ ] AI 서버 변경사항 커밋.
+- [x] `main` 기준 `develop` 브랜치 생성.
+- [x] 2차 MVP AI 서버 API 계약과 1차 MVP 제거 범위 확인.
+- [x] `next-question`, `feedback` 새 계약 테스트를 먼저 추가하고 실패 확인.
+- [x] 텍스트 기반 `conversation` 모델, 서비스, 라우터 구현.
+- [x] 1차 MVP 오디오, STT, TTS API 등록과 obsolete 테스트 정리.
+- [x] 전체 테스트와 diff 검증 실행.
+- [x] 2차 MVP API 전환 커밋 생성.

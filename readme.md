@@ -1,60 +1,95 @@
-# 영어 스피킹 연습 어플 MVP 구현
+# SayNow AI Server
 
-## 첫번째 페이지
+2차 MVP 백엔드가 호출하는 내부 AI 서버입니다.
 
-> 시나리오 페이지
+## 역할
 
-1. 카테고리 선택 (카테고리는 5개 → 공항, 호텔, 카페, 식당, 택시)
-    - 각 카테고리 별로 시나리오는 2개씩만
-2. 클릭한 시나리오에 대한 간단한 정보를 전달하는 모달
-    - 시나리오 상황설명
-    - 유저가 성공해야 되는 목표만 전달
-        - ex. 아이스 아메리카노 주문에 성공하세요
+- 사용자 텍스트 발화를 바탕으로 새롭게 충족된 슬롯을 판단합니다.
+- 미충족 슬롯이 남아 있으면 다음 영어 꼬리 질문과 한국어 번역을 생성합니다.
+- 완료된 대화 세션의 전체 피드백과 턴별 피드백을 생성합니다.
 
-## 두번째 페이지
+STT, TTS, 세션 완료 판정, 누적 슬롯 저장은 백엔드 책임입니다.
 
-> 시나리오를 하나 선택한 상황
+## API
 
-왼쪽 상단에 나가기 버튼 (언제든 누를 수 있음.)
+### `POST /api/v1/conversation/next-question`
 
-1. 뱁새 캐릭터 Text + TTS
-    - 상단에 따로 뜨는 느낌
-2. 유저가 마이크 버튼을 누를 수 있게 활성화
-   → 마이크 활성화까지 걸린 시간 기록
-3. 사용자의 말을 음성인식 + STT로 텍스트도 화면에 보이게.
-   -> 자막 처럼 반투명 배경에 말한 내용이 뜸
-4. “다음 꼬리질문으로 넘기기 버튼”을 사용자가 직접 누름으로써 대화 반복. (1~3번 반복)
-5. AI가 이정도면 시나리오 클리어다! 라고 판단하면 끝.
-    - 5개의 꼬리질문(클리어를 위한 유도 질문)을 했는데도 목표를 달성하지 못하면 클리어 못한거.
-    - 클리어 기준: 최소한의 필요 정보 다 채우는 걸로
-    - 필요 정보는 표시 X
+요청.
 
-이 두번째 페이지는 카톡형식이 아니라 하나의 Q-A 형식으로 질문의 개수만큼 페이지가 늘어난다.
+```json
+{
+  "originalQuestion": "What would you like to order?",
+  "userUtterance": "I want iced americano.",
+  "scenarioTitle": "카페에서 주문하기",
+  "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+  "slots": [
+    {
+      "slotName": "drink",
+      "filled": false
+    },
+    {
+      "slotName": "size",
+      "filled": false
+    }
+  ]
+}
+```
 
-## 세번째 페이지
+응답.
 
-> 피드백 페이지
+```json
+{
+  "nextQuestion": "What size would you like?",
+  "translatedQuestion": "어떤 사이즈로 드릴까요?",
+  "filledSlots": [
+    {
+      "slotName": "drink"
+    }
+  ]
+}
+```
 
-- 피드백에 어떤 정보들을 포함할 것인지
+`filledSlots`는 이번 발화로 새롭게 충족된 슬롯만 포함합니다. 남은 미충족 슬롯이 없으면 `nextQuestion`과 `translatedQuestion`은 `null`입니다.
 
-1. 제일 상단에는 “total 이해도”
-2. 그리고 각 발화마다,
-   a. 내가 한 말 (너무 길면 더보기로 가리기)
-   b. 발화하기까지 걸린 시간 : n초 (성장 지표의 before를 위해)
-   c. 이해도
-   d. 외국인 귀에 이렇게 들렸어요 (= 이해도가 그렇게 나온 근거)
-   e. 한두문장 정도 뽑아서 더 나은 표현 알려주기
+### `POST /api/v1/conversation/feedback`
 
-a~e가 질문-답변 쌍만큼 반복적으로 표시된다.
+요청.
 
----
+```json
+{
+  "scenarioTitle": "카페에서 주문하기",
+  "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+  "turns": [
+    {
+      "turnId": 101,
+      "originalQuestion": "What would you like to order?",
+      "userUtterance": "I want iced americano."
+    }
+  ]
+}
+```
 
-구현할 것
+응답.
 
-1. STT
-2. TTS
-3. LLM
+```json
+{
+  "comprehensionScore": 82,
+  "feedbackSummary": "전체적으로 의도는 잘 전달됐지만 주문 표현이 조금 짧게 들립니다.",
+  "turnFeedbacks": [
+    {
+      "turnId": 101,
+      "feedbackRequired": true,
+      "nativeUnderstanding": "아이스 아메리카노를 주문하고 싶다는 의미로 이해됩니다.",
+      "nativeLanguageInterpretation": "나 아이스 아메리카노 원해처럼 조금 직접적으로 들립니다.",
+      "betterExpression": "I'd like an iced Americano, please."
+    }
+  ]
+}
+```
 
-- LLM을 활용해서 사용자의 답변(STT) 를 분석하여 미국인이 몇퍼센트 정도 이해할 수 있는지 판단.
-  더불어서 이해도가 그정도 수치로 나온 이유 또한 분석 (= 미국인 귀에 어떻게 들렸는지)
-- LLM을 활용해서 적절한 꼬리질문 생성.
+## Development
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
