@@ -1,21 +1,26 @@
-# FastAPI 앱 진입점 — 라우터 등록, CORS 설정, 서버 실행 시작점
+# FastAPI 앱 진입점 — 2차 MVP 대화 API 라우터와 공통 예외 처리를 등록한다.
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routes import scenario, stt, tts
-from app.api.routes import turn_evaluation, session_feedback
+from app.api.routes import conversation
 from app.core.logger import get_logger
 
-app = FastAPI(title="SayNow API", version="0.1.0")
+app = FastAPI(title="SayNow AI API", version="0.2.0")
 logger = get_logger("main")
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error("[422] 요청 DTO 검증 실패 — 필드 타입 오류 또는 필수 필드 누락 (클라이언트 문제) | path: %s | error: %s", request.url.path, exc.errors())
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    logger.error("[400] 요청 DTO 검증 실패 — 필드 타입 오류 또는 필수 필드 누락 (클라이언트 문제) | path: %s | error: %s", request.url.path, exc.errors())
+    return JSONResponse(
+        status_code=400,
+        content={
+            "code": "INVALID_REQUEST",
+            "message": "잘못된 요청입니다.",
+        },
+    )
 
 
 @app.exception_handler(Exception)
@@ -30,11 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(scenario.router)
-app.include_router(stt.router)
-app.include_router(tts.router)
-app.include_router(turn_evaluation.router)
-app.include_router(session_feedback.router)
+app.include_router(conversation.router)
 
 
 @app.get("/health")
