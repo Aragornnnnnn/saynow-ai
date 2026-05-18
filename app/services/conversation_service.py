@@ -35,6 +35,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         _next_question_system_prompt(),
         _next_question_user_prompt(request, unfilled_slot_names),
         max_tokens=512,
+        temperature=0,
     )
     data = _parse_json_object(raw)
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
@@ -64,6 +65,7 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
         _feedback_system_prompt(),
         _feedback_user_prompt(request),
         max_tokens=1024,
+        temperature=0,
     )
     data = _parse_json_object(raw)
 
@@ -117,10 +119,22 @@ def _feedback_system_prompt() -> str:
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
         "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
         "For each turn, preserve the exact turnId from the request. "
-        "feedbackRequired is false when the user's response is already good enough; in that case set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
+        "Stable feedback decision rubric: 0-39 means the answer is off-topic or a native listener cannot identify the intended meaning; "
+        "40-59 means only a vague gist is understandable and key scenario information is missing or heavily distorted; "
+        "60-74 means the main intent is understandable but grammar, word choice, or word order is clearly awkward enough to need correction; "
+        "75-84 means the scenario intent is clear but a small correction would noticeably improve naturalness, politeness, or completeness; "
+        "85-100 means the answer directly answers the question, a native listener understands it without guessing, and any remaining awkwardness is minor. "
+        "Good Response Conditions: the answer must address the AI question, satisfy the scenario intent for that turn, be understandable without extra inference, and have no meaning-blocking grammar or word-choice issue. "
+        "Only set feedbackRequired=false when all Good Response Conditions pass and the internal turn score is 85-100. "
+        "If any condition fails, or the internal turn score is 84 or below, set feedbackRequired=true. "
+        "Apply this exact rubric consistently for every request; do not loosen or tighten it by scenario, user level, or writing style. "
+        "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired is true, nativeUnderstanding explains in Korean what a native listener understood. "
         "nativeLanguageInterpretation explains in Korean how the awkward English would sound if translated into the user's native language. "
-        "betterExpression must be only one level more natural than the user's utterance, not an advanced rewrite."
+        "betterExpression +1 policy: improve the user's utterance by exactly one practical step. "
+        "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
+        "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
+        "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level."
     )
 
 
@@ -150,9 +164,9 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
     return data
 
 
-def _call_chat(system: str, user: str, max_tokens: int) -> str:
+def _call_chat(system: str, user: str, max_tokens: int, temperature: float) -> str:
     try:
-        return chat(system, user, max_tokens=max_tokens)
+        return chat(system, user, max_tokens=max_tokens, temperature=temperature)
     except Exception as exc:
         raise ConversationGenerationError("model call failed") from exc
 

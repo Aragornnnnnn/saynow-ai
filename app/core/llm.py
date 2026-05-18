@@ -8,11 +8,12 @@ MODEL = "gpt-4o-mini"
 logger = get_logger("llm")
 
 
-def chat(system: str, user: str, max_tokens: int = 1024) -> str:
+def chat(system: str, user: str, max_tokens: int = 1024, temperature: float = 0) -> str:
     logger.debug("LLM 호출 | user_prompt_preview: %s", user[:100].replace("\n", " "))
     response = client.chat.completions.create(
         model=MODEL,
         max_tokens=max_tokens,
+        temperature=temperature,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},

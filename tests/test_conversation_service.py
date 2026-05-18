@@ -130,6 +130,54 @@ class ConversationServiceTest(unittest.TestCase):
         with self.assertRaises(self.service.ConversationGenerationError):
             self.service.generate_feedback(request)
 
+    def test_feedback_prompt_contains_stable_good_response_rubric_and_plus_one_policy(self):
+        prompt = self.service._feedback_system_prompt()
+
+        self.assertIn("Stable feedback decision rubric", prompt)
+        self.assertIn("85-100", prompt)
+        self.assertIn("feedbackRequired=false", prompt)
+        self.assertIn("Only set feedbackRequired=false when all Good Response Conditions pass", prompt)
+        self.assertIn("betterExpression +1 policy", prompt)
+        self.assertIn("Keep the user's original intent, vocabulary level, and sentence shape", prompt)
+
+    def test_feedback_uses_deterministic_chat_settings(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        })
+        captured = {}
+
+        def capture_chat(*args, **kwargs):
+            captured.update(kwargs)
+            return json.dumps({
+                "comprehensionScore": 82,
+                "feedbackSummary": "전체적으로 의도는 전달됐지만 표현을 조금 다듬으면 좋습니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "아이스 아메리카노를 주문하고 싶다는 의미로 이해됩니다.",
+                        "nativeLanguageInterpretation": "나 아이스 아메리카노 원해처럼 조금 직접적으로 들립니다.",
+                        "betterExpression": "I'd like an iced Americano, please.",
+                    }
+                ],
+            })
+
+        self.service.chat = capture_chat
+
+        self.service.generate_feedback(request)
+
+        self.assertEqual(captured["temperature"], 0)
+
     def test_next_question_model_call_failure_raises_generation_error(self):
         from app.models.conversation import NextQuestionRequest
 

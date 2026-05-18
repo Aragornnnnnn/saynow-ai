@@ -8,5 +8,9 @@
 - 백엔드가 보낸 미충족 슬롯이 모두 이번 발화로 채워졌다고 판단되면 `nextQuestion`과 `translatedQuestion`은 `null`로 반환한다.
 - 세션 완료 여부와 누적 슬롯 상태 저장은 백엔드 책임이다. AI 서버는 새로 충족된 슬롯과 다음 질문 후보만 반환한다.
 - 새 `POST /api/v1/conversation/feedback`은 완료된 세션의 텍스트 턴 목록을 받아 전체 이해도, 총평, 턴별 피드백을 생성한다.
+- `feedbackRequired=false`는 내부 점수 `85-100`이면서 질문 의도 답변, 턴 목표 충족, 추가 추측 없는 이해, 의미 차단 오류 없음 조건을 모두 만족할 때만 허용한다.
+- 내부 점수표는 `0-39`, `40-59`, `60-74`, `75-84`, `85-100` 구간으로 나눠 같은 요청에 같은 판단 기준을 적용하도록 프롬프트에 고정했다.
+- `betterExpression`은 사용자 발화에서 딱 +1만 개선한다. 의도, 단어 수준, 문장 형태를 유지하고 가장 작은 개선만 적용한다.
+- LLM 호출은 기준 흔들림을 줄이기 위해 `temperature=0`으로 고정했다.
 - 1차 MVP 코드 정리는 앱 라우터 등록 제거에 그치지 않고, 오디오/STT/TTS/로컬 시나리오 기반 라우터, 모델, 서비스, 테스트 파일 삭제까지 포함했다.
 - 검증 명령은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`와 `git diff --check`를 실행했다.

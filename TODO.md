@@ -26,6 +26,9 @@
 - [x] 전체 이해도와 총평 반환.
 - [x] 턴별 `turnId`, `feedbackRequired`, `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression` 반환.
 - [x] `turnId`가 요청과 동일한 순서로 보존되는지 검증.
+- [x] `feedbackRequired=false` 판단을 위한 내부 점수표와 조건 정의.
+- [x] `betterExpression`을 사용자 발화 기준 +1 개선으로 제한.
+- [x] LLM 호출에 `temperature=0` 적용.
 
 ## 5. 검증
 
