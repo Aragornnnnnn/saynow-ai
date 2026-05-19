@@ -150,6 +150,16 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("한국어로 비유하자면", prompt)
         self.assertIn("betterExpression must include the improved sentence and a short Korean reason", prompt)
 
+    def test_feedback_prompt_constrains_off_topic_feedback_format(self):
+        prompt = self.service._feedback_system_prompt()
+
+        self.assertIn("For nonsensical or off-topic utterances", prompt)
+        self.assertIn("preserve the strange meaning in the Korean analogy", prompt)
+        self.assertIn("do not force it into the scenario context", prompt)
+        self.assertIn("When the user's utterance does not answer the AI question or scenario intent", prompt)
+        self.assertIn("에는 \"<simple English answer>\"라고 말해보세요", prompt)
+        self.assertIn("Do not return only an English sentence with a parenthesized Korean translation", prompt)
+
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest
 

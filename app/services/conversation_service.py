@@ -135,6 +135,7 @@ def _feedback_system_prompt() -> str:
         "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
         "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
         "Use the analogy to help a Korean learner realize how their English sounded, for example 'breakfast what time' should feel like '아침식사 몇 시' in Korean. "
+        "For nonsensical or off-topic utterances, preserve the strange meaning in the Korean analogy; do not force it into the scenario context. "
         "Do not write phrases like '목표 언어로 번역하면' or describe only the dictionary meaning. "
         "betterExpression +1 policy: improve the user's utterance by exactly one practical step. "
         "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
@@ -142,7 +143,8 @@ def _feedback_system_prompt() -> str:
         "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
         "betterExpression must include the improved sentence and a short Korean reason in the same string. "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
-        "When the user's utterance does not answer the AI question or scenario intent, give one simple answer that fits the question intent and explain that it matches the requested situation."
+        "When the user's utterance does not answer the AI question or scenario intent, use this Korean guidance pattern: '<question intent in Korean>에는 \"<simple English answer>\"라고 말해보세요. 이렇게 말하면 <short reason>.' "
+        "Do not return only an English sentence with a parenthesized Korean translation."
     )
 
 
