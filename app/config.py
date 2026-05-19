@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     log_level: str = "INFO"
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

@@ -10,3 +10,4 @@
 - [x] develop EC2 배포용 GitHub Actions workflow 추가.
 - [x] 발화별 피드백 문구 계약 회귀 테스트 추가.
 - [x] `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression` 생성 기준 프롬프트 보강.
+- [x] 배포 환경의 추가 `.env` 값 때문에 앱이 중단되지 않도록 설정 테스트와 방어 로직 추가.
