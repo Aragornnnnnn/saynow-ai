@@ -140,6 +140,16 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("betterExpression +1 policy", prompt)
         self.assertIn("Keep the user's original intent, vocabulary level, and sentence shape", prompt)
 
+    def test_feedback_prompt_constrains_turn_feedback_copy_contract(self):
+        prompt = self.service._feedback_system_prompt()
+
+        self.assertIn("nativeUnderstanding must explain what the foreign listener understood", prompt)
+        self.assertIn("외국인은", prompt)
+        self.assertIn("라고 이해했어요", prompt)
+        self.assertIn("nativeLanguageInterpretation must be a Korean analogy", prompt)
+        self.assertIn("한국어로 비유하자면", prompt)
+        self.assertIn("betterExpression must include the improved sentence and a short Korean reason", prompt)
+
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest
 

@@ -8,3 +8,5 @@
 - [x] 전체 테스트와 diff 검증 실행.
 - [x] 2차 MVP API 전환 커밋 생성.
 - [x] develop EC2 배포용 GitHub Actions workflow 추가.
+- [x] 발화별 피드백 문구 계약 회귀 테스트 추가.
+- [x] `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression` 생성 기준 프롬프트 보강.

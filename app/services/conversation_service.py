@@ -129,12 +129,20 @@ def _feedback_system_prompt() -> str:
         "If any condition fails, or the internal turn score is 84 or below, set feedbackRequired=true. "
         "Apply this exact rubric consistently for every request; do not loosen or tighten it by scenario, user level, or writing style. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
-        "When feedbackRequired is true, nativeUnderstanding explains in Korean what a native listener understood. "
-        "nativeLanguageInterpretation explains in Korean how the awkward English would sound if translated into the user's native language. "
+        "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
+        "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
+        "Write nativeUnderstanding in Korean using this pattern: '외국인은 ...라고 이해했어요.' "
+        "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
+        "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
+        "Use the analogy to help a Korean learner realize how their English sounded, for example 'breakfast what time' should feel like '아침식사 몇 시' in Korean. "
+        "Do not write phrases like '목표 언어로 번역하면' or describe only the dictionary meaning. "
         "betterExpression +1 policy: improve the user's utterance by exactly one practical step. "
         "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
-        "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level."
+        "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
+        "betterExpression must include the improved sentence and a short Korean reason in the same string. "
+        "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
+        "When the user's utterance does not answer the AI question or scenario intent, give one simple answer that fits the question intent and explain that it matches the requested situation."
     )
 
 

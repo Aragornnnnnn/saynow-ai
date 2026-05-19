@@ -16,3 +16,6 @@
 - develop 배포 workflow는 `develop` 브랜치 push, GitHub `develop` environment, SSM `/saynow/develop` 경로, develop EC2 접속 값을 사용한다.
 - develop workflow는 런타임 env 파일을 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`에 같은 내용으로 설치한다. 신규 develop unit과 prod 복제 unit, Pydantic 기본 `.env` 로딩을 모두 커버하기 위한 호환 처리다.
 - 검증 명령은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`와 `git diff --check`를 실행했다.
+- 발화별 `nativeUnderstanding`은 평가 문구가 아니라 외국인이 사용자 발화를 어떻게 이해했는지 보여줘야 한다. 프롬프트는 `외국인은 ...라고 이해했어요.` 형식을 요구한다.
+- 발화별 `nativeLanguageInterpretation`은 직역 설명이 아니라 한국인이 감각적으로 이해할 수 있는 비유다. 프롬프트는 `한국어로 비유하자면, ...처럼 들려요.` 형식을 요구한다.
+- `betterExpression`은 기존 `String` 스키마를 유지한다. 피드백이 필요한 경우 개선 문장과 짧은 한국어 근거를 같은 문자열에 함께 담는다.
