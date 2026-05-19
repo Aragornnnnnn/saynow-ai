@@ -13,4 +13,6 @@
 - `betterExpression`은 사용자 발화에서 딱 +1만 개선한다. 의도, 단어 수준, 문장 형태를 유지하고 가장 작은 개선만 적용한다.
 - LLM 호출은 기준 흔들림을 줄이기 위해 `temperature=0`으로 고정했다.
 - 1차 MVP 코드 정리는 앱 라우터 등록 제거에 그치지 않고, 오디오/STT/TTS/로컬 시나리오 기반 라우터, 모델, 서비스, 테스트 파일 삭제까지 포함했다.
+- develop 배포 workflow는 `develop` 브랜치 push, GitHub `develop` environment, SSM `/saynow/develop` 경로, develop EC2 접속 값을 사용한다.
+- develop workflow는 런타임 env 파일을 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`에 같은 내용으로 설치한다. 신규 develop unit과 prod 복제 unit, Pydantic 기본 `.env` 로딩을 모두 커버하기 위한 호환 처리다.
 - 검증 명령은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`와 `git diff --check`를 실행했다.

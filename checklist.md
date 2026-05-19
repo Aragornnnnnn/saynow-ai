@@ -7,3 +7,4 @@
 - [x] 1차 MVP 오디오, STT, TTS API 등록과 obsolete 테스트 정리.
 - [x] 전체 테스트와 diff 검증 실행.
 - [x] 2차 MVP API 전환 커밋 생성.
+- [x] develop EC2 배포용 GitHub Actions workflow 추가.

@@ -1,0 +1,93 @@
+name: Deploy develop AI backend
+
+on:
+    push:
+        branches:
+            - develop
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        environment: develop
+        timeout-minutes: 20
+        permissions:
+            contents: read
+            id-token: write
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+                  aws-region: ${{ vars.AWS_REGION }}
+                  role-session-name: saynow-ai-develop-${{ github.run_id }}
+
+            - name: Authorize runner SSH ingress
+              id: runner-ip
+              run: |
+                  set -euo pipefail
+                  RUNNER_IP="$(curl -fsS https://checkip.amazonaws.com | tr -d '\n')"
+                  test -n "$RUNNER_IP"
+                  echo "cidr=${RUNNER_IP}/32" >> "$GITHUB_OUTPUT"
+
+                  aws ec2 authorize-security-group-ingress \
+                    --group-id "${{ vars.EC2_SECURITY_GROUP_ID }}" \
+                    --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description=github-actions-${{ github.run_id }}}]" || true
+
+            - name: Configure SSH
+              env:
+                  SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY }}
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "$SSH_KEY_B64" | base64 --decode > ~/.ssh/saynow-develop-deploy
+                  chmod 600 ~/.ssh/saynow-develop-deploy
+                  ssh-keyscan -H "${{ vars.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+            - name: Upload app files
+              run: |
+                  scp -i ~/.ssh/saynow-develop-deploy -r \
+                    app \
+                    requirements.txt \
+                    ${{ vars.EC2_USER }}@${{ vars.EC2_HOST }}:/tmp/saynow-deploy/
+
+            - name: Install deps and restart service
+              run: |
+                  ssh -i ~/.ssh/saynow-develop-deploy ${{ vars.EC2_USER }}@${{ vars.EC2_HOST }} <<'SCRIPT'
+                  set -euo pipefail
+
+                  sudo rsync -a --delete /tmp/saynow-deploy/app/ /opt/saynow/app/
+                  sudo cp /tmp/saynow-deploy/requirements.txt /opt/saynow/requirements.txt
+                  sudo mkdir -p /opt/saynow/logs
+                  sudo chown -R saynow:saynow /opt/saynow/app /opt/saynow/requirements.txt /opt/saynow/logs
+
+                  sudo -u saynow /opt/saynow/venv/bin/pip install -r /opt/saynow/requirements.txt --quiet
+
+                  TMP_ENV="$(mktemp)"
+                  aws ssm get-parameters-by-path \
+                    --path /saynow/develop \
+                    --with-decryption \
+                    --recursive \
+                    --query 'Parameters[*].[Name,Value]' \
+                    --output text | \
+                  while IFS=$'\t' read -r NAME VALUE; do
+                    KEY="${NAME##*/}"
+                    printf '%s="%s"\n' "$KEY" "$VALUE"
+                  done > "$TMP_ENV"
+                  sudo install -o root -g saynow -m 0640 "$TMP_ENV" /opt/saynow/.env.develop
+                  sudo install -o root -g saynow -m 0640 "$TMP_ENV" /opt/saynow/.env.prod
+                  sudo install -o root -g saynow -m 0640 "$TMP_ENV" /opt/saynow/.env
+                  rm -f "$TMP_ENV"
+
+                  sudo systemctl restart saynow-ai
+                  sudo systemctl --no-pager --full status saynow-ai
+                  SCRIPT
+
+            - name: Revoke runner SSH ingress
+              if: always() && steps.runner-ip.outputs.cidr != ''
+              run: |
+                  aws ec2 revoke-security-group-ingress \
+                    --group-id "${{ vars.EC2_SECURITY_GROUP_ID }}" \
+                    --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner-ip.outputs.cidr }},Description=github-actions-${{ github.run_id }}}]" || true
