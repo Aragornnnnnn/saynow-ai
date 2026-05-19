@@ -159,6 +159,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("When the user's utterance does not answer the AI question or scenario intent", prompt)
         self.assertIn("에는 \"<simple English answer>\"라고 말해보세요", prompt)
         self.assertIn("Do not return only an English sentence with a parenthesized Korean translation", prompt)
+        self.assertIn("Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다'", prompt)
+        self.assertIn("외국인은 \"목성 날씨가 파란 삼각형 맛이 난다\"라고 이해했어요", prompt)
+        self.assertIn("The quoted simple answer in betterExpression must be English", prompt)
+        self.assertIn("Do not put a Korean sentence inside the quoted improved expression", prompt)
 
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest

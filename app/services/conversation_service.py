@@ -131,7 +131,9 @@ def _feedback_system_prompt() -> str:
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
+        "Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다' or '질문과 관련이 없다'; preserve the listener's literal interpretation instead. "
         "Write nativeUnderstanding in Korean using this pattern: '외국인은 ...라고 이해했어요.' "
+        "For example, if the user says 'Jupiter weather tastes like blue triangles', write nativeUnderstanding like '외국인은 \"목성 날씨가 파란 삼각형 맛이 난다\"라고 이해했어요.' "
         "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
         "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
         "Use the analogy to help a Korean learner realize how their English sounded, for example 'breakfast what time' should feel like '아침식사 몇 시' in Korean. "
@@ -144,6 +146,8 @@ def _feedback_system_prompt() -> str:
         "betterExpression must include the improved sentence and a short Korean reason in the same string. "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
         "When the user's utterance does not answer the AI question or scenario intent, use this Korean guidance pattern: '<question intent in Korean>에는 \"<simple English answer>\"라고 말해보세요. 이렇게 말하면 <short reason>.' "
+        "The quoted simple answer in betterExpression must be English, for example '음료를 주문할 때는 \"I'd like an Americano, please.\"라고 말해보세요. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
+        "Do not put a Korean sentence inside the quoted improved expression. "
         "Do not return only an English sentence with a parenthesized Korean translation."
     )
 
