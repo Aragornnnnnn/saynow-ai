@@ -147,9 +147,11 @@ def _feedback_system_prompt() -> str:
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
         "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
         "betterExpression must include the improved sentence and a short Korean reason in the same string. "
+        "betterExpression must never be only Korean guidance; it must include an English improved sentence or English example. "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
         "When the user's utterance does not answer the AI question or scenario intent, use this Korean guidance pattern: '<question intent in Korean>에는 \"<simple English answer>\"라고 말해보세요. 이렇게 말하면 <short reason>.' "
         "The quoted simple answer in betterExpression must be English, for example '음료를 주문할 때는 \"I'd like an Americano, please.\"라고 말해보세요. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
+        "If the exact answer is unknown, use a generic English example that fits the scenario, such as \"I'd like a coffee, please.\" for ordering a drink. "
         "Do not put a Korean sentence inside the quoted improved expression. "
         "Do not return only an English sentence with a parenthesized Korean translation."
     )

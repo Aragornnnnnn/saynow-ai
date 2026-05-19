@@ -165,6 +165,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not put a Korean sentence inside the quoted improved expression", prompt)
         self.assertIn("For a nonsensical utterance, nativeLanguageInterpretation should mirror the nonsense", prompt)
         self.assertIn("Do not reuse '아침식사 몇 시' unless the user is asking about breakfast time", prompt)
+        self.assertIn("betterExpression must never be only Korean guidance", prompt)
+        self.assertIn("If the exact answer is unknown, use a generic English example", prompt)
 
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest
