@@ -163,6 +163,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("외국인은 \"목성 날씨가 파란 삼각형 맛이 난다\"라고 이해했어요", prompt)
         self.assertIn("The quoted simple answer in betterExpression must be English", prompt)
         self.assertIn("Do not put a Korean sentence inside the quoted improved expression", prompt)
+        self.assertIn("For a nonsensical utterance, nativeLanguageInterpretation should mirror the nonsense", prompt)
+        self.assertIn("Do not reuse '아침식사 몇 시' unless the user is asking about breakfast time", prompt)
 
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest
