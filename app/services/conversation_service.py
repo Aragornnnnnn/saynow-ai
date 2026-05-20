@@ -287,6 +287,7 @@ def _native_language_interpretation_override(user_utterance: str) -> str | None:
         "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
         "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
         "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
+        "my shoes are swimming in the moon today": "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
     }
     return overrides.get(compact)
 

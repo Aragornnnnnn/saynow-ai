@@ -264,7 +264,7 @@ class ConversationServiceTest(unittest.TestCase):
 
                 self.assertEqual(result.turnFeedbacks[0].nativeLanguageInterpretation, expected_interpretation)
 
-    def test_feedback_preserves_off_topic_native_language_interpretation(self):
+    def test_feedback_rewrites_off_topic_native_language_interpretation_to_literal_meaning(self):
         from app.models.conversation import ConversationFeedbackRequest
 
         request = ConversationFeedbackRequest.model_validate({
@@ -286,7 +286,7 @@ class ConversationServiceTest(unittest.TestCase):
                     "turnId": 101,
                     "feedbackRequired": True,
                     "nativeUnderstanding": "외국인은 신발이 달에서 수영한다는 이상한 설명으로 이해했어요.",
-                    "nativeLanguageInterpretation": "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '신발이 달에서 헤엄치는 것처럼 들려서 음료 주문과는 전혀 관련이 없어 보여요.'처럼 들려요.",
                     "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요.",
                 }
             ],

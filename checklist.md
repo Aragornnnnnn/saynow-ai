@@ -19,3 +19,4 @@
 - [x] 목표 실패 피드백 점수와 `betterExpression` 영어 우선 정책 보강.
 - [x] `nativeLanguageInterpretation`이 프롬프트 예시 문장을 복사하지 않도록 회귀 테스트 추가.
 - [x] 카페 옵션 발화의 한국어 비유를 같은 턴 `userUtterance` 의미로 보정.
+- [x] 명시 검증한 오프토픽 발화의 한국어 비유가 literal 의미만 유지하도록 보정.
