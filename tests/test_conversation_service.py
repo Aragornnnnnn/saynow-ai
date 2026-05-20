@@ -76,6 +76,54 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.nextQuestion)
         self.assertIsNone(result.translatedQuestion)
 
+    def test_next_question_blocks_non_answer_utterances_even_when_model_returns_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        blocked_utterances = [
+            "qwertyuiop asdfghjkl zxcvbnm",
+            "My shoes are swimming in the moon today.",
+            "I don't know.",
+            "No answer.",
+            "I do not want to order anything.",
+        ]
+
+        for utterance in blocked_utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "slots": [
+                        {"slotName": "drink", "filled": False},
+                        {"slotName": "size", "filled": False},
+                    ],
+                })
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "filledSlots": [
+                        {"slotName": "drink"},
+                        {"slotName": "size"},
+                    ],
+                    "nextQuestion": None,
+                    "translatedQuestion": None,
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.nextQuestion, "What drink would you like to order?")
+                self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+
+    def test_next_question_prompt_requires_explicit_slot_evidence(self):
+        prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("Only mark a slot as filled when the user explicitly provides a concrete value", prompt)
+        self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
+        self.assertIn("qwertyuiop asdfghjkl zxcvbnm", prompt)
+        self.assertIn("My shoes are swimming in the moon today", prompt)
+        self.assertIn("I don't know", prompt)
+        self.assertIn("I do not want to order anything", prompt)
+
     def test_feedback_preserves_backend_turn_ids_and_feedback_fields(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -130,6 +178,40 @@ class ConversationServiceTest(unittest.TestCase):
         with self.assertRaises(self.service.ConversationGenerationError):
             self.service.generate_feedback(request)
 
+    def test_feedback_caps_non_answer_score_even_when_model_scores_high(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I don't know.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 82,
+            "feedbackSummary": "주문 의도를 명확히 전달하지 못해 자연스러운 주문으로 이어지지 않았습니다.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 101,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(result.comprehensionScore, 39)
+        self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
+        self.assertTrue(result.turnFeedbacks[0].betterExpression.startswith("I'd like a coffee, please."))
+
     def test_feedback_prompt_contains_stable_good_response_rubric_and_plus_one_policy(self):
         prompt = self.service._feedback_system_prompt()
 
@@ -139,6 +221,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Only set feedbackRequired=false when all Good Response Conditions pass", prompt)
         self.assertIn("betterExpression +1 policy", prompt)
         self.assertIn("Keep the user's original intent, vocabulary level, and sentence shape", prompt)
+        self.assertIn("If the scenario goal is not achieved, comprehensionScore must be 59 or below", prompt)
+        self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39", prompt)
+        self.assertIn("betterExpression must start with the English improved sentence", prompt)
+        self.assertNotIn("음료를 주문할 때는 I'd like", prompt)
+        self.assertIn("I want ice one", prompt)
+        self.assertIn("I'd like it iced, please.", prompt)
+        self.assertIn("This drink is hot, but I ordered an iced one.", prompt)
 
     def test_feedback_prompt_constrains_turn_feedback_copy_contract(self):
         prompt = self.service._feedback_system_prompt()

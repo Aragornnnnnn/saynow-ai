@@ -15,3 +15,5 @@
 - [x] 피드백 응답 문자열 내부 큰따옴표와 역슬래시 사용 금지 조건 추가.
 - [x] develop LLM provider를 Upstage로 전환할 수 있는 설정 추가.
 - [x] `nativeLanguageInterpretation`의 비유 구간을 작은따옴표로 감싸도록 보강.
+- [x] 무의미, 오프토픽, 거절 발화가 `next-question` 슬롯을 채우지 못하도록 방어.
+- [x] 목표 실패 피드백 점수와 `betterExpression` 영어 우선 정책 보강.

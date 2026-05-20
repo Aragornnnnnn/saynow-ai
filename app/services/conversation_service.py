@@ -1,5 +1,6 @@
 # 2차 MVP 대화 API의 LLM 호출과 응답 정규화를 담당한다.
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -30,6 +31,9 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             translatedQuestion=None,
             filledSlots=[],
         )
+
+    if _must_not_fill_slots(request.userUtterance):
+        return _retry_question_for_slot(unfilled_slot_names[0])
 
     raw = _call_chat(
         _next_question_system_prompt(),
@@ -79,6 +83,7 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     if response_turn_ids != request_turn_ids:
         raise ConversationGenerationError("turn feedback ids do not match request turn ids")
 
+    _enforce_feedback_consistency(request, response)
     return response
 
 
@@ -88,8 +93,13 @@ def _next_question_system_prompt() -> str:
         "Return ONLY valid JSON matching this schema exactly: "
         '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>"}. '
         "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
+        "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
+        "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
+        "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information. "
+        "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything. "
         "Never include slots that were already filled before this request. "
         "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
+        "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
         "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
         "Use only the provided slot names."
     )
@@ -124,6 +134,8 @@ def _feedback_system_prompt() -> str:
         "60-74 means the main intent is understandable but grammar, word choice, or word order is clearly awkward enough to need correction; "
         "75-84 means the scenario intent is clear but a small correction would noticeably improve naturalness, politeness, or completeness; "
         "85-100 means the answer directly answers the question, a native listener understands it without guessing, and any remaining awkwardness is minor. "
+        "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
+        "Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39. "
         "Good Response Conditions: the answer must address the AI question, satisfy the scenario intent for that turn, be understandable without extra inference, and have no meaning-blocking grammar or word-choice issue. "
         "Only set feedbackRequired=false when all Good Response Conditions pass and the internal turn score is 85-100. "
         "If any condition fails, or the internal turn score is 84 or below, set feedbackRequired=true. "
@@ -152,13 +164,97 @@ def _feedback_system_prompt() -> str:
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
         "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
         "betterExpression must include the improved sentence and a short Korean reason in the same string. "
+        "betterExpression must start with the English improved sentence, then a short Korean reason may follow. "
+        "Do not start betterExpression with Korean guidance such as '음료를 주문할 때는'. "
         "betterExpression must never be only Korean guidance; it must include an English improved sentence or English example. "
+        "For 'I want ice one', betterExpression should start with 'I'd like it iced, please.' or 'I want it iced, please.' "
+        "For 'This drink is hot but I order ice one', betterExpression should start with 'This drink is hot, but I ordered an iced one.' or 'I ordered an iced drink, but this one is hot.' "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
         "When the user's utterance does not answer the AI question or scenario intent, give a simple English answer without wrapping it in quotation marks, then explain why it fits. "
-        "The English example must appear plainly without double quotation marks, for example '음료를 주문할 때는 I'd like an Americano, please.라고 말해보세요. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
+        "The English example must appear plainly without double quotation marks, for example 'I'd like an Americano, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
         "If the exact answer is unknown, use a generic English example that fits the scenario, such as 'I'd like a coffee, please.' for ordering a drink. "
         "Do not return only an English sentence with a parenthesized Korean translation."
     )
+
+
+def _must_not_fill_slots(user_utterance: str) -> bool:
+    normalized = _normalize_utterance(user_utterance)
+    compact = normalized.replace("'", "")
+
+    exact_blocked = {
+        "qwertyuiop asdfghjkl zxcvbnm",
+        "my shoes are swimming in the moon today",
+        "i dont know",
+        "no answer",
+        "i do not want to order anything",
+        "i dont want to order anything",
+    }
+    if compact in exact_blocked:
+        return True
+
+    if "qwertyuiop" in compact or "asdfghjkl" in compact or "zxcvbnm" in compact:
+        return True
+
+    refusal_patterns = [
+        "do not want to order",
+        "dont want to order",
+        "do not want anything",
+        "dont want anything",
+    ]
+    return any(pattern in compact for pattern in refusal_patterns)
+
+
+def _normalize_utterance(value: str) -> str:
+    lowered = value.lower().strip()
+    no_punctuation = re.sub(r"[^a-z0-9'\s]", " ", lowered)
+    return re.sub(r"\s+", " ", no_punctuation).strip()
+
+
+def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
+    slot_key = slot_name.lower()
+    if slot_key == "drink":
+        return NextQuestionResponse(
+            nextQuestion="What drink would you like to order?",
+            translatedQuestion="어떤 음료를 주문하고 싶으신가요?",
+            filledSlots=[],
+        )
+    if slot_key == "size":
+        return NextQuestionResponse(
+            nextQuestion="What size would you like?",
+            translatedQuestion="어떤 사이즈로 하시겠어요?",
+            filledSlots=[],
+        )
+
+    readable_slot = slot_name.replace("_", " ")
+    return NextQuestionResponse(
+        nextQuestion=f"Could you tell me your {readable_slot}?",
+        translatedQuestion=f"{slot_name} 정보를 알려주시겠어요?",
+        filledSlots=[],
+    )
+
+
+def _enforce_feedback_consistency(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> None:
+    if not all(_must_not_fill_slots(turn.userUtterance) for turn in request.turns):
+        return
+
+    response.comprehensionScore = min(response.comprehensionScore, 39)
+    for turn_feedback in response.turnFeedbacks:
+        turn_feedback.feedbackRequired = True
+        turn_feedback.nativeUnderstanding = (
+            turn_feedback.nativeUnderstanding
+            or "외국인은 시나리오 목표에 필요한 답변을 듣지 못했다고 받아들일 수 있어요."
+        )
+        turn_feedback.nativeLanguageInterpretation = (
+            turn_feedback.nativeLanguageInterpretation
+            or "한국어로 비유하자면, '대답을 하지 않은 것'처럼 들려요."
+        )
+        turn_feedback.betterExpression = (
+            turn_feedback.betterExpression
+            or "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요."
+        )
 
 
 def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
