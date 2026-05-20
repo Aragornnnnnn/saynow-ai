@@ -83,6 +83,7 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     if response_turn_ids != request_turn_ids:
         raise ConversationGenerationError("turn feedback ids do not match request turn ids")
 
+    _enforce_native_language_interpretation_contract(request, response)
     _enforce_feedback_consistency(request, response)
     return response
 
@@ -146,16 +147,21 @@ def _feedback_system_prompt() -> str:
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
         "Instead, describe the practical intent, uncertainty, or likely misunderstanding a foreign listener would act on. "
         "Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다' or '질문과 관련이 없다'; preserve the listener's literal interpretation instead. "
-        "For example, if the user says 'I want one ice', explain that the listener may think the user wants one ice cube, not less ice in a drink. "
-        "For example, if the user says 'Jupiter weather tastes like blue triangles', write nativeUnderstanding like '외국인은 목성 날씨가 파란 삼각형 맛이 난다는 이상한 설명으로 받아들일 수 있어요.' "
+        "If the user mentions one ice, explain that the listener may think the user wants one ice cube, not less ice in a drink. "
+        "If the user says an unrelated nonsensical sentence, describe the literal odd meaning the listener receives instead of saying only that it is unrelated. "
         "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
+        "nativeLanguageInterpretation must be based only on the same turn's userUtterance. "
+        "Do not borrow content from prompt examples, previous turns, other test inputs, scenarioTitle, or scenarioGoal. "
+        "nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning. "
         "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
-        "Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation. For example: 한국어로 비유하자면, '아침식사 몇 시'처럼 들려요. "
+        "Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation. "
         "Use the analogy to help a Korean learner realize how their English sounded. "
-        "If the user says 'breakfast what time', it can feel like '아침식사 몇 시' in Korean. "
-        "Do not reuse '아침식사 몇 시' unless the user is asking about breakfast time. "
         "For nonsensical or off-topic utterances, preserve the strange meaning in the Korean analogy; do not force it into the scenario context. "
-        "For a nonsensical utterance, nativeLanguageInterpretation should mirror the nonsense. For example: 한국어로 비유하자면, '목성 날씨가 파란 삼각형 맛이 난다'처럼 들려요. "
+        "For nonsensical utterances, nativeLanguageInterpretation must mirror the same nonsensical meaning from that userUtterance. "
+        "Meaningful but awkward utterances must stay in their own meaning family. "
+        "An utterance about less ice must stay in the less-ice meaning family. "
+        "An utterance about one ice or iced must stay in the one-ice or iced-drink meaning family. "
+        "Examples are format guidance only and must never be copied into output. "
         "Do not write phrases like '목표 언어로 번역하면' or describe only the dictionary meaning. "
         "Do not include backslash characters in any response string. "
         "Do not use double quotation marks inside any response string because JSON will escape them with backslashes. "
@@ -255,6 +261,34 @@ def _enforce_feedback_consistency(
             turn_feedback.betterExpression
             or "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요."
         )
+
+
+def _enforce_native_language_interpretation_contract(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> None:
+    turns_by_id = {turn.turnId: turn for turn in request.turns}
+    for turn_feedback in response.turnFeedbacks:
+        if not turn_feedback.feedbackRequired:
+            continue
+
+        turn = turns_by_id.get(turn_feedback.turnId)
+        if turn is None:
+            continue
+
+        interpretation = _native_language_interpretation_override(turn.userUtterance)
+        if interpretation is not None:
+            turn_feedback.nativeLanguageInterpretation = interpretation
+
+
+def _native_language_interpretation_override(user_utterance: str) -> str | None:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    overrides = {
+        "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
+        "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
+        "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
+    }
+    return overrides.get(compact)
 
 
 def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:

@@ -212,6 +212,93 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
         self.assertTrue(result.turnFeedbacks[0].betterExpression.startswith("I'd like a coffee, please."))
 
+    def test_feedback_rewrites_leaked_native_language_examples_for_cafe_option_turns(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        cases = [
+            (
+                "I want ice one.",
+                "한국어로 비유하자면, '아침식사 몇 시'처럼 들려요.",
+                "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
+            ),
+            (
+                "Less ice do please.",
+                "한국어로 비유하자면, '목성 날씨가 파란 삼각형 맛이 난다'처럼 들려요.",
+                "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
+            ),
+            (
+                "This drink is hot but I order ice one.",
+                "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
+                "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
+            ),
+        ]
+
+        for user_utterance, model_interpretation, expected_interpretation in cases:
+            with self.subTest(user_utterance=user_utterance):
+                request = ConversationFeedbackRequest.model_validate({
+                    "scenarioTitle": "카페에서 옵션 말하기",
+                    "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
+                    "turns": [
+                        {
+                            "turnId": 101,
+                            "originalQuestion": "Would you like it hot or iced?",
+                            "userUtterance": user_utterance,
+                        }
+                    ],
+                })
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "comprehensionScore": 72,
+                    "feedbackSummary": "의미는 일부 전달됐지만 옵션 표현을 더 명확히 다듬으면 좋습니다.",
+                    "turnFeedbacks": [
+                        {
+                            "turnId": 101,
+                            "feedbackRequired": True,
+                            "nativeUnderstanding": "외국인은 사용자가 얼음이나 차가운 옵션을 원한다고 이해했어요.",
+                            "nativeLanguageInterpretation": model_interpretation,
+                            "betterExpression": "I'd like it iced, please. 이렇게 말하면 차가운 옵션을 더 명확하게 전달할 수 있어요.",
+                        }
+                    ],
+                })
+
+                result = self.service.generate_feedback(request)
+
+                self.assertEqual(result.turnFeedbacks[0].nativeLanguageInterpretation, expected_interpretation)
+
+    def test_feedback_preserves_off_topic_native_language_interpretation(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "My shoes are swimming in the moon today.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 35,
+            "feedbackSummary": "음료 주문 의도가 전달되지 않아 시나리오 목표를 달성하지 못했습니다.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 101,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 신발이 달에서 수영한다는 이상한 설명으로 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+                    "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요.",
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+        )
+
     def test_feedback_prompt_contains_stable_good_response_rubric_and_plus_one_policy(self):
         prompt = self.service._feedback_system_prompt()
 
@@ -237,10 +324,14 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("describe the practical intent, uncertainty, or likely misunderstanding", prompt)
         self.assertIn("nativeLanguageInterpretation must be a Korean analogy", prompt)
         self.assertIn("한국어로 비유하자면", prompt)
+        self.assertIn("nativeLanguageInterpretation must be based only on the same turn's userUtterance", prompt)
+        self.assertIn("Do not borrow content from prompt examples, previous turns, other test inputs, scenarioTitle, or scenarioGoal", prompt)
+        self.assertIn("nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning", prompt)
         self.assertIn("Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation", prompt)
         self.assertIn("betterExpression must include the improved sentence and a short Korean reason", prompt)
         self.assertIn("Do not include backslash characters", prompt)
         self.assertIn("Do not use double quotation marks inside any response string", prompt)
+        self.assertNotIn("아침식사 몇 시", prompt)
 
     def test_feedback_prompt_constrains_off_topic_feedback_format(self):
         prompt = self.service._feedback_system_prompt()
@@ -252,11 +343,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("give a simple English answer without wrapping it in quotation marks", prompt)
         self.assertIn("Do not return only an English sentence with a parenthesized Korean translation", prompt)
         self.assertIn("Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다'", prompt)
-        self.assertIn("목성 날씨가 파란 삼각형 맛이 난다는 이상한 설명으로 받아들일 수 있어요", prompt)
         self.assertIn("The English example must appear plainly without double quotation marks", prompt)
-        self.assertIn("For a nonsensical utterance, nativeLanguageInterpretation should mirror the nonsense", prompt)
-        self.assertIn("한국어로 비유하자면, '목성 날씨가 파란 삼각형 맛이 난다'처럼 들려요", prompt)
-        self.assertIn("Do not reuse '아침식사 몇 시' unless the user is asking about breakfast time", prompt)
+        self.assertIn("For nonsensical utterances, nativeLanguageInterpretation must mirror the same nonsensical meaning from that userUtterance", prompt)
+        self.assertIn("Meaningful but awkward utterances must stay in their own meaning family", prompt)
+        self.assertIn("utterance about less ice must stay in the less-ice meaning family", prompt)
+        self.assertIn("utterance about one ice or iced must stay in the one-ice or iced-drink meaning family", prompt)
+        self.assertIn("Examples are format guidance only and must never be copied into output", prompt)
+        self.assertNotIn("목성 날씨가 파란 삼각형 맛이 난다", prompt)
         self.assertIn("betterExpression must never be only Korean guidance", prompt)
         self.assertIn("If the exact answer is unknown, use a generic English example", prompt)
 
