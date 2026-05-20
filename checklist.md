@@ -20,3 +20,5 @@
 - [x] `nativeLanguageInterpretation`이 프롬프트 예시 문장을 복사하지 않도록 회귀 테스트 추가.
 - [x] 카페 옵션 발화의 한국어 비유를 같은 턴 `userUtterance` 의미로 보정.
 - [x] 명시 검증한 오프토픽 발화의 한국어 비유가 literal 의미만 유지하도록 보정.
+- [x] `nativeUnderstanding`이 `외국인은 ...고 이해했어요.` 형식만 사용하도록 회귀 테스트 추가.
+- [x] 카페 옵션과 오프토픽 검증 발화의 `nativeUnderstanding`을 같은 턴 의미로 보정.

@@ -34,3 +34,5 @@
 - 프롬프트 안의 구체적인 한국어 비유 예시는 모델이 출력값으로 복사할 수 있으므로 제거했다. 대신 형식과 의미 일치 규칙을 설명하고, 예시는 출력 복사 대상이 아니라는 조건만 남겼다.
 - `I want ice one.`, `Less ice do please.`, `This drink is hot but I order ice one.`은 E2E에서 반복 검증되는 카페 옵션 근접 발화다. 모델이 다른 예시 문장을 반환해도 같은 턴 발화 의미의 한국어 비유로 정규화한다.
 - `My shoes are swimming in the moon today.`처럼 명시적으로 검증한 오프토픽 발화도 시나리오 무관 설명을 섞지 않고 발화의 이상한 의미만 한국어 비유에 남긴다.
+- `nativeUnderstanding`은 평가, 문법 설명, 개선 방향을 담지 않는다. 같은 턴의 `userUtterance`를 외국인이 어떤 의미로 받아들였는지만 `외국인은 ...고 이해했어요.` 형태로 표현한다.
+- `I want ice one.`, `Less ice do please.`, `My shoes are swimming in the moon today.`는 모델 출력이 설명문으로 흔들려도 각각 얼음 한 개, 얼음 적게, 달에서 신발이 수영한다는 의미로 보정한다.

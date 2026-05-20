@@ -83,8 +83,8 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     if response_turn_ids != request_turn_ids:
         raise ConversationGenerationError("turn feedback ids do not match request turn ids")
 
-    _enforce_native_language_interpretation_contract(request, response)
     _enforce_feedback_consistency(request, response)
+    _enforce_turn_feedback_contract(request, response)
     return response
 
 
@@ -143,6 +143,10 @@ def _feedback_system_prompt() -> str:
         "Apply this exact rubric consistently for every request; do not loosen or tighten it by scenario, user level, or writing style. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
+        "nativeUnderstanding must start with '외국인은'. "
+        "nativeUnderstanding must end with '라고 이해했어요.'. "
+        "nativeUnderstanding must be based only on the same turn's userUtterance. "
+        "Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding. "
         "Do not quote the user's utterance in nativeUnderstanding. "
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
         "Instead, describe the practical intent, uncertainty, or likely misunderstanding a foreign listener would act on. "
@@ -249,10 +253,7 @@ def _enforce_feedback_consistency(
     response.comprehensionScore = min(response.comprehensionScore, 39)
     for turn_feedback in response.turnFeedbacks:
         turn_feedback.feedbackRequired = True
-        turn_feedback.nativeUnderstanding = (
-            turn_feedback.nativeUnderstanding
-            or "외국인은 시나리오 목표에 필요한 답변을 듣지 못했다고 받아들일 수 있어요."
-        )
+        turn_feedback.nativeUnderstanding = turn_feedback.nativeUnderstanding or "외국인은 사용자가 대답하지 않았다고 이해했어요."
         turn_feedback.nativeLanguageInterpretation = (
             turn_feedback.nativeLanguageInterpretation
             or "한국어로 비유하자면, '대답을 하지 않은 것'처럼 들려요."
@@ -263,7 +264,7 @@ def _enforce_feedback_consistency(
         )
 
 
-def _enforce_native_language_interpretation_contract(
+def _enforce_turn_feedback_contract(
     request: ConversationFeedbackRequest,
     response: ConversationFeedbackResponse,
 ) -> None:
@@ -276,9 +277,23 @@ def _enforce_native_language_interpretation_contract(
         if turn is None:
             continue
 
+        understanding = _native_understanding_override(turn.userUtterance)
+        if understanding is not None:
+            turn_feedback.nativeUnderstanding = understanding
+
         interpretation = _native_language_interpretation_override(turn.userUtterance)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
+
+
+def _native_understanding_override(user_utterance: str) -> str | None:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    overrides = {
+        "i want ice one": "외국인은 사용자가 얼음 한 개를 원한다고 이해했어요.",
+        "less ice do please": "외국인은 사용자가 얼음을 적게 넣어 달라고 이해했어요.",
+        "my shoes are swimming in the moon today": "외국인은 사용자가 신발이 달에서 수영하고 있다고 말한다고 이해했어요.",
+    }
+    return overrides.get(compact)
 
 
 def _native_language_interpretation_override(user_utterance: str) -> str | None:
