@@ -19,6 +19,20 @@ class ConfigTest(unittest.TestCase):
 
         self.assertEqual(settings.openai_api_key, "test-key")
 
+    def test_settings_support_upstage_provider_values(self):
+        from app.config import Settings
+
+        settings = Settings(
+            llm_provider="upstage",
+            upstage_api_key="test-upstage-key",
+            upstage_model="solar-pro3",
+        )
+
+        self.assertEqual(settings.llm_provider, "upstage")
+        self.assertEqual(settings.upstage_api_key, "test-upstage-key")
+        self.assertEqual(settings.upstage_base_url, "https://api.upstage.ai/v1")
+        self.assertEqual(settings.upstage_model, "solar-pro3")
+
 
 if __name__ == "__main__":
     unittest.main()

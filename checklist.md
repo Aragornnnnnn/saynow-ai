@@ -12,3 +12,5 @@
 - [x] `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression` 생성 기준 프롬프트 보강.
 - [x] 배포 환경의 추가 `.env` 값 때문에 앱이 중단되지 않도록 설정 테스트와 방어 로직 추가.
 - [x] 질문 의도와 다른 발화의 한국어 비유와 `betterExpression` 안내 형식 보강.
+- [x] 피드백 응답 문자열 내부 큰따옴표와 역슬래시 사용 금지 조건 추가.
+- [x] develop LLM provider를 Upstage로 전환할 수 있는 설정 추가.

@@ -24,3 +24,5 @@
 - 오프토픽 발화의 `nativeUnderstanding`도 `질문과 관련이 없다` 같은 평가가 아니라 외국인이 문자 그대로 이해한 내용을 써야 한다. `betterExpression`의 따옴표 안 개선 문장은 한국어가 아니라 영어여야 한다.
 - `nativeLanguageInterpretation` 예시는 실제 발화 조건에 맞을 때만 사용해야 한다. 조식 시간 예시를 오프토픽 발화에 재사용하지 않도록 프롬프트에 금지 조건을 추가했다.
 - `betterExpression`은 한국어 안내만 반환하면 안 된다. 정확한 답변을 알 수 없는 오프토픽 상황에서도 시나리오에 맞는 간단한 영어 예시를 함께 제공해야 한다.
+- JSON 문자열 안에 큰따옴표가 들어가면 응답을 볼 때 역슬래시 이스케이프가 생긴다. 피드백 필드 값 안에서는 큰따옴표와 역슬래시를 쓰지 않도록 프롬프트에 고정했다.
+- LLM provider는 `LLM_PROVIDER`로 선택한다. develop은 Upstage 테스트를 위해 `upstage` provider와 `solar-pro3` 모델을 사용할 수 있게 설정했다.
