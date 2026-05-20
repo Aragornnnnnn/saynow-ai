@@ -14,3 +14,4 @@
 - [x] 질문 의도와 다른 발화의 한국어 비유와 `betterExpression` 안내 형식 보강.
 - [x] 피드백 응답 문자열 내부 큰따옴표와 역슬래시 사용 금지 조건 추가.
 - [x] develop LLM provider를 Upstage로 전환할 수 있는 설정 추가.
+- [x] `nativeLanguageInterpretation`의 비유 구간을 작은따옴표로 감싸도록 보강.

@@ -26,3 +26,4 @@
 - `betterExpression`은 한국어 안내만 반환하면 안 된다. 정확한 답변을 알 수 없는 오프토픽 상황에서도 시나리오에 맞는 간단한 영어 예시를 함께 제공해야 한다.
 - JSON 문자열 안에 큰따옴표가 들어가면 응답을 볼 때 역슬래시 이스케이프가 생긴다. 피드백 필드 값 안에서는 큰따옴표와 역슬래시를 쓰지 않도록 프롬프트에 고정했다.
 - LLM provider는 `LLM_PROVIDER`로 선택한다. develop은 Upstage 테스트를 위해 `upstage` provider와 `solar-pro3` 모델을 사용할 수 있게 설정했다.
+- `nativeLanguageInterpretation`은 한국어 비유 문장의 핵심 구간을 작은따옴표로 감싼다. 작은따옴표는 JSON 문자열에서 역슬래시 이스케이프를 만들지 않으므로 사용 가능하다.
