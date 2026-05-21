@@ -488,6 +488,101 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
         self.assertIsNone(result.turnFeedbacks[0].betterExpression)
 
+    def test_feedback_fallback_handles_failed_repair_for_good_response(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 301,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I would like a small iced Americano, please.",
+                }
+            ],
+        })
+        bad_feedback = {
+            "comprehensionScore": 85,
+            "feedbackSummary": "관사 사용에 주의해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 301,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 '작은 아이스 아메리카노를 주문하고 싶다'고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '작은 아이스 아메리카노를 주문하고 싶다'처럼 들려요.",
+                    "betterExpression": "I'd like a small iced Americano, please. 관사가 자연스럽게 들어갑니다.",
+                }
+            ],
+        }
+        responses = [
+            bad_feedback,
+            {
+                "pass": False,
+                "issues": ["The user utterance is already natural, so feedbackRequired should be false."],
+            },
+            bad_feedback,
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertGreaterEqual(result.comprehensionScore, 90)
+        self.assertIn("자연스럽고 명확하게", result.feedbackSummary)
+        self.assertFalse(result.turnFeedbacks[0].feedbackRequired)
+        self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
+        self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
+        self.assertIsNone(result.turnFeedbacks[0].betterExpression)
+
+    def test_feedback_fallback_normalizes_known_refusal_format_after_failed_repair(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 302,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I do not want to order anything.",
+                }
+            ],
+        })
+        bad_feedback = {
+            "comprehensionScore": 39,
+            "feedbackSummary": "주문하려는 의도가 전혀 전달되지 않았습니다.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 302,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 '아무것도 주문하지 않겠다' 라고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '주문 자체를 거절하는 것처럼 들려요.'",
+                    "betterExpression": "I'd like to order a coffee, please. 이렇게 말하면 원하는 음료를 명확히 전달할 수 있어요.",
+                }
+            ],
+        }
+        responses = [bad_feedback, bad_feedback]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeUnderstanding,
+            "외국인은 사용자가 아무것도 주문하지 않겠다고 이해했어요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '주문 자체를 거절하는 것'처럼 들려요.",
+        )
+
     def test_feedback_skips_quality_review_when_response_is_not_ambiguous(self):
         from app.models.conversation import ConversationFeedbackRequest
 

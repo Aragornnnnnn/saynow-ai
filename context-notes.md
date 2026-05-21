@@ -42,3 +42,4 @@
 - 피드백 생성 후 코드로 잡을 수 있는 형식 위반은 deterministic validation에서 먼저 잡는다. `nativeUnderstanding` 인용, `nativeLanguageInterpretation` 패턴 깨짐, `betterExpression` 영어 시작 위반이 여기에 포함된다.
 - `comprehensionScore`가 85점 이상인데 턴 피드백이 붙은 경우는 좋은 응답을 오판했을 가능성이 있으므로 LLM quality reviewer를 한 번 호출한다.
 - 문제가 발견되면 전체를 새로 생성하지 않고 기존 응답과 문제 목록을 기반으로 1회 repair만 수행한다. repair 후에도 deterministic 위반이 남으면 로그로 남긴다.
+- repair 결과가 여전히 흔들릴 수 있으므로 검증된 좋은 주문 문장과 명시된 거절 발화는 마지막 코드 안전장치로 보정한다. 좋은 응답은 `feedbackRequired=false`로 정리하고, 거절 발화는 `nativeUnderstanding`과 `nativeLanguageInterpretation` 형식을 고정한다.
