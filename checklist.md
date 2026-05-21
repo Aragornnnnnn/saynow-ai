@@ -26,3 +26,4 @@
 - [x] feedback 결과물의 deterministic validation, quality review, 1회 repair 루프 추가.
 - [x] 좋은 응답 오판과 출력 형식 위반을 repair하는 회귀 테스트 추가.
 - [x] repair 모델이 같은 문제를 반환해도 좋은 응답과 검증된 실패 발화는 코드 안전장치로 최종 보정.
+- [x] reviewer가 통과시킨 좋은 응답 오판도 deterministic issue로 강제 보정.

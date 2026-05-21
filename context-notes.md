@@ -43,3 +43,4 @@
 - `comprehensionScore`가 85점 이상인데 턴 피드백이 붙은 경우는 좋은 응답을 오판했을 가능성이 있으므로 LLM quality reviewer를 한 번 호출한다.
 - 문제가 발견되면 전체를 새로 생성하지 않고 기존 응답과 문제 목록을 기반으로 1회 repair만 수행한다. repair 후에도 deterministic 위반이 남으면 로그로 남긴다.
 - repair 결과가 여전히 흔들릴 수 있으므로 검증된 좋은 주문 문장과 명시된 거절 발화는 마지막 코드 안전장치로 보정한다. 좋은 응답은 `feedbackRequired=false`로 정리하고, 거절 발화는 `nativeUnderstanding`과 `nativeLanguageInterpretation` 형식을 고정한다.
+- quality reviewer가 문제없다고 판단해도 `I would like ... please`처럼 이미 자연스러운 주문 응답에 `feedbackRequired=true`가 붙으면 정책 위반으로 본다. 이 케이스는 reviewer pass와 무관하게 deterministic issue로 repair와 코드 안전장치를 태운다.

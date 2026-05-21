@@ -311,6 +311,7 @@ def _verify_and_repair_feedback(
     response: ConversationFeedbackResponse,
 ) -> ConversationFeedbackResponse:
     issues = _deterministic_feedback_issues(request, response)
+    issues.extend(_good_response_policy_issues(request, response))
     if not _should_review_feedback_quality(response):
         if issues:
             return _repair_feedback(request, response, issues)
@@ -324,6 +325,26 @@ def _verify_and_repair_feedback(
         return response
 
     return _repair_feedback(request, response, issues)
+
+
+def _good_response_policy_issues(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> list[str]:
+    if response.comprehensionScore < 85:
+        return []
+
+    turns_by_id = {turn.turnId: turn for turn in request.turns}
+    issues: list[str] = []
+    for turn_feedback in response.turnFeedbacks:
+        turn = turns_by_id.get(turn_feedback.turnId)
+        if turn is None:
+            continue
+        if turn_feedback.feedbackRequired and _is_likely_good_response(turn.userUtterance):
+            issues.append(
+                f"turnId {turn_feedback.turnId}: likely good response; feedbackRequired should be false."
+            )
+    return issues
 
 
 def _deterministic_feedback_issues(

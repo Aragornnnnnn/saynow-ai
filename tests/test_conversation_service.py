@@ -538,6 +538,51 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
         self.assertIsNone(result.turnFeedbacks[0].betterExpression)
 
+    def test_feedback_fallback_overrides_reviewer_pass_for_likely_good_response(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 301,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I would like a small iced Americano, please.",
+                }
+            ],
+        })
+        feedback = {
+            "comprehensionScore": 85,
+            "feedbackSummary": "관사 사용에 주의해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 301,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 작은 아이스 아메리카노를 주문하고 싶다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '작은 아이스 아메리카노를 주문하고 싶다'처럼 들려요.",
+                    "betterExpression": "I'd like a small iced Americano, please. 관사가 자연스럽게 들어갑니다.",
+                }
+            ],
+        }
+        responses = [
+            feedback,
+            {"pass": True, "issues": []},
+            feedback,
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertFalse(result.turnFeedbacks[0].feedbackRequired)
+        self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
+        self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
+        self.assertIsNone(result.turnFeedbacks[0].betterExpression)
+
     def test_feedback_fallback_normalizes_known_refusal_format_after_failed_repair(self):
         from app.models.conversation import ConversationFeedbackRequest
 
