@@ -123,6 +123,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("My shoes are swimming in the moon today", prompt)
         self.assertIn("I don't know", prompt)
         self.assertIn("I do not want to order anything", prompt)
+        self.assertIn("Do not include lists, explanations, or multiple follow-up questions", prompt)
 
     def test_feedback_preserves_backend_turn_ids_and_feedback_fields(self):
         from app.models.conversation import ConversationFeedbackRequest
@@ -367,6 +368,11 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Keep the user's original intent, vocabulary level, and sentence shape", prompt)
         self.assertIn("If the scenario goal is not achieved, comprehensionScore must be 59 or below", prompt)
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39", prompt)
+        self.assertIn("Evaluate grammar correctness, naturalness, and fluency", prompt)
+        self.assertIn("Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions", prompt)
+        self.assertIn("Do not give 100 unless the utterance is completely natural and idiomatic", prompt)
+        self.assertIn("Do not evaluate capitalization, punctuation, or spelling because the input is based on spoken utterances", prompt)
+        self.assertIn("feedbackSummary must mention recurring grammar or expression patterns when multiple turns show the same issue", prompt)
         self.assertIn("betterExpression must start with the English improved sentence", prompt)
         self.assertNotIn("음료를 주문할 때는 I'd like", prompt)
         self.assertIn("I want ice one", prompt)
@@ -381,6 +387,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("nativeUnderstanding must end with '라고 이해했어요.'", prompt)
         self.assertIn("nativeUnderstanding must be based only on the same turn's userUtterance", prompt)
         self.assertIn("Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding", prompt)
+        self.assertIn("nativeUnderstanding must be one Korean sentence with a concrete interpretation", prompt)
         self.assertIn("Do not quote the user's utterance in nativeUnderstanding", prompt)
         self.assertIn("describe the practical intent, uncertainty, or likely misunderstanding", prompt)
         self.assertIn("nativeLanguageInterpretation must be a Korean analogy", prompt)
@@ -413,6 +420,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("목성 날씨가 파란 삼각형 맛이 난다", prompt)
         self.assertIn("betterExpression must never be only Korean guidance", prompt)
         self.assertIn("If the exact answer is unknown, use a generic English example", prompt)
+        self.assertIn("a small, achievable improvement of roughly 5 to 10 points", prompt)
 
     def test_feedback_uses_deterministic_chat_settings(self):
         from app.models.conversation import ConversationFeedbackRequest

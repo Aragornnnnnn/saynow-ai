@@ -102,6 +102,7 @@ def _next_question_system_prompt() -> str:
         "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
         "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
         "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
+        "Do not include lists, explanations, or multiple follow-up questions. "
         "Use only the provided slot names."
     )
 
@@ -129,7 +130,13 @@ def _feedback_system_prompt() -> str:
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
         "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
+        "feedbackSummary must mention recurring grammar or expression patterns when multiple turns show the same issue. "
+        "feedbackSummary must include one focus point for the user's next practice. "
         "For each turn, preserve the exact turnId from the request. "
+        "Evaluate grammar correctness, naturalness, and fluency in addition to scenario fit. "
+        "Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions. "
+        "Do not give 100 unless the utterance is completely natural and idiomatic. "
+        "Do not evaluate capitalization, punctuation, or spelling because the input is based on spoken utterances. "
         "Stable feedback decision rubric: 0-39 means the answer is off-topic or a native listener cannot identify the intended meaning; "
         "40-59 means only a vague gist is understandable and key scenario information is missing or heavily distorted; "
         "60-74 means the main intent is understandable but grammar, word choice, or word order is clearly awkward enough to need correction; "
@@ -146,6 +153,7 @@ def _feedback_system_prompt() -> str:
         "nativeUnderstanding must start with '외국인은'. "
         "nativeUnderstanding must end with '라고 이해했어요.'. "
         "nativeUnderstanding must be based only on the same turn's userUtterance. "
+        "nativeUnderstanding must be one Korean sentence with a concrete interpretation. "
         "Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding. "
         "Do not quote the user's utterance in nativeUnderstanding. "
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
@@ -170,6 +178,7 @@ def _feedback_system_prompt() -> str:
         "Do not include backslash characters in any response string. "
         "Do not use double quotation marks inside any response string because JSON will escape them with backslashes. "
         "betterExpression +1 policy: improve the user's utterance by exactly one practical step. "
+        "Target a small, achievable improvement of roughly 5 to 10 points, not a perfect rewrite. "
         "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
         "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
