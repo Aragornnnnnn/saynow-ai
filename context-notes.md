@@ -112,3 +112,4 @@
 - 2026-05-24 사용자가 Supabase develop DB에 `ai_rag.assistance_knowledge`를 만든 뒤 Prompt 9 live를 재측정했다. `dbCountBefore=0`, `dbCountAfter=6`으로 도움 요청 6건이 저장됐고 모든 row에 embedding이 채워졌다.
 - 2026-05-24 retrieval smoke는 `Can I see the menu?` row를 `candidate`로 승격한 뒤 같은 질문을 재호출했다. 새 row가 `answer_source=retrieved`, `quality_status=candidate`로 저장되어 pgvector 검색 재사용 경로가 동작함을 확인했다.
 - 2026-05-24 반복 도움 요청은 같은 `scenario_title` 안에서 정규화된 `user_utterance`가 2회 이상 generated로 저장되면 자동으로 `candidate`로 승격한다. live smoke에서 임시 반복 질문 2건이 모두 `candidate`가 되는 것을 확인했고, 테스트 row는 삭제했다.
+- SSE 피드백은 기존 동기 `POST /api/v1/conversation/feedback`을 유지하면서 별도 `POST /api/v1/conversation/feedback/stream`으로 추가한다. 프론트 직접 호출이 아니라 백엔드 relay를 전제로 AI 서버가 summary, turnFeedback, done, error 이벤트를 생성한다.

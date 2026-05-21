@@ -1,6 +1,8 @@
 # 2차 MVP 백엔드 연동용 대화 API 라우터를 제공한다.
+import json
+
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.logger import get_logger
 from app.models.conversation import (
@@ -12,6 +14,7 @@ from app.models.conversation import (
 from app.services.conversation_service import (
     ConversationGenerationError,
     generate_feedback,
+    generate_feedback_stream_events,
     generate_next_question,
 )
 
@@ -66,3 +69,43 @@ async def feedback(request: ConversationFeedbackRequest):
                 "message": "피드백 생성에 실패했습니다.",
             },
         )
+
+
+@router.post(
+    "/feedback/stream",
+    summary="대화 피드백 스트리밍 생성",
+)
+async def feedback_stream(request: ConversationFeedbackRequest):
+    logger.info(
+        "POST /api/v1/conversation/feedback/stream | scenario: %s | turns: %d",
+        request.scenarioTitle,
+        len(request.turns),
+    )
+
+    def event_generator():
+        try:
+            for event, data in generate_feedback_stream_events(request):
+                yield _format_sse_event(event, data)
+        except ConversationGenerationError as exc:
+            logger.error("피드백 스트리밍 생성 실패 | error: %s", exc)
+            yield _format_sse_event(
+                "error",
+                {
+                    "code": "AI_GENERATION_FAILED",
+                    "message": "피드백 생성에 실패했습니다.",
+                },
+            )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _format_sse_event(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"

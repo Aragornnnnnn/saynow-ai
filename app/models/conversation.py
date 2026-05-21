@@ -106,6 +106,16 @@ class TurnFeedbackResponse(BaseModel):
         return self
 
 
+class ConversationFeedbackSummaryResponse(BaseModel):
+    comprehensionScore: int = Field(ge=0, le=100)
+    feedbackSummary: str
+
+    @field_validator("feedbackSummary")
+    @classmethod
+    def feedback_summary_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
+
+
 class ConversationFeedbackResponse(BaseModel):
     comprehensionScore: int = Field(ge=0, le=100)
     feedbackSummary: str

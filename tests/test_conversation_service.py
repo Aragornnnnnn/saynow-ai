@@ -726,6 +726,59 @@ class ConversationServiceTest(unittest.TestCase):
             "I'd like an iced Americano, please. 이렇게 말하면 더 자연스럽고 공손하게 주문할 수 있어요.",
         )
 
+    def test_feedback_stream_events_yield_summary_turn_feedbacks_and_done(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                },
+                {
+                    "turnId": 102,
+                    "originalQuestion": "What size would you like?",
+                    "userUtterance": "Small, please.",
+                },
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 82,
+                "feedbackSummary": "전체적으로 의도는 잘 전달됐지만 주문 표현이 조금 짧게 들립니다.",
+            },
+            {
+                "turnId": 101,
+                "feedbackRequired": True,
+                "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+                "betterExpression": "I'd like an iced Americano, please. 이렇게 말하면 더 자연스럽습니다.",
+            },
+            {
+                "turnId": 102,
+                "feedbackRequired": False,
+                "nativeUnderstanding": None,
+                "nativeLanguageInterpretation": None,
+                "betterExpression": None,
+            },
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        events = list(self.service.generate_feedback_stream_events(request))
+
+        self.assertEqual([event for event, _ in events], ["summary", "turnFeedback", "turnFeedback", "done"])
+        self.assertEqual(events[0][1]["comprehensionScore"], 82)
+        self.assertEqual(events[1][1]["turnId"], 101)
+        self.assertEqual(events[2][1]["turnId"], 102)
+        self.assertEqual(events[3][1], {"turnCount": 2})
+
     def test_feedback_invalid_model_json_raises_generation_error(self):
         from app.models.conversation import ConversationFeedbackRequest
 
