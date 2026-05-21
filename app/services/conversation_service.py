@@ -72,7 +72,20 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
         temperature=0,
     )
     data = _parse_json_object(raw)
+    response = _validate_feedback_response(data, request)
 
+    _enforce_feedback_consistency(request, response)
+    _enforce_turn_feedback_contract(request, response)
+    response = _verify_and_repair_feedback(request, response)
+    _enforce_feedback_consistency(request, response)
+    _enforce_turn_feedback_contract(request, response)
+    return response
+
+
+def _validate_feedback_response(
+    data: dict[str, Any],
+    request: ConversationFeedbackRequest,
+) -> ConversationFeedbackResponse:
     try:
         response = ConversationFeedbackResponse.model_validate(data)
     except ValidationError as exc:
@@ -83,8 +96,6 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     if response_turn_ids != request_turn_ids:
         raise ConversationGenerationError("turn feedback ids do not match request turn ids")
 
-    _enforce_feedback_consistency(request, response)
-    _enforce_turn_feedback_contract(request, response)
     return response
 
 
@@ -293,6 +304,195 @@ def _enforce_turn_feedback_contract(
         interpretation = _native_language_interpretation_override(turn.userUtterance)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
+
+
+def _verify_and_repair_feedback(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> ConversationFeedbackResponse:
+    deterministic_issues = _deterministic_feedback_issues(request, response)
+    if deterministic_issues:
+        return _repair_feedback(request, response, deterministic_issues)
+
+    if not _should_review_feedback_quality(response):
+        return response
+
+    review = _review_feedback_quality(request, response)
+    if review["pass"]:
+        return response
+
+    return _repair_feedback(request, response, review["issues"])
+
+
+def _deterministic_feedback_issues(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> list[str]:
+    turns_by_id = {turn.turnId: turn for turn in request.turns}
+    issues: list[str] = []
+    for turn_feedback in response.turnFeedbacks:
+        turn = turns_by_id.get(turn_feedback.turnId)
+        issue_prefix = f"turnId {turn_feedback.turnId}: "
+
+        if not turn_feedback.feedbackRequired:
+            if any([
+                turn_feedback.nativeUnderstanding is not None,
+                turn_feedback.nativeLanguageInterpretation is not None,
+                turn_feedback.betterExpression is not None,
+            ]):
+                issues.append(issue_prefix + "feedbackRequired=false must keep all turn feedback fields null.")
+            continue
+
+        native_understanding = turn_feedback.nativeUnderstanding or ""
+        native_language_interpretation = turn_feedback.nativeLanguageInterpretation or ""
+        better_expression = turn_feedback.betterExpression or ""
+
+        if not native_understanding.startswith("외국인은"):
+            issues.append(issue_prefix + "nativeUnderstanding must start with 외국인은.")
+        if not re.search(r"(라고|다고) 이해했어요\.$", native_understanding):
+            issues.append(issue_prefix + "nativeUnderstanding must end with 라고 이해했어요 or 다고 이해했어요.")
+        if _contains_quote(native_understanding):
+            issues.append(issue_prefix + "nativeUnderstanding must not quote the user's utterance or translated phrase.")
+        if _contains_native_understanding_evaluation(native_understanding):
+            issues.append(issue_prefix + "nativeUnderstanding must not include grammar explanations, improvement directions, or evaluations.")
+        if turn is not None and _contains_user_utterance(native_understanding, turn.userUtterance):
+            issues.append(issue_prefix + "nativeUnderstanding must not copy the user's English utterance.")
+
+        if not (
+            native_language_interpretation.startswith("한국어로 비유하자면, '")
+            and native_language_interpretation.endswith("'처럼 들려요.")
+        ):
+            issues.append(issue_prefix + "nativeLanguageInterpretation must follow 한국어로 비유하자면, '...'처럼 들려요.")
+
+        if not re.match(r"^[A-Za-z]", better_expression):
+            issues.append(issue_prefix + "betterExpression must start with an English improved expression.")
+
+    return issues
+
+
+def _should_review_feedback_quality(response: ConversationFeedbackResponse) -> bool:
+    return response.comprehensionScore >= 85 and any(
+        turn_feedback.feedbackRequired for turn_feedback in response.turnFeedbacks
+    )
+
+
+def _review_feedback_quality(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> dict[str, Any]:
+    data = _parse_json_object(_call_chat(
+        _feedback_quality_review_system_prompt(),
+        _feedback_quality_review_user_prompt(request, response),
+        max_tokens=512,
+        temperature=0,
+    ))
+    passed = data.get("pass")
+    issues = data.get("issues")
+    if not isinstance(passed, bool) or not isinstance(issues, list) or not all(isinstance(issue, str) for issue in issues):
+        raise ConversationGenerationError("feedback quality review response does not match contract")
+    return {"pass": passed, "issues": issues}
+
+
+def _repair_feedback(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+    issues: list[str],
+) -> ConversationFeedbackResponse:
+    data = _parse_json_object(_call_chat(
+        _feedback_repair_system_prompt(),
+        _feedback_repair_user_prompt(request, response, issues),
+        max_tokens=1024,
+        temperature=0,
+    ))
+    repaired = _validate_feedback_response(data, request)
+    _enforce_feedback_consistency(request, repaired)
+    _enforce_turn_feedback_contract(request, repaired)
+    remaining_issues = _deterministic_feedback_issues(request, repaired)
+    if remaining_issues:
+        logger.warning("피드백 repair 후에도 계약 위반이 남음 | issues: %s", remaining_issues)
+    return repaired
+
+
+def _feedback_quality_review_system_prompt() -> str:
+    return (
+        "You are a strict quality reviewer for English speaking feedback. "
+        "Return ONLY valid JSON matching this schema exactly: "
+        '{"pass":true,"issues":["..."]}. '
+        "Review whether the feedback follows the product policy, not whether the JSON schema is valid. "
+        "Check especially: a clearly good answer must not receive unnecessary turn feedback; "
+        "feedbackRequired=false is allowed only for genuinely good answers; "
+        "betterExpression must not claim to fix something already present in the user's utterance; "
+        "nativeUnderstanding must not quote the user's English utterance; "
+        "nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning; "
+        "off-topic utterances must preserve their literal odd meaning instead of being forced into the scenario. "
+        "If there are no meaningful policy issues, return pass=true and issues=[]. "
+        "If repair is needed, return pass=false and concise issue strings."
+    )
+
+
+def _feedback_quality_review_user_prompt(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> str:
+    return (
+        "Request JSON:\n"
+        f"{json.dumps(request.model_dump(), ensure_ascii=False)}\n\n"
+        "Feedback JSON:\n"
+        f"{json.dumps(response.model_dump(), ensure_ascii=False)}"
+    )
+
+
+def _feedback_repair_system_prompt() -> str:
+    return (
+        "You repair final feedback JSON for an English speaking practice scenario. "
+        "Return ONLY valid JSON matching this schema exactly: "
+        '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
+        "Fix only the listed issues while preserving the request turn order and exact turnId values. "
+        "Do not add or remove fields. "
+        "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
+        "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
+        "nativeUnderstanding must not quote the user's English utterance and must not include grammar explanations, improvement directions, or evaluations. "
+        "nativeLanguageInterpretation must follow this pattern exactly: 한국어로 비유하자면, '...'처럼 들려요. "
+        "betterExpression must start with an English improved expression followed by a short Korean reason. "
+        "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn."
+    )
+
+
+def _feedback_repair_user_prompt(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+    issues: list[str],
+) -> str:
+    issue_lines = "\n".join(f"- {issue}" for issue in issues)
+    return (
+        f"Issues to repair:\n{issue_lines}\n\n"
+        "Request JSON:\n"
+        f"{json.dumps(request.model_dump(), ensure_ascii=False)}\n\n"
+        "Current feedback JSON:\n"
+        f"{json.dumps(response.model_dump(), ensure_ascii=False)}"
+    )
+
+
+def _contains_quote(value: str) -> bool:
+    return any(mark in value for mark in ["'", '"', "‘", "’", "“", "”"])
+
+
+def _contains_native_understanding_evaluation(value: str) -> bool:
+    evaluation_markers = [
+        "문법",
+        "어색",
+        "자연스럽",
+        "개선",
+        "정확한 의도",
+        "파악하기 어려",
+    ]
+    return any(marker in value for marker in evaluation_markers)
+
+
+def _contains_user_utterance(value: str, user_utterance: str) -> bool:
+    normalized_value = _normalize_utterance(value)
+    normalized_utterance = _normalize_utterance(user_utterance)
+    return bool(normalized_utterance and normalized_utterance in normalized_value)
 
 
 def _native_understanding_override(user_utterance: str) -> str | None:

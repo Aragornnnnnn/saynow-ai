@@ -23,3 +23,5 @@
 - [x] `nativeUnderstanding`이 `외국인은 ...고 이해했어요.` 형식만 사용하도록 회귀 테스트 추가.
 - [x] 카페 옵션과 오프토픽 검증 발화의 `nativeUnderstanding`을 같은 턴 의미로 보정.
 - [x] main 1차 MVP 피드백 기준 중 발화 품질, STT 비평 제외 항목, +1 개선 폭을 2차 MVP 프롬프트에 반영.
+- [x] feedback 결과물의 deterministic validation, quality review, 1회 repair 루프 추가.
+- [x] 좋은 응답 오판과 출력 형식 위반을 repair하는 회귀 테스트 추가.

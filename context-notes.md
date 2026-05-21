@@ -39,3 +39,6 @@
 - 1차 MVP의 피드백 프롬프트에서 유효했던 발화 품질 기준은 2차 MVP에도 유지한다. 점수는 시나리오 적합성뿐 아니라 문법 정확성, 자연스러움, 유창함을 함께 본다.
 - 음성 발화 기반 입력에서는 대문자, 구두점, 철자 자체를 평가하지 않는다. STT 텍스트 표면보다 발화 의도와 구어 표현 품질에 집중한다.
 - `betterExpression`의 +1 개선은 “대략 5-10점 좋아지는 작고 달성 가능한 개선”으로 정의한다. 완벽한 원어민식 리라이트보다 사용자 발화에 가까운 최소 개선을 우선한다.
+- 피드백 생성 후 코드로 잡을 수 있는 형식 위반은 deterministic validation에서 먼저 잡는다. `nativeUnderstanding` 인용, `nativeLanguageInterpretation` 패턴 깨짐, `betterExpression` 영어 시작 위반이 여기에 포함된다.
+- `comprehensionScore`가 85점 이상인데 턴 피드백이 붙은 경우는 좋은 응답을 오판했을 가능성이 있으므로 LLM quality reviewer를 한 번 호출한다.
+- 문제가 발견되면 전체를 새로 생성하지 않고 기존 응답과 문제 목록을 기반으로 1회 repair만 수행한다. repair 후에도 deterministic 위반이 남으면 로그로 남긴다.

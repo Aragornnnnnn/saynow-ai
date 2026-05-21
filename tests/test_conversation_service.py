@@ -146,8 +146,8 @@ class ConversationServiceTest(unittest.TestCase):
                 {
                     "turnId": 101,
                     "feedbackRequired": True,
-                    "nativeUnderstanding": "아이스 아메리카노를 주문하고 싶다는 의미로 이해됩니다.",
-                    "nativeLanguageInterpretation": "나 아이스 아메리카노 원해처럼 조금 직접적으로 들립니다.",
+                    "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
                     "betterExpression": "I'd like an iced Americano, please.",
                 }
             ],
@@ -357,6 +357,176 @@ class ConversationServiceTest(unittest.TestCase):
             "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
         )
 
+    def test_feedback_repairs_deterministic_contract_violations_once(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 82,
+                "feedbackSummary": "의도는 전달됐지만 표현이 어색합니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 '아이스 아메리카노를 원한다'고 이해했어요.",
+                        "nativeLanguageInterpretation": "아이스 아메리카노 원해처럼 들려요.",
+                        "betterExpression": "I'd like an iced Americano, please. 이렇게 말하면 더 자연스럽습니다.",
+                    }
+                ],
+            },
+            {
+                "comprehensionScore": 82,
+                "feedbackSummary": "의도는 전달됐지만 표현이 어색합니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+                        "betterExpression": "I'd like an iced Americano, please. 이렇게 말하면 더 자연스럽습니다.",
+                    }
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 2)
+        self.assertIn("repair", systems[1].lower())
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeUnderstanding,
+            "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+        )
+
+    def test_feedback_quality_review_repairs_good_response_misclassified_as_feedback_required(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 301,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I would like a small iced Americano, please.",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 85,
+                "feedbackSummary": "전체적으로 의도를 잘 전달했습니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 301,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 작은 아이스 아메리카노를 주문하고 싶다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '작은 아이스 아메리카노를 주문하고 싶어요'처럼 들려요.",
+                        "betterExpression": "I'd like a small iced Americano, please. 이렇게 말하면 관사가 자연스럽게 들어갑니다.",
+                    }
+                ],
+            },
+            {
+                "pass": False,
+                "issues": [
+                    "The user utterance is already natural, so feedbackRequired should be false.",
+                    "betterExpression claims to add an article that already exists in the user's utterance.",
+                ],
+            },
+            {
+                "comprehensionScore": 95,
+                "feedbackSummary": "음료 종류와 옵션을 자연스럽고 공손하게 전달했습니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 301,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    }
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 3)
+        self.assertIn("quality reviewer", systems[1])
+        self.assertIn("repair", systems[2].lower())
+        self.assertEqual(result.comprehensionScore, 95)
+        self.assertFalse(result.turnFeedbacks[0].feedbackRequired)
+        self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
+        self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
+        self.assertIsNone(result.turnFeedbacks[0].betterExpression)
+
+    def test_feedback_skips_quality_review_when_response_is_not_ambiguous(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        })
+        calls = []
+
+        def capture_chat(system, *args, **kwargs):
+            calls.append(system)
+            return json.dumps({
+                "comprehensionScore": 82,
+                "feedbackSummary": "의도는 전달됐지만 표현이 조금 짧습니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+                        "betterExpression": "I'd like an iced Americano, please. 이렇게 말하면 더 자연스럽습니다.",
+                    }
+                ],
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
+
     def test_feedback_prompt_contains_stable_good_response_rubric_and_plus_one_policy(self):
         prompt = self.service._feedback_system_prompt()
 
@@ -447,8 +617,8 @@ class ConversationServiceTest(unittest.TestCase):
                     {
                         "turnId": 101,
                         "feedbackRequired": True,
-                        "nativeUnderstanding": "아이스 아메리카노를 주문하고 싶다는 의미로 이해됩니다.",
-                        "nativeLanguageInterpretation": "나 아이스 아메리카노 원해처럼 조금 직접적으로 들립니다.",
+                        "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
                         "betterExpression": "I'd like an iced Americano, please.",
                     }
                 ],
