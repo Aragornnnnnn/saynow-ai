@@ -213,6 +213,46 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
         self.assertTrue(result.turnFeedbacks[0].betterExpression.startswith("I'd like a coffee, please."))
 
+    def test_feedback_normalizes_i_dont_know_native_language_interpretation(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I don't know.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 39,
+            "feedbackSummary": "시나리오 목표를 달성하지 못했습니다.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 101,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 어떤 음료를 주문하고 싶은지 전혀 알 수 없다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '아무것도 말하지 않는 것처럼' 들려요'처럼 들려요.",
+                    "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeUnderstanding,
+            "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
+        )
+        self.assertNotIn("들려요'처럼 들려요", result.turnFeedbacks[0].nativeLanguageInterpretation)
+
     def test_feedback_rewrites_leaked_native_language_examples_for_cafe_option_turns(self):
         from app.models.conversation import ConversationFeedbackRequest
 

@@ -614,6 +614,7 @@ def _normalize_native_language_interpretation_format(value: str | None) -> str |
 def _native_understanding_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     overrides = {
+        "i dont know": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
         "i want ice one": "외국인은 사용자가 얼음 한 개를 원한다고 이해했어요.",
         "less ice do please": "외국인은 사용자가 얼음을 적게 넣어 달라고 이해했어요.",
         "this drink is hot but i order ice one": "외국인은 사용자가 이 음료는 뜨겁지만 얼음 한 개를 주문했다고 이해했어요.",
@@ -627,6 +628,7 @@ def _native_understanding_override(user_utterance: str) -> str | None:
 def _native_language_interpretation_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     overrides = {
+        "i dont know": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
         "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
         "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
         "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
