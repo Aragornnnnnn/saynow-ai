@@ -109,6 +109,9 @@ def _next_question_system_prompt() -> str:
         "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
         "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
         "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information. "
+        "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information. "
+        "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order. "
+        "Generic objects such as drink, something, menu, item, or thing are not concrete slot values and must not fill drink. "
         "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything. "
         "Never include slots that were already filled before this request. "
         "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
@@ -229,6 +232,9 @@ def _must_not_fill_slots(user_utterance: str) -> bool:
         "i dont want to order anything",
     }
     if compact in exact_blocked:
+        return True
+
+    if _is_incomplete_utterance_fragment(user_utterance):
         return True
 
     if "qwertyuiop" in compact or "asdfghjkl" in compact or "zxcvbnm" in compact:
@@ -507,7 +513,7 @@ def _feedback_repair_system_prompt() -> str:
         "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
         "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
-        "For incomplete fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "
+        "For incomplete order fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "
         "nativeUnderstanding must not quote the user's English utterance and must not include grammar explanations, improvement directions, or evaluations. "
         "nativeLanguageInterpretation must follow this pattern exactly: 한국어로 비유하자면, '...'처럼 들려요. "
         "betterExpression must start with an English improved expression followed by a short Korean reason. "
@@ -553,8 +559,69 @@ def _contains_user_utterance(value: str, user_utterance: str) -> bool:
 
 
 def _is_incomplete_utterance_fragment(user_utterance: str) -> bool:
+    return _incomplete_order_fragment_analogy(user_utterance) is not None
+
+
+def _incomplete_order_fragment_analogy(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
-    return compact == "i want"
+    article_suffix = r"(?: (?:a|an|the))?"
+
+    generic_object_analogy = _generic_order_object_analogy(compact)
+    if generic_object_analogy is not None:
+        return generic_object_analogy
+
+    if re.fullmatch(rf"i want{article_suffix}", compact):
+        return "나는 하나를 원한다" if compact != "i want" else "나는 원한다"
+    if re.fullmatch(rf"i need{article_suffix}", compact):
+        return "나는 하나가 필요하다" if compact != "i need" else "나는 필요하다"
+    if re.fullmatch(rf"(?:id like|i would like){article_suffix}", compact):
+        return "저는 하나를 원해요" if compact.endswith((" a", " an", " the")) else "저는 원해요"
+    if re.fullmatch(rf"(?:can i get|could i get|may i have){article_suffix}", compact):
+        return "제가 하나 받을 수 있을까요" if compact.endswith((" a", " an", " the")) else "제가 받을 수 있을까요"
+    if re.fullmatch(rf"i want to order{article_suffix}", compact):
+        return "나는 하나를 주문하고 싶다" if compact != "i want to order" else "나는 주문하고 싶다"
+
+    return None
+
+
+def _generic_order_object_analogy(compact_utterance: str) -> str | None:
+    object_pattern = r"(?P<object>drink|drinks|something|anything|menu|item|thing|one)"
+    patterns = [
+        (rf"i want(?: to order)? (?:a |an |the )?{object_pattern}", "want"),
+        (rf"i need (?:a |an |the )?{object_pattern}", "need"),
+        (rf"(?:id like|i would like) (?:a |an |the )?{object_pattern}", "like"),
+        (rf"(?:can i get|could i get|may i have) (?:a |an |the )?{object_pattern}", "get"),
+    ]
+    for pattern, intent in patterns:
+        match = re.fullmatch(pattern, compact_utterance)
+        if match:
+            return _generic_object_analogy_phrase(match.group("object"), intent)
+    return None
+
+
+def _generic_object_analogy_phrase(object_word: str, intent: str) -> str:
+    object_phrases = {
+        "drink": "음료",
+        "drinks": "음료",
+        "something": "뭔가",
+        "anything": "아무거나",
+        "menu": "메뉴",
+        "item": "상품",
+        "thing": "것",
+        "one": "하나",
+    }
+    phrase = object_phrases[object_word]
+    if intent == "like":
+        return f"저는 {phrase}를 원해요"
+    if intent == "get":
+        return f"제가 {phrase}를 받을 수 있을까요"
+    if intent == "need":
+        return f"나는 {phrase}가 필요하다"
+    return f"나는 {phrase}를 원한다"
+
+
+def _trim_incomplete_fragment_for_feedback(user_utterance: str) -> str:
+    return user_utterance.strip().rstrip(".?!").strip()
 
 
 def _apply_feedback_safety_fallbacks(
@@ -651,9 +718,12 @@ def _normalize_native_language_interpretation_format(value: str | None) -> str |
 
 def _native_understanding_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
+    if _is_incomplete_utterance_fragment(user_utterance):
+        fragment = _trim_incomplete_fragment_for_feedback(user_utterance)
+        return f"외국인은 '{fragment}'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요."
+
     overrides = {
         "i dont know": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
-        "i want": "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
         "i want ice one": "외국인은 사용자가 얼음 한 개를 원한다고 이해했어요.",
         "less ice do please": "외국인은 사용자가 얼음을 적게 넣어 달라고 이해했어요.",
         "this drink is hot but i order ice one": "외국인은 사용자가 이 음료는 뜨겁지만 얼음 한 개를 주문했다고 이해했어요.",
@@ -666,9 +736,12 @@ def _native_understanding_override(user_utterance: str) -> str | None:
 
 def _native_language_interpretation_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
+    incomplete_analogy = _incomplete_order_fragment_analogy(user_utterance)
+    if incomplete_analogy is not None:
+        return f"한국어로 비유하자면, '{incomplete_analogy}'처럼 들려요."
+
     overrides = {
         "i dont know": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
-        "i want": "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
         "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
         "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
         "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",

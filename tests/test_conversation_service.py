@@ -114,11 +114,132 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
 
+    def test_next_question_blocks_incomplete_order_fragments_for_drink_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        blocked_utterances = [
+            "I want",
+            "I need",
+            "I'd like",
+            "I would like a",
+            "Can I get",
+            "Can I get a",
+            "I want to order",
+            "I want to order a",
+        ]
+
+        for utterance in blocked_utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "slots": [
+                        {"slotName": "drink", "filled": False},
+                        {"slotName": "size", "filled": False},
+                    ],
+                })
+                calls = []
+
+                def chat_should_not_run(*args, **kwargs):
+                    calls.append(args)
+                    return json.dumps({
+                        "filledSlots": [{"slotName": "drink"}],
+                        "nextQuestion": "What size would you like?",
+                        "translatedQuestion": "어떤 사이즈로 하시겠어요?",
+                    })
+
+                self.service.chat = chat_should_not_run
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(calls, [])
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.nextQuestion, "What drink would you like to order?")
+                self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+
+    def test_next_question_blocks_generic_order_objects_for_drink_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        blocked_utterances = [
+            "I want drink",
+            "I want a drink",
+            "I'd like something",
+            "Can I get a menu",
+            "I want to order something",
+        ]
+
+        for utterance in blocked_utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "slots": [
+                        {"slotName": "drink", "filled": False},
+                        {"slotName": "size", "filled": False},
+                    ],
+                })
+                calls = []
+
+                def chat_should_not_run(*args, **kwargs):
+                    calls.append(args)
+                    return json.dumps({
+                        "filledSlots": [{"slotName": "drink"}],
+                        "nextQuestion": "What size would you like?",
+                        "translatedQuestion": "어떤 사이즈로 하시겠어요?",
+                    })
+
+                self.service.chat = chat_should_not_run
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(calls, [])
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.nextQuestion, "What drink would you like to order?")
+                self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+
+    def test_next_question_allows_order_fragments_when_concrete_drink_exists(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "I want coffee.",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": False},
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [{"slotName": "drink"}],
+                "nextQuestion": "What size would you like?",
+                "translatedQuestion": "어떤 사이즈로 하시겠어요?",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["drink"])
+        self.assertEqual(result.nextQuestion, "What size would you like?")
+
     def test_next_question_prompt_requires_explicit_slot_evidence(self):
         prompt = self.service._next_question_system_prompt()
 
         self.assertIn("Only mark a slot as filled when the user explicitly provides a concrete value", prompt)
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
+        self.assertIn("Incomplete order fragments without a concrete object must return filledSlots=[]", prompt)
+        self.assertIn("I want, I need, I'd like, I would like, Can I get", prompt)
+        self.assertIn("Generic objects such as drink, something, menu, item, or thing are not concrete slot values", prompt)
         self.assertIn("qwertyuiop asdfghjkl zxcvbnm", prompt)
         self.assertIn("My shoes are swimming in the moon today", prompt)
         self.assertIn("I don't know", prompt)
@@ -256,6 +377,53 @@ class ConversationServiceTest(unittest.TestCase):
     def test_feedback_preserves_incomplete_i_want_as_literal_fragment(self):
         from app.models.conversation import ConversationFeedbackRequest
 
+        cases = [
+            ("I want", "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.", "한국어로 비유하자면, '나는 원한다'처럼 들려요."),
+            ("I'd like", "외국인은 'I'd like'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.", "한국어로 비유하자면, '저는 원해요'처럼 들려요."),
+            ("Can I get a", "외국인은 'Can I get a'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.", "한국어로 비유하자면, '제가 하나 받을 수 있을까요'처럼 들려요."),
+            ("I want drink", "외국인은 'I want drink'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.", "한국어로 비유하자면, '나는 음료를 원한다'처럼 들려요."),
+            ("I'd like something", "외국인은 'I'd like something'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.", "한국어로 비유하자면, '저는 뭔가를 원해요'처럼 들려요."),
+        ]
+
+        for user_utterance, expected_understanding, expected_interpretation in cases:
+            with self.subTest(user_utterance=user_utterance):
+                request = ConversationFeedbackRequest.model_validate({
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "turns": [
+                        {
+                            "turnId": 101,
+                            "originalQuestion": "What would you like to order?",
+                            "userUtterance": user_utterance,
+                        }
+                    ],
+                })
+
+                def fake_chat(*args, **kwargs):
+                    return json.dumps({
+                        "comprehensionScore": 39,
+                        "feedbackSummary": "주문할 음료를 구체적으로 말하지 못했습니다.",
+                        "turnFeedbacks": [
+                            {
+                                "turnId": 101,
+                                "feedbackRequired": True,
+                                "nativeUnderstanding": "외국인은 사용자가 음료 이름을 추가로 말해야 한다고 이해했어요.",
+                                "nativeLanguageInterpretation": "한국어로 비유하자면, '주문하고 싶은 게 뭔지 아직 말하지 않은 상태'처럼 들려요.",
+                                "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                            }
+                        ],
+                    })
+
+                self.service.chat = fake_chat
+
+                result = self.service.generate_feedback(request)
+
+                self.assertEqual(result.turnFeedbacks[0].nativeUnderstanding, expected_understanding)
+                self.assertEqual(result.turnFeedbacks[0].nativeLanguageInterpretation, expected_interpretation)
+
+    def test_feedback_keeps_concrete_order_utterance_out_of_incomplete_fragment_override(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
@@ -263,38 +431,28 @@ class ConversationServiceTest(unittest.TestCase):
                 {
                     "turnId": 101,
                     "originalQuestion": "What would you like to order?",
-                    "userUtterance": "I want",
+                    "userUtterance": "I want coffee.",
                 }
             ],
         })
-
-        def fake_chat(*args, **kwargs):
-            return json.dumps({
-                "comprehensionScore": 39,
-                "feedbackSummary": "주문할 음료를 구체적으로 말하지 못했습니다.",
-                "turnFeedbacks": [
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 75,
+            "feedbackSummary": "음료는 전달됐지만 표현이 직접적으로 들렸어요. 다음에는 공손한 주문 표현을 써 보세요.",
+            "turnFeedbacks": [
                     {
                         "turnId": 101,
                         "feedbackRequired": True,
-                        "nativeUnderstanding": "외국인은 사용자가 음료 이름을 추가로 말해야 한다고 이해했어요.",
-                        "nativeLanguageInterpretation": "한국어로 비유하자면, '주문하고 싶은 게 뭔지 아직 말하지 않은 상태'처럼 들려요.",
-                        "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                        "nativeUnderstanding": "외국인은 사용자가 커피를 원한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '커피 원해요'처럼 들려요.",
+                        "betterExpression": "I'd like coffee, please. 이렇게 말하면 더 공손하게 들려요.",
                     }
-                ],
-            })
-
-        self.service.chat = fake_chat
+            ],
+        })
 
         result = self.service.generate_feedback(request)
 
-        self.assertEqual(
-            result.turnFeedbacks[0].nativeUnderstanding,
-            "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
-        )
-        self.assertEqual(
-            result.turnFeedbacks[0].nativeLanguageInterpretation,
-            "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
-        )
+        self.assertEqual(result.turnFeedbacks[0].nativeUnderstanding, "외국인은 사용자가 커피를 원한다고 이해했어요.")
+        self.assertEqual(result.turnFeedbacks[0].nativeLanguageInterpretation, "한국어로 비유하자면, '커피 원해요'처럼 들려요.")
 
     def test_feedback_rewrites_leaked_native_language_examples_for_cafe_option_turns(self):
         from app.models.conversation import ConversationFeedbackRequest

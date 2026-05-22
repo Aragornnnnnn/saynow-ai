@@ -34,3 +34,7 @@
 - [x] `feedbackSummary`를 2문장 기본, 3문장 예외, 120자 이내로 제한하는 회귀 테스트 추가.
 - [x] 긴 `feedbackSummary`를 repair 대상으로 보내는 deterministic 검증 추가.
 - [x] 총평 길이 제한 관련 단위 테스트와 전체 검증 실행.
+- [x] `next-question`에서 목적어 없는 주문 시작 발화가 슬롯을 채우지 않도록 회귀 테스트 추가.
+- [x] `next-question`에서 `drink`, `something`, `menu` 같은 generic object 발화도 슬롯을 채우지 않도록 회귀 테스트 추가.
+- [x] `feedback`의 미완성 주문 발화 보정을 `I want` 단일 케이스에서 공통 패턴으로 확장.
+- [ ] 미완성 주문 발화 공통 규칙의 단위 테스트와 live 배포 검증 실행.
