@@ -253,6 +253,49 @@ class ConversationServiceTest(unittest.TestCase):
         )
         self.assertNotIn("들려요'처럼 들려요", result.turnFeedbacks[0].nativeLanguageInterpretation)
 
+    def test_feedback_preserves_incomplete_i_want_as_literal_fragment(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want",
+                }
+            ],
+        })
+
+        def fake_chat(*args, **kwargs):
+            return json.dumps({
+                "comprehensionScore": 39,
+                "feedbackSummary": "주문할 음료를 구체적으로 말하지 못했습니다.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 음료 이름을 추가로 말해야 한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '주문하고 싶은 게 뭔지 아직 말하지 않은 상태'처럼 들려요.",
+                        "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            })
+
+        self.service.chat = fake_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeUnderstanding,
+            "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
+        )
+
     def test_feedback_rewrites_leaked_native_language_examples_for_cafe_option_turns(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -735,6 +778,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("nativeUnderstanding must explain what the foreign listener understood", prompt)
         self.assertIn("nativeUnderstanding must start with '외국인은'", prompt)
         self.assertIn("nativeUnderstanding must end with '라고 이해했어요.'", prompt)
+        self.assertIn("For incomplete fragments, nativeUnderstanding may explain that the foreign listener could not understand the missing object", prompt)
+        self.assertIn("Incomplete fragments such as bare 'I want' must keep the fragment's literal sound", prompt)
         self.assertIn("nativeUnderstanding must be based only on the same turn's userUtterance", prompt)
         self.assertIn("Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding", prompt)
         self.assertIn("nativeUnderstanding must be one Korean sentence with a concrete interpretation", prompt)

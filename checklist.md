@@ -28,3 +28,6 @@
 - [x] repair 모델이 같은 문제를 반환해도 좋은 응답과 검증된 실패 발화는 코드 안전장치로 최종 보정.
 - [x] reviewer가 통과시킨 좋은 응답 오판도 deterministic issue로 강제 보정.
 - [x] `I don't know.` 피드백의 한국어 비유 중복 문구를 고정 문장으로 보정.
+- [x] `I want`처럼 목적어가 빠진 미완성 발화의 피드백 회귀 테스트 추가.
+- [x] 미완성 발화의 `nativeUnderstanding`, `nativeLanguageInterpretation` 프롬프트와 검증 규칙 보강.
+- [x] 관련 단위 테스트와 diff 검증 실행.

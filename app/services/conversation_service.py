@@ -163,11 +163,13 @@ def _feedback_system_prompt() -> str:
         "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
         "nativeUnderstanding must start with '외국인은'. "
         "nativeUnderstanding must end with '라고 이해했어요.'. "
+        "For incomplete fragments, nativeUnderstanding may explain that the foreign listener could not understand the missing object and end with '이해할 수 없었어요.'. "
         "nativeUnderstanding must be based only on the same turn's userUtterance. "
         "nativeUnderstanding must be one Korean sentence with a concrete interpretation. "
         "Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding. "
         "Do not quote the user's utterance in nativeUnderstanding. "
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
+        "Incomplete fragments such as bare 'I want' must keep the fragment's literal sound and must not become advice such as saying the user needs to add a drink name. "
         "Instead, describe the practical intent, uncertainty, or likely misunderstanding a foreign listener would act on. "
         "Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다' or '질문과 관련이 없다'; preserve the listener's literal interpretation instead. "
         "If the user mentions one ice, explain that the listener may think the user wants one ice cube, not less ice in a drink. "
@@ -179,6 +181,7 @@ def _feedback_system_prompt() -> str:
         "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
         "Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation. "
         "Use the analogy to help a Korean learner realize how their English sounded. "
+        "For incomplete fragments, nativeLanguageInterpretation must mirror the literal Korean-sounding fragment, not the scenario consequence. "
         "For nonsensical or off-topic utterances, preserve the strange meaning in the Korean analogy; do not force it into the scenario context. "
         "For nonsensical utterances, nativeLanguageInterpretation must mirror the same nonsensical meaning from that userUtterance. "
         "Meaningful but awkward utterances must stay in their own meaning family. "
@@ -372,13 +375,17 @@ def _deterministic_feedback_issues(
 
         if not native_understanding.startswith("외국인은"):
             issues.append(issue_prefix + "nativeUnderstanding must start with 외국인은.")
-        if not re.search(r"(라고|다고) 이해했어요\.$", native_understanding):
+        allows_incomplete_fragment = turn is not None and _is_incomplete_utterance_fragment(turn.userUtterance)
+        if not (
+            re.search(r"(라고|다고) 이해했어요\.$", native_understanding)
+            or (allows_incomplete_fragment and native_understanding.endswith("이해할 수 없었어요."))
+        ):
             issues.append(issue_prefix + "nativeUnderstanding must end with 라고 이해했어요 or 다고 이해했어요.")
-        if _contains_quote(native_understanding):
+        if _contains_quote(native_understanding) and not allows_incomplete_fragment:
             issues.append(issue_prefix + "nativeUnderstanding must not quote the user's utterance or translated phrase.")
         if _contains_native_understanding_evaluation(native_understanding):
             issues.append(issue_prefix + "nativeUnderstanding must not include grammar explanations, improvement directions, or evaluations.")
-        if turn is not None and _contains_user_utterance(native_understanding, turn.userUtterance):
+        if turn is not None and _contains_user_utterance(native_understanding, turn.userUtterance) and not allows_incomplete_fragment:
             issues.append(issue_prefix + "nativeUnderstanding must not copy the user's English utterance.")
 
         if not (
@@ -475,6 +482,7 @@ def _feedback_repair_system_prompt() -> str:
         "Do not add or remove fields. "
         "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
+        "For incomplete fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "
         "nativeUnderstanding must not quote the user's English utterance and must not include grammar explanations, improvement directions, or evaluations. "
         "nativeLanguageInterpretation must follow this pattern exactly: 한국어로 비유하자면, '...'처럼 들려요. "
         "betterExpression must start with an English improved expression followed by a short Korean reason. "
@@ -517,6 +525,11 @@ def _contains_user_utterance(value: str, user_utterance: str) -> bool:
     normalized_value = _normalize_utterance(value)
     normalized_utterance = _normalize_utterance(user_utterance)
     return bool(normalized_utterance and normalized_utterance in normalized_value)
+
+
+def _is_incomplete_utterance_fragment(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return compact == "i want"
 
 
 def _apply_feedback_safety_fallbacks(
@@ -615,6 +628,7 @@ def _native_understanding_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     overrides = {
         "i dont know": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
+        "i want": "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
         "i want ice one": "외국인은 사용자가 얼음 한 개를 원한다고 이해했어요.",
         "less ice do please": "외국인은 사용자가 얼음을 적게 넣어 달라고 이해했어요.",
         "this drink is hot but i order ice one": "외국인은 사용자가 이 음료는 뜨겁지만 얼음 한 개를 주문했다고 이해했어요.",
@@ -629,6 +643,7 @@ def _native_language_interpretation_override(user_utterance: str) -> str | None:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     overrides = {
         "i dont know": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
+        "i want": "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
         "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
         "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
         "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",

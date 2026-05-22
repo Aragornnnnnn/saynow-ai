@@ -45,3 +45,4 @@
 - repair 결과가 여전히 흔들릴 수 있으므로 검증된 좋은 주문 문장과 명시된 거절 발화는 마지막 코드 안전장치로 보정한다. 좋은 응답은 `feedbackRequired=false`로 정리하고, 거절 발화는 `nativeUnderstanding`과 `nativeLanguageInterpretation` 형식을 고정한다.
 - quality reviewer가 문제없다고 판단해도 `I would like ... please`처럼 이미 자연스러운 주문 응답에 `feedbackRequired=true`가 붙으면 정책 위반으로 본다. 이 케이스는 reviewer pass와 무관하게 deterministic issue로 repair와 코드 안전장치를 태운다.
 - `I don't know.`는 슬롯을 채우지 않는 non-answer이므로 모델이 한국어 비유 문장에 `처럼 들려요`를 중복해도 `무엇을 주문할지 모르겠어요` 계열의 고정 문장으로 보정한다.
+- `I want`처럼 목적어가 빠진 미완성 발화는 카페 맥락으로 억지 보정하지 않는다. 한국어 비유는 `나는 원한다`처럼 발화 자체가 외국인 귀에 어떻게 들리는지 보여주고, 외국인 이해 문장은 어떤 음료를 주문하는지 이해할 수 없었다는 상태만 설명한다.
