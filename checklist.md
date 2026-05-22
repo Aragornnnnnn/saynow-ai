@@ -31,3 +31,6 @@
 - [x] `I want`처럼 목적어가 빠진 미완성 발화의 피드백 회귀 테스트 추가.
 - [x] 미완성 발화의 `nativeUnderstanding`, `nativeLanguageInterpretation` 프롬프트와 검증 규칙 보강.
 - [x] 관련 단위 테스트와 diff 검증 실행.
+- [x] `feedbackSummary`를 2문장 기본, 3문장 예외, 120자 이내로 제한하는 회귀 테스트 추가.
+- [x] 긴 `feedbackSummary`를 repair 대상으로 보내는 deterministic 검증 추가.
+- [x] 총평 길이 제한 관련 단위 테스트와 전체 검증 실행.

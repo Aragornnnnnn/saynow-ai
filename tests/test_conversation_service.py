@@ -503,6 +503,72 @@ class ConversationServiceTest(unittest.TestCase):
             "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
         )
 
+    def test_feedback_repairs_overlong_feedback_summary_once(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 39,
+                "feedbackSummary": (
+                    "시나리오 목표를 달성하지 못했습니다. "
+                    "'I want'만으로는 주문하려는 음료가 무엇인지 알 수 없어, 외국인은 무엇을 주문하고 싶은지 모르겠다고 이해했어요. "
+                    "다음 연습에서는 구체적인 음료 이름을 포함해 완전한 문장으로 주문하는 것이 필요합니다. "
+                    "먼저 음료 이름을 짧게 말하는 연습부터 시작해 보세요."
+                ),
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
+                        "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+            {
+                "comprehensionScore": 39,
+                "feedbackSummary": "주문하려는 음료가 전달되지 않아 목표를 달성하지 못했어요. 다음에는 음료 이름을 넣어 완성된 주문 문장으로 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 101,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 'I want'만 듣고는 어떤 음료를 주문하는지 이해할 수 없었어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '나는 원한다'처럼 들려요.",
+                        "betterExpression": "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 2)
+        self.assertIn("repair", systems[1].lower())
+        self.assertLessEqual(len(result.feedbackSummary), 120)
+        self.assertLessEqual(result.feedbackSummary.count("."), 2)
+        self.assertEqual(
+            result.feedbackSummary,
+            "주문하려는 음료가 전달되지 않아 목표를 달성하지 못했어요. 다음에는 음료 이름을 넣어 완성된 주문 문장으로 말해 보세요.",
+        )
+
     def test_feedback_quality_review_repairs_good_response_misclassified_as_feedback_required(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -765,7 +831,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions", prompt)
         self.assertIn("Do not give 100 unless the utterance is completely natural and idiomatic", prompt)
         self.assertIn("Do not evaluate capitalization, punctuation, or spelling because the input is based on spoken utterances", prompt)
-        self.assertIn("feedbackSummary must mention recurring grammar or expression patterns when multiple turns show the same issue", prompt)
+        self.assertIn("feedbackSummary must be 2 short Korean sentences by default", prompt)
+        self.assertIn("Use 3 sentences only when multiple turns share a recurring grammar or expression pattern", prompt)
+        self.assertIn("Keep feedbackSummary under 120 Korean characters", prompt)
+        self.assertIn("Do not repeat detailed per-turn explanations", prompt)
         self.assertIn("betterExpression must start with the English improved sentence", prompt)
         self.assertNotIn("음료를 주문할 때는 I'd like", prompt)
         self.assertIn("I want ice one", prompt)

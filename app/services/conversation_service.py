@@ -17,6 +17,7 @@ from app.models.conversation import (
 
 
 logger = get_logger("conversation")
+MAX_FEEDBACK_SUMMARY_CHARS = 120
 
 
 class ConversationGenerationError(Exception):
@@ -140,9 +141,14 @@ def _feedback_system_prompt() -> str:
         "Return ONLY valid JSON matching this schema exactly: "
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
-        "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
-        "feedbackSummary must mention recurring grammar or expression patterns when multiple turns show the same issue. "
-        "feedbackSummary must include one focus point for the user's next practice. "
+        "feedbackSummary is Korean and concise. "
+        "feedbackSummary must be 2 short Korean sentences by default. "
+        "Use 3 sentences only when multiple turns share a recurring grammar or expression pattern. "
+        "Keep feedbackSummary under 120 Korean characters. "
+        "Sentence 1 must summarize whether the scenario goal was achieved and how well the user was understood. "
+        "Sentence 2 must give the single most important next practice focus. "
+        "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
+        "Do not list multiple strengths and weaknesses. "
         "For each turn, preserve the exact turnId from the request. "
         "Evaluate grammar correctness, naturalness, and fluency in addition to scenario fit. "
         "Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions. "
@@ -355,7 +361,7 @@ def _deterministic_feedback_issues(
     response: ConversationFeedbackResponse,
 ) -> list[str]:
     turns_by_id = {turn.turnId: turn for turn in request.turns}
-    issues: list[str] = []
+    issues = _feedback_summary_issues(response.feedbackSummary)
     for turn_feedback in response.turnFeedbacks:
         turn = turns_by_id.get(turn_feedback.turnId)
         issue_prefix = f"turnId {turn_feedback.turnId}: "
@@ -398,6 +404,23 @@ def _deterministic_feedback_issues(
             issues.append(issue_prefix + "betterExpression must start with an English improved expression.")
 
     return issues
+
+
+def _feedback_summary_issues(feedback_summary: str) -> list[str]:
+    issues: list[str] = []
+    if len(feedback_summary.strip()) > MAX_FEEDBACK_SUMMARY_CHARS:
+        issues.append(f"feedbackSummary must stay under {MAX_FEEDBACK_SUMMARY_CHARS} Korean characters.")
+    if _count_feedback_summary_sentences(feedback_summary) > 3:
+        issues.append("feedbackSummary must use at most 3 Korean sentences.")
+    return issues
+
+
+def _count_feedback_summary_sentences(feedback_summary: str) -> int:
+    stripped = feedback_summary.strip()
+    if not stripped:
+        return 0
+    sentence_endings = re.findall(r"[.!?]+(?:\s|$)", stripped)
+    return len(sentence_endings) if sentence_endings else 1
 
 
 def _should_review_feedback_quality(response: ConversationFeedbackResponse) -> bool:
@@ -480,6 +503,8 @@ def _feedback_repair_system_prompt() -> str:
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
         "Fix only the listed issues while preserving the request turn order and exact turnId values. "
         "Do not add or remove fields. "
+        "feedbackSummary must be concise: 2 short Korean sentences by default, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
+        "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
         "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
         "For incomplete fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "
