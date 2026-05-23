@@ -56,3 +56,9 @@
 - 제품 정책은 `I want coffee`처럼 `I want + 구체 음료`가 문법적으로 완벽하지 않으므로 +1 피드백을 주는 방향으로 확정했다. 슬롯 추출은 성공으로 유지하되 최종 피드백에서는 near-miss로 분류한다.
 - 로컬 서버 검증에서 `I want coffee`는 82점, `feedbackRequired=true`, `nativeUnderstanding=외국인은 사용자가 커피를 주문하고 싶다고 이해했어요.`, `nativeLanguageInterpretation=한국어로 비유하자면, '커피 원해요'처럼 들려요.`, `betterExpression=I'd like a coffee, please...`로 정리됐다.
 - Dev 배포 후 같은 입력을 검증했다. `next-question`은 `drink` 슬롯을 채우고 size 질문으로 넘어갔으며, `feedback`은 82점과 +1 피드백을 반환했다. `I want drink`는 계속 39점과 구체 음료 불명확 피드백을 반환했다.
+- Solar Pro 3와 GPT-4o mini 비교는 모델 자체 품질을 보기 위한 확인이다. 서비스의 `_feedback_system_prompt()`와 `_feedback_user_prompt(...)`를 그대로 사용하고, 같은 입력, `temperature=0`, 같은 `max_tokens` 조건으로 비교한다.
+- raw LLM 응답 기준으로는 GPT-4o mini가 더 안정적이었다. 네 케이스 중 GPT-4o mini는 3개가 정책 체크를 통과했고, Solar Pro 3는 1개만 통과했다. 특히 Solar Pro 3는 `nativeUnderstanding`에 영어 원문을 인용하거나 `nativeLanguageInterpretation` 형식을 깨는 경우가 반복됐다.
+- 서비스 최종 파이프라인 기준으로는 두 모델 모두 네 케이스의 deterministic issue가 0건이었다. 다만 latency는 Solar Pro 3가 약 0.8-1.2초, GPT-4o mini가 약 1.5-4.4초로 Solar Pro 3가 더 빨랐다.
+- Dev 배포 서버는 모델 비교 결과를 바탕으로 임시로 OpenAI GPT-4o mini를 사용하도록 전환한다. SSM의 `LLM_PROVIDER`와 `OPENAI_MODEL`을 source of truth로 두고, EC2 런타임 `.env` 갱신과 서비스 재시작까지 확인해야 실제 반영으로 본다.
+- Dev SSM은 `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`로 변경했다. EC2 `i-0dc0d115cd058cb2d`에서 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`를 SSM 값으로 재생성하고 `saynow-ai`를 재시작했으며, 런타임 파일도 같은 값을 보여줬다.
+- Dev 검증에서 `/health`는 `{"status":"ok"}`를 반환했다. `I want coffee` 피드백은 80점, `feedbackRequired=true`, `betterExpression=I'd like a coffee, please...`를 반환했고, `next-question`은 `drink` 슬롯을 채운 뒤 사이즈 질문으로 넘어갔다.

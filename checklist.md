@@ -42,3 +42,5 @@
 - [x] 로컬 서버와 Dev 배포 서버에 동일 입력을 보내 프롬프트 개선 효과와 latency 비교.
 - [x] `I want + 구체 음료`를 이해 가능하지만 +1 피드백이 필요한 near-miss로 고정.
 - [x] near-miss 정책을 로컬 서버와 Dev 배포 서버에서 검증.
+- [x] Solar Pro 3와 GPT-4o mini에 동일 피드백 입력을 넣고 출력 품질 비교.
+- [x] Dev 배포 서버 LLM provider를 OpenAI GPT-4o mini로 전환하고 런타임 검증.
