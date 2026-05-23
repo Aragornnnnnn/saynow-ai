@@ -35,7 +35,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             nextQuestion=None,
             translatedQuestion=None,
             filledSlots=[],
-            turnClassification=NextQuestionTurnClassification.SLOT_ANSWER,
+            turnClassification=NextQuestionTurnClassification.ANSWER,
         )
 
     if _must_not_fill_slots(request.userUtterance):
@@ -65,6 +65,11 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if next_question is None or translated_question is None:
         raise ConversationGenerationError("next question is required while unfilled slots remain")
 
+    next_question, translated_question = _ensure_visible_information_response(
+        request,
+        next_question,
+        translated_question,
+    )
     return NextQuestionResponse(
         nextQuestion=next_question,
         translatedQuestion=translated_question,
@@ -161,13 +166,12 @@ def _next_question_system_prompt() -> str:
     return (
         "You generate follow-up questions for an English speaking practice scenario. "
         "Return ONLY valid JSON matching this schema exactly: "
-        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"SLOT_ANSWER|RECOMMENDATION_REQUEST|INFORMATION_REQUEST|OPTION_COMPLETION|INVALID_RESPONSE"}. '
-        "Decision Workflow: first identify whether the latest utterance is a concrete slot answer, a recommendation request, an information request, a no-more options completion, or a non-answer. "
-        "A concrete slot answer can newly fill a slot. "
-        "Recommendation request means the user asks what you recommend; it is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value. "
-        "Information request means the user asks to see a menu, options, available choices, rules, or details; it is relevant, but it does not fill a target slot by itself. "
-        "No-more options completion means the user says That's all, That's it, nothing else, or no more after an option or customization question; it fills the current option or customization slot. "
-        "turnClassification must describe the latest utterance: SLOT_ANSWER for concrete slot answers, RECOMMENDATION_REQUEST for recommendation requests, INFORMATION_REQUEST for information requests, OPTION_COMPLETION for option or customization completion, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses. "
+        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}. '
+        "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer. "
+        "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question. "
+        "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value. "
+        "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic. "
+        "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses. "
         "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
         "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
         "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
@@ -181,12 +185,14 @@ def _next_question_system_prompt() -> str:
         "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
         "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
         "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
+        "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, options, available choices, rules, or details, include concrete useful information inside nextQuestion before asking the next short question. "
+        "Do not answer information requests with empty phrases such as Here are the options or Here is the menu unless you also include the actual options. "
         "Do not include lists, explanations, or multiple follow-up questions. "
         "Use only the provided slot names. "
         "Few-shot calibration examples: "
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"RECOMMENDATION_REQUEST"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"Here are the menu options. What would you like to choose?","translatedQuestion":"메뉴 옵션은 이렇습니다. 무엇을 선택하시겠어요?","turnClassification":"INFORMATION_REQUEST"}. '
-        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"OPTION_COMPLETION"}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
+        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}. '
         'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
     )
 
@@ -959,6 +965,56 @@ def _is_information_request(user_utterance: str) -> bool:
     ])
 
 
+def _ensure_visible_information_response(
+    request: NextQuestionRequest,
+    next_question: str,
+    translated_question: str,
+) -> tuple[str, str]:
+    if not _is_menu_information_request(request):
+        return next_question, translated_question
+    if _has_visible_menu_options(next_question):
+        return next_question, translated_question
+
+    return (
+        "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
+        "메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?",
+    )
+
+
+def _is_menu_information_request(request: NextQuestionRequest) -> bool:
+    if not _is_information_request(request.userUtterance):
+        return False
+
+    compact_utterance = _normalize_utterance(request.userUtterance).replace("'", "")
+    compact_context = _normalize_utterance(
+        " ".join([
+            request.originalQuestion,
+            request.scenarioTitle,
+            request.scenarioGoal,
+            " ".join(slot.slotName for slot in request.slots),
+        ])
+    ).replace("'", "")
+    menu_markers = ["menu", "drink", "coffee", "cafe", "beverage", "order"]
+    return any(marker in compact_utterance or marker in compact_context for marker in menu_markers)
+
+
+def _has_visible_menu_options(next_question: str) -> bool:
+    compact = _normalize_utterance(next_question).replace("'", "")
+    menu_items = [
+        "americano",
+        "latte",
+        "cappuccino",
+        "tea",
+        "coffee",
+        "espresso",
+        "mocha",
+        "ade",
+        "smoothie",
+        "juice",
+    ]
+    return sum(1 for item in menu_items if item in compact) >= 2
+
+
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
     compact_question = _normalize_utterance(original_question).replace("'", "")
     compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
@@ -1044,28 +1100,37 @@ def _resolve_next_question_turn_classification(
     filled_slots: list[FilledSlotResponse],
 ) -> NextQuestionTurnClassification:
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
-        return NextQuestionTurnClassification.OPTION_COMPLETION
+        return NextQuestionTurnClassification.ANSWER
     if filled_slots and _fills_option_or_customization_slot(filled_slots):
-        return NextQuestionTurnClassification.OPTION_COMPLETION
+        return NextQuestionTurnClassification.ANSWER
     if filled_slots:
-        return NextQuestionTurnClassification.SLOT_ANSWER
+        return NextQuestionTurnClassification.ANSWER
     if _is_clear_preference_or_option_answer(request.originalQuestion, request.userUtterance):
-        return NextQuestionTurnClassification.OPTION_COMPLETION
+        return NextQuestionTurnClassification.ANSWER
     if _is_recommendation_request(request.userUtterance):
-        return NextQuestionTurnClassification.RECOMMENDATION_REQUEST
+        return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_information_request(request.userUtterance):
-        return NextQuestionTurnClassification.INFORMATION_REQUEST
+        return NextQuestionTurnClassification.ASSISTANCE_REQUEST
 
     raw_classification = data.get("turnClassification")
     if isinstance(raw_classification, str):
+        legacy_classification_map = {
+            "SLOT_ANSWER": NextQuestionTurnClassification.ANSWER,
+            "OPTION_COMPLETION": NextQuestionTurnClassification.ANSWER,
+            "RECOMMENDATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
+            "INFORMATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
+        }
+        legacy_classification = legacy_classification_map.get(raw_classification.strip())
+        if legacy_classification is not None:
+            return legacy_classification
+
         try:
             classification = NextQuestionTurnClassification(raw_classification.strip())
         except ValueError:
             classification = None
         if classification in {
-            NextQuestionTurnClassification.RECOMMENDATION_REQUEST,
-            NextQuestionTurnClassification.INFORMATION_REQUEST,
-            NextQuestionTurnClassification.OPTION_COMPLETION,
+            NextQuestionTurnClassification.ANSWER,
+            NextQuestionTurnClassification.ASSISTANCE_REQUEST,
             NextQuestionTurnClassification.INVALID_RESPONSE,
         }:
             return classification

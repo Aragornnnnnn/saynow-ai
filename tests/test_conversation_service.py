@@ -46,7 +46,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["temperature"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
         self.assertEqual(result.translatedQuestion, "어떤 사이즈로 드릴까요?")
-        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_returns_null_when_all_unfilled_slots_are_newly_filled(self):
         from app.models.conversation import NextQuestionRequest
@@ -76,7 +76,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["size", "temperature"])
         self.assertIsNone(result.nextQuestion)
         self.assertIsNone(result.translatedQuestion)
-        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_blocks_non_answer_utterances_even_when_model_returns_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -236,7 +236,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["drink"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
-        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_classifies_recommendation_request_without_filling_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -255,15 +255,15 @@ class ConversationServiceTest(unittest.TestCase):
             "filledSlots": [],
             "nextQuestion": "I recommend a cappuccino. Would you like to order that?",
             "translatedQuestion": "카푸치노를 추천해요. 그걸로 주문하시겠어요?",
-            "turnClassification": "RECOMMENDATION_REQUEST",
+            "turnClassification": "ASSISTANCE_REQUEST",
         })
 
         result = self.service.generate_next_question(request)
 
         self.assertEqual(result.filledSlots, [])
-        self.assertEqual(result.turnClassification, "RECOMMENDATION_REQUEST")
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
 
-    def test_next_question_classifies_information_request_without_filling_slots(self):
+    def test_next_question_classifies_information_request_as_assistance_and_provides_visible_options(self):
         from app.models.conversation import NextQuestionRequest
 
         request = NextQuestionRequest.model_validate({
@@ -280,13 +280,17 @@ class ConversationServiceTest(unittest.TestCase):
             "filledSlots": [],
             "nextQuestion": "Here are the menu options. What would you like to order?",
             "translatedQuestion": "메뉴 옵션은 이렇습니다. 어떤 음료를 주문하고 싶으신가요?",
-            "turnClassification": "INFORMATION_REQUEST",
+            "turnClassification": "ASSISTANCE_REQUEST",
         })
 
         result = self.service.generate_next_question(request)
 
         self.assertEqual(result.filledSlots, [])
-        self.assertEqual(result.turnClassification, "INFORMATION_REQUEST")
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(
+            result.nextQuestion,
+            "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
+        )
 
     def test_next_question_classifies_option_completion_before_slot_answer(self):
         from app.models.conversation import NextQuestionRequest
@@ -306,13 +310,13 @@ class ConversationServiceTest(unittest.TestCase):
             "filledSlots": [{"slotName": "customOptions"}],
             "nextQuestion": None,
             "translatedQuestion": None,
-            "turnClassification": "SLOT_ANSWER",
+            "turnClassification": "ANSWER",
         })
 
         result = self.service.generate_next_question(request)
 
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["customOptions"])
-        self.assertEqual(result.turnClassification, "OPTION_COMPLETION")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_classifies_non_cafe_slot_preference_as_slot_answer(self):
         from app.models.conversation import NextQuestionRequest
@@ -330,13 +334,13 @@ class ConversationServiceTest(unittest.TestCase):
             "filledSlots": [{"slotName": "seatPreference"}],
             "nextQuestion": None,
             "translatedQuestion": None,
-            "turnClassification": "OPTION_COMPLETION",
+            "turnClassification": "ANSWER",
         })
 
         result = self.service.generate_next_question(request)
 
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["seatPreference"])
-        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_prompt_requires_explicit_slot_evidence(self):
         prompt = self.service._next_question_system_prompt()
@@ -356,18 +360,17 @@ class ConversationServiceTest(unittest.TestCase):
         prompt = self.service._next_question_system_prompt()
 
         self.assertIn("Decision Workflow", prompt)
-        self.assertIn("Recommendation request", prompt)
-        self.assertIn("Information request", prompt)
-        self.assertIn("No-more options completion", prompt)
+        self.assertIn("Assistance request", prompt)
         self.assertIn("turnClassification", prompt)
-        self.assertIn("SLOT_ANSWER", prompt)
-        self.assertIn("INFORMATION_REQUEST", prompt)
+        self.assertIn("ANSWER", prompt)
+        self.assertIn("ASSISTANCE_REQUEST", prompt)
         self.assertIn("INVALID_RESPONSE", prompt)
+        self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
         self.assertIn("Can you recommend something?", prompt)
         self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
         self.assertIn("Can I see the menu?", prompt)
-        self.assertIn("Here are the menu options. What would you like to choose?", prompt)
+        self.assertIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
         self.assertIn("That's all.", prompt)
         self.assertIn('"filledSlots":[{"slotName":"customOptions"}]', prompt)
 

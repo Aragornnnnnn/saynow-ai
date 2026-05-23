@@ -66,3 +66,5 @@
 - [x] `NextQuestionResponse` 모델과 route 응답 계약에 `turnClassification`을 반영한다.
 - [x] LLM prompt와 deterministic fallback이 안정적인 분류를 반환하도록 구현한다.
 - [x] 관련 단위 테스트와 로컬 실제 모델 smoke 검증을 실행한다.
+- [x] `turnClassification`을 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화하는 회귀 테스트를 추가한다.
+- [x] 메뉴 정보 요청 응답에 실제 메뉴 항목이 보이도록 프롬프트와 보정 로직을 수정한다.

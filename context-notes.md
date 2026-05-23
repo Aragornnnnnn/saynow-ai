@@ -91,3 +91,5 @@
 - 2026-05-24 `next-question` 응답에 `turnClassification`을 추가했다. 추천 요청은 `RECOMMENDATION_REQUEST`, 메뉴 보기 요청은 `INFORMATION_REQUEST`, custom option 완료는 `OPTION_COMPLETION`, 실패 발화는 `INVALID_RESPONSE`, 일반 슬롯 답변은 `SLOT_ANSWER`로 정규화한다.
 - 2026-05-24 실제 GPT-4o mini 로컬 평가에서 공통 `NQ-01`-`NQ-10`은 모두 성공했다. `NQ-01`, `NQ-02`는 `RECOMMENDATION_REQUEST`, `NQ-03`은 `INFORMATION_REQUEST`, `NQ-05`는 `INVALID_RESPONSE`, `NQ-07`-`NQ-10`은 `OPTION_COMPLETION`으로 분류됐다.
 - 2026-05-24 공항, 호텔, 식당 smoke next-question은 슬롯을 채우는 답변이므로 `SLOT_ANSWER`로 보정했다. `Window seat, please.`, `Non-smoking room, please.`, `Table for two, please.`는 모두 `filledSlots`가 채워지고 하트 차감 대상이 아니다.
+- 2026-05-24 사용자가 `INFORMATION_REQUEST`와 `RECOMMENDATION_REQUEST`는 모두 추가 정보 요청이고, `OPTION_COMPLETION`은 질문에 대한 자연스러운 답변이라 별도 상태가 부자연스럽다고 지적했다. 이에 따라 `turnClassification`은 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화한다.
+- 2026-05-24 사용자는 AI 응답 텍스트만 볼 수 있으므로 메뉴 요청에서 `Here are the menu options`처럼 비어 있는 안내만 주면 안 된다. 메뉴 정보 요청에는 실제 메뉴 항목을 `nextQuestion`에 포함해야 하며, 모델이 구체 옵션을 빠뜨리면 로컬 보정으로 `iced Americano`, `latte`, `cappuccino`, `tea`를 노출한다.
