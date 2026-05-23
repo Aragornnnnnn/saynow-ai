@@ -41,4 +41,4 @@
 - [x] `prompt-engineering-patterns` 기준으로 feedback 프롬프트를 classification, field policy, self-check 섹션으로 재구성.
 - [x] 로컬 서버와 Dev 배포 서버에 동일 입력을 보내 프롬프트 개선 효과와 latency 비교.
 - [x] `I want + 구체 음료`를 이해 가능하지만 +1 피드백이 필요한 near-miss로 고정.
-- [ ] near-miss 정책을 로컬 서버와 Dev 배포 서버에서 검증.
+- [x] near-miss 정책을 로컬 서버와 Dev 배포 서버에서 검증.

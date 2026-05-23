@@ -55,3 +55,4 @@
 - 최종 로컬 비교에서는 `I want coffee`가 `feedbackRequired=false`로 떨어졌다. 이 케이스를 “음료는 명확하므로 통과”로 볼지, “주문 표현이 직접적이므로 +1 피드백 필요”로 볼지는 제품 정책 결정이 필요하다.
 - 제품 정책은 `I want coffee`처럼 `I want + 구체 음료`가 문법적으로 완벽하지 않으므로 +1 피드백을 주는 방향으로 확정했다. 슬롯 추출은 성공으로 유지하되 최종 피드백에서는 near-miss로 분류한다.
 - 로컬 서버 검증에서 `I want coffee`는 82점, `feedbackRequired=true`, `nativeUnderstanding=외국인은 사용자가 커피를 주문하고 싶다고 이해했어요.`, `nativeLanguageInterpretation=한국어로 비유하자면, '커피 원해요'처럼 들려요.`, `betterExpression=I'd like a coffee, please...`로 정리됐다.
+- Dev 배포 후 같은 입력을 검증했다. `next-question`은 `drink` 슬롯을 채우고 size 질문으로 넘어갔으며, `feedback`은 82점과 +1 피드백을 반환했다. `I want drink`는 계속 39점과 구체 음료 불명확 피드백을 반환했다.
