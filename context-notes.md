@@ -56,3 +56,40 @@
 - 제품 정책은 `I want coffee`처럼 `I want + 구체 음료`가 문법적으로 완벽하지 않으므로 +1 피드백을 주는 방향으로 확정했다. 슬롯 추출은 성공으로 유지하되 최종 피드백에서는 near-miss로 분류한다.
 - 로컬 서버 검증에서 `I want coffee`는 82점, `feedbackRequired=true`, `nativeUnderstanding=외국인은 사용자가 커피를 주문하고 싶다고 이해했어요.`, `nativeLanguageInterpretation=한국어로 비유하자면, '커피 원해요'처럼 들려요.`, `betterExpression=I'd like a coffee, please...`로 정리됐다.
 - Dev 배포 후 같은 입력을 검증했다. `next-question`은 `drink` 슬롯을 채우고 size 질문으로 넘어갔으며, `feedback`은 82점과 +1 피드백을 반환했다. `I want drink`는 계속 39점과 구체 음료 불명확 피드백을 반환했다.
+- Solar Pro 3와 GPT-4o mini 비교는 모델 자체 품질을 보기 위한 확인이다. 서비스의 `_feedback_system_prompt()`와 `_feedback_user_prompt(...)`를 그대로 사용하고, 같은 입력, `temperature=0`, 같은 `max_tokens` 조건으로 비교한다.
+- raw LLM 응답 기준으로는 GPT-4o mini가 더 안정적이었다. 네 케이스 중 GPT-4o mini는 3개가 정책 체크를 통과했고, Solar Pro 3는 1개만 통과했다. 특히 Solar Pro 3는 `nativeUnderstanding`에 영어 원문을 인용하거나 `nativeLanguageInterpretation` 형식을 깨는 경우가 반복됐다.
+- 서비스 최종 파이프라인 기준으로는 두 모델 모두 네 케이스의 deterministic issue가 0건이었다. 다만 latency는 Solar Pro 3가 약 0.8-1.2초, GPT-4o mini가 약 1.5-4.4초로 Solar Pro 3가 더 빨랐다.
+- Dev 배포 서버는 모델 비교 결과를 바탕으로 임시로 OpenAI GPT-4o mini를 사용하도록 전환한다. SSM의 `LLM_PROVIDER`와 `OPENAI_MODEL`을 source of truth로 두고, EC2 런타임 `.env` 갱신과 서비스 재시작까지 확인해야 실제 반영으로 본다.
+- Dev SSM은 `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`로 변경했다. EC2 `i-0dc0d115cd058cb2d`에서 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`를 SSM 값으로 재생성하고 `saynow-ai`를 재시작했으며, 런타임 파일도 같은 값을 보여줬다.
+- Dev 검증에서 `/health`는 `{"status":"ok"}`를 반환했다. `I want coffee` 피드백은 80점, `feedbackRequired=true`, `betterExpression=I'd like a coffee, please...`를 반환했고, `next-question`은 `drink` 슬롯을 채운 뒤 사이즈 질문으로 넘어갔다.
+- 2026-05-23 조사 범위는 시나리오 1의 메뉴 추천 요청과 시나리오 3의 커스텀 음료 완료 발화 `That’s all`이다. 우선 로컬 서비스 계약과 기존 안전장치에서 재현하고, API 키가 가능한 경우 실제 LLM 경로까지 확인한다.
+- 2026-05-23 dev backend SSM의 `SAYNOW_AI_BASE_URL`은 `http://15.164.34.102:8080`, `SAYNOW_AI_CLIENT_MODE`은 `remote`다. 이전 기본값 `http://43.202.146.182:8080`은 `/openapi.json` 기준 1차 MVP 서버라 `/api/v1/conversation/*`가 404를 반환했다.
+- 2026-05-23 dev AI `POST /api/v1/conversation/next-question`에서 `Can you recommend a menu?`는 시나리오 1 카페 주문 payload와 메뉴 추천 payload 모두 `filledSlots=[]`로 반환됐다. 백엔드는 `filledSlots`가 비면 `session.decreaseHeart()`를 호출하므로 하트 차감은 AI 슬롯 미충족 판정에서 시작된다.
+- 2026-05-23 dev AI `POST /api/v1/conversation/next-question`에서 커스텀 음료 payload의 `That’s all.`도 `filledSlots=[]`, `nextQuestion=What custom options would you like for your drink?`를 반환했다. 완료 의사나 추가 옵션 없음이 슬롯 충족으로 해석되지 않아 백엔드가 하트를 줄이고 같은 옵션 질문을 이어갈 수 있다.
+- 2026-05-23 프롬프트 실험 결과는 Obsidian vault `/Users/sangmin8817/Desktop/기타 자료/Obsidian/SayNow`에 `SayNow AI 프롬프트 실험 로그.md`로 정리한다. 문서 최상단에 프롬프트별 기록 방식과 공통 10개 next-question input을 고정해 이후 프롬프트별 비교 기준을 맞춘다.
+- 2026-05-23 프롬프트 실험 로그는 `NQ-01`부터 `NQ-10`까지의 next-question input뿐 아니라 `FB-01`부터 `FB-10`까지의 feedback 품질 input도 함께 고정한다. 각 프롬프트 기록은 `filledSlots`와 하트 차감 가능성뿐 아니라 `feedbackRequired`, `comprehensionScore`, `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression`, `feedbackSummary`까지 판정한다.
+- 2026-05-23 Obsidian baseline의 현재 프롬프트는 dev에서 별도로 확인한 미확인 문구가 아니라, 현재 로컬 `app/services/conversation_service.py`의 `_next_question_system_prompt()`와 `_feedback_system_prompt()` 원문과 동일한 것으로 기록한다.
+- 2026-05-23 NQ 테스트 결과는 output만 남기지 않는다. 각 항목마다 들어온 AI 질문 `originalQuestion`, 사용자 입력 `userUtterance`, output 요약, 판정, 문제점을 한 줄에서 같이 기록하고, raw request와 raw output은 필요할 때 별도 JSON 블록으로 붙인다.
+- 2026-05-23 현재 프롬프트의 feedback 품질은 dev AI `POST /api/v1/conversation/feedback`에 `FB-01`부터 `FB-10`까지 실제 호출해서 확인했다. `FB-01`, `FB-02`, `FB-08`, `FB-10`은 기대 범위로 봤고, `FB-03`과 `FB-04`는 미완성 발화 판정은 맞지만 `betterExpression`이 여전히 generic `drink`에 머물렀다.
+- 2026-05-23 `FB-05`는 메뉴 추천 요청을 구체 음료 누락으로 평가해서 제품 정책 확인이 필요하다. `FB-06`은 `That’s all.`에 `feedbackRequired=true`가 붙었고, `FB-07`은 `No sugar please.`에 75점과 개선 피드백이 붙어서 옵션 완료 발화 정책과 품질 기준을 따로 정해야 한다.
+- 2026-05-23 `FB-09`의 nonsense 발화는 HTTP 500과 `AI_GENERATION_FAILED`를 반환했다. 이 항목은 피드백 문구 품질이 아니라 생성 실패로 분리해서 추적한다.
+- 2026-05-23 Prompt 2는 사용자가 선택한 `프롬프트 정리 + few-shot + Judge 기준 보강` 범위로 진행한다. Structured Output 코드 변경은 다음 단계로 분리하고, 이번 변경은 현재 LLM 호출 구조와 Pydantic 검증, 기존 repair 루프 위에서 판단 품질을 높이는 데 집중한다.
+- 2026-05-23 Prompt 2의 제품 해석은 추천 요청을 주문 실패로 억지 교정하지 않고 추천 요청 의도를 보존하는 것이다. 옵션 질문에 대한 `That’s all.`은 추가 옵션 없음이라는 자연스러운 완료 응답으로 보고, `I want drink` 같은 generic order는 개선문에서 generic `drink`에 머물지 않도록 한다.
+- 2026-05-23 Prompt 2 구현은 `next-question` system prompt에 decision workflow와 few-shot을 추가하고, `feedback` system prompt에 `I want drink`, 추천 요청, `That’s all.` calibration 예시를 추가하는 방식으로 했다. feedback quality reviewer는 generic 개선문, 추천 요청 의도 변경, 옵션 완료 응답 오판을 semantic issue로 repair에 넘긴다.
+- 2026-05-23 Prompt 2 검증은 추가 회귀 테스트 6개가 RED에서 실패한 뒤 GREEN으로 통과했고, 전체 `unittest discover` 42개와 `compileall`, `git diff --check`가 통과했다. Obsidian 실험 로그에는 Prompt 2 섹션을 추가했지만 dev 서버에 배포하지 않았으므로 `NQ-01`-`NQ-10`, `FB-01`-`FB-10` live output은 미실행으로 표시했다.
+- 2026-05-23 Prompt 2는 dev SSM의 `/saynow/develop/OPENAI_API_KEY`와 `/saynow/develop/OPENAI_MODEL`을 값 출력 없이 환경변수로만 주입해 로컬 함수 호출로 실제 모델 테스트를 실행했다. 모델은 `gpt-4o-mini`, 커밋은 `84e6228`, `NQ-01`-`NQ-10`과 `FB-01`-`FB-10` 모두 호출 성공했다.
+- 2026-05-23 로컬 실제 모델 결과에서 `That’s all.`은 `NQ-07`, `NQ-08`에서 `customOptions`를 채우고 `FB-06`에서 `feedbackRequired=false`가 되어 기존 문제를 해결했다. `FB-03`, `FB-04`의 `betterExpression`도 generic `drink`가 아니라 `I'd like a coffee, please.`로 개선됐다.
+- 2026-05-23 남은 문제는 `NQ-01`, `NQ-02` 추천 요청이 자연스럽게 추천 응답을 하더라도 `filledSlots=[]`라 백엔드 하트 차감 가능성이 남는 점, `NQ-03` 메뉴 보기 요청이 아직 처리되지 않는 점, `FB-07`의 `No sugar, please.`를 좋은 옵션 응답으로 볼지 near-miss로 볼지 정책 결정이 필요한 점이다. Prompt 2 결과는 Obsidian 실험 로그에 반영했다.
+- 2026-05-23 Prompt 3는 사용자가 선택한 `AI 서버 내부 일반화` 방향으로 진행한다. 목표는 카페 전용 문자열을 core policy에서 걷어내고, 명확한 옵션/선호 답변은 카페, 공항, 호텔, 식당 모두에서 좋은 응답으로 보는 일반 원칙을 고정하는 것이다.
+- 2026-05-23 `No sugar, please.` 자체를 하드코딩하지 않는다. 대신 `clear preference or option answer` 범주를 만들고, 예시는 카페 `No sugar, please.`, 공항 `Window seat, please.`, 호텔 `Non-smoking room, please.`, 식당 `Table for two, please.`처럼 분산한다.
+- 2026-05-23 Prompt 3 구현은 `Domain-neutral policy`, `Information request`, `Clear preference or option answer`, `Direct want + concrete service item response`를 프롬프트에 추가하는 방식으로 했다. 카테고리별 프롬프트 분리는 하지 않는다.
+- 2026-05-23 명확한 옵션/선호 답변 fallback은 짧은 선택형 답변에만 적용한다. `Less ice do please.`처럼 동사 `do`가 들어간 어색한 옵션 요청은 좋은 응답으로 보정하지 않고 기존 +1 피드백 대상에 남긴다.
+- 2026-05-23 실제 GPT-4o mini 호출에서 오프토픽 `FB-09`가 한 번 `feedbackRequired=true`와 `betterExpression=null`을 반환했다. Pydantic 검증 전에 known off-topic 필수 필드를 채우고, generic `I'd like a drink` 개선문은 구체 예시로 보정하는 안전장치를 추가했다.
+- 2026-05-23 Prompt 3 로컬 실제 모델 결과는 공통 `NQ-01`-`NQ-10`, `FB-01`-`FB-10`, 공항/호텔/식당 smoke 6개 모두 성공했다. 남은 핵심 문제는 추천 요청과 메뉴 보기 요청이 `filledSlots=[]`라 백엔드 하트 차감 가능성이 여전히 남는 점이다.
+- 2026-05-24 다음 개선은 `filledSlots=[]`만으로 하트 차감을 판단하는 문제를 해결하는 것이다. AI 서버는 `turnClassification`으로 발화 성격만 분류하고, 하트 차감 정책은 백엔드가 결정하는 방향으로 잡았다.
+- 2026-05-24 `turnClassification` 후보는 `SLOT_ANSWER`, `RECOMMENDATION_REQUEST`, `INFORMATION_REQUEST`, `OPTION_COMPLETION`, `INVALID_RESPONSE`로 시작한다. `validProgress` boolean은 AI 서버 계약에 넣지 않는다.
+- 2026-05-24 `next-question` 응답에 `turnClassification`을 추가했다. 추천 요청은 `RECOMMENDATION_REQUEST`, 메뉴 보기 요청은 `INFORMATION_REQUEST`, custom option 완료는 `OPTION_COMPLETION`, 실패 발화는 `INVALID_RESPONSE`, 일반 슬롯 답변은 `SLOT_ANSWER`로 정규화한다.
+- 2026-05-24 실제 GPT-4o mini 로컬 평가에서 공통 `NQ-01`-`NQ-10`은 모두 성공했다. `NQ-01`, `NQ-02`는 `RECOMMENDATION_REQUEST`, `NQ-03`은 `INFORMATION_REQUEST`, `NQ-05`는 `INVALID_RESPONSE`, `NQ-07`-`NQ-10`은 `OPTION_COMPLETION`으로 분류됐다.
+- 2026-05-24 공항, 호텔, 식당 smoke next-question은 슬롯을 채우는 답변이므로 `SLOT_ANSWER`로 보정했다. `Window seat, please.`, `Non-smoking room, please.`, `Table for two, please.`는 모두 `filledSlots`가 채워지고 하트 차감 대상이 아니다.
+- 2026-05-24 사용자가 `INFORMATION_REQUEST`와 `RECOMMENDATION_REQUEST`는 모두 추가 정보 요청이고, `OPTION_COMPLETION`은 질문에 대한 자연스러운 답변이라 별도 상태가 부자연스럽다고 지적했다. 이에 따라 `turnClassification`은 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화한다.
+- 2026-05-24 사용자는 AI 응답 텍스트만 볼 수 있으므로 메뉴 요청에서 `Here are the menu options`처럼 비어 있는 안내만 주면 안 된다. 메뉴 정보 요청에는 실제 메뉴 항목을 `nextQuestion`에 포함해야 하며, 모델이 구체 옵션을 빠뜨리면 로컬 보정으로 `iced Americano`, `latte`, `cappuccino`, `tea`를 노출한다.

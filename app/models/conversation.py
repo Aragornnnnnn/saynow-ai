@@ -1,4 +1,6 @@
 # 2차 MVP 대화 API 요청과 응답 데이터 구조를 정의한다.
+from enum import StrEnum
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -27,6 +29,12 @@ class FilledSlotResponse(BaseModel):
         return _validate_not_blank(value)
 
 
+class NextQuestionTurnClassification(StrEnum):
+    ANSWER = "ANSWER"
+    ASSISTANCE_REQUEST = "ASSISTANCE_REQUEST"
+    INVALID_RESPONSE = "INVALID_RESPONSE"
+
+
 class NextQuestionRequest(BaseModel):
     originalQuestion: str
     userUtterance: str
@@ -44,6 +52,7 @@ class NextQuestionResponse(BaseModel):
     nextQuestion: str | None
     translatedQuestion: str | None
     filledSlots: list[FilledSlotResponse]
+    turnClassification: NextQuestionTurnClassification
 
 
 class FeedbackTurnRequest(BaseModel):

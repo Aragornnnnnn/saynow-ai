@@ -42,3 +42,29 @@
 - [x] 로컬 서버와 Dev 배포 서버에 동일 입력을 보내 프롬프트 개선 효과와 latency 비교.
 - [x] `I want + 구체 음료`를 이해 가능하지만 +1 피드백이 필요한 near-miss로 고정.
 - [x] near-miss 정책을 로컬 서버와 Dev 배포 서버에서 검증.
+- [x] Solar Pro 3와 GPT-4o mini에 동일 피드백 입력을 넣고 출력 품질 비교.
+- [x] Dev 배포 서버 LLM provider를 OpenAI GPT-4o mini로 전환하고 런타임 검증.
+- [x] 시나리오 1 메뉴 추천 요청의 슬롯 추출 결과를 재현한다.
+- [x] 시나리오 3 커스텀 음료 제작에서 `That’s all` 발화의 슬롯 추출 결과를 재현한다.
+- [x] 재현 결과를 근거로 하트 차감 원인과 추가 검증 필요 여부를 정리한다.
+- [x] Obsidian에 SayNow AI 프롬프트 실험 로그 문서 초안을 만든다.
+- [x] 프롬프트별 기록 양식과 공통 10개 input을 문서 최상단에 고정한다.
+- [x] vault 반영 경로와 파일 내용을 검증한다.
+- [x] feedback 품질 테스트용 공통 10개 input과 기록 파트를 Obsidian 문서에 추가한다.
+- [x] baseline 현재 프롬프트를 로컬 `conversation_service.py` 프롬프트 원문으로 교체한다.
+- [x] NQ 기록 양식에 들어온 AI 질문, 사용자 입력, output 요약을 함께 남기도록 보강한다.
+- [x] 현재 프롬프트로 `FB-01`부터 `FB-10`까지 실제 feedback 품질을 호출하고 Obsidian baseline에 결과를 채운다.
+- [x] Prompt 2 방향인 프롬프트 정리, few-shot 보강, feedback judge 기준 보강의 회귀 테스트를 먼저 추가한다.
+- [x] Prompt 2 프롬프트와 feedback review/repair 정책을 구현한다.
+- [x] Prompt 2 테스트와 문서 반영을 검증한다.
+- [x] Prompt 2를 로컬 실제 모델 호출로 `NQ-01`-`NQ-10`, `FB-01`-`FB-10` 재측정하고 Obsidian 결과를 채운다.
+- [x] Prompt 3에서 카페 전용 판단을 도메인 중립 core prompt와 category example로 일반화한다.
+- [x] 명확한 옵션/선호 답변을 좋은 응답으로 보는 정책을 회귀 테스트로 고정한다.
+- [x] 공항, 호텔, 식당 smoke input을 추가해 로컬 실제 모델로 함께 검증한다.
+- [x] `next-question` 응답 계약에 `turnClassification`을 추가하는 설계를 문서화한다.
+- [x] 추천 요청, 정보 요청, 옵션 완료, 슬롯 답변, 실패 발화 분류 회귀 테스트를 추가한다.
+- [x] `NextQuestionResponse` 모델과 route 응답 계약에 `turnClassification`을 반영한다.
+- [x] LLM prompt와 deterministic fallback이 안정적인 분류를 반환하도록 구현한다.
+- [x] 관련 단위 테스트와 로컬 실제 모델 smoke 검증을 실행한다.
+- [x] `turnClassification`을 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화하는 회귀 테스트를 추가한다.
+- [x] 메뉴 정보 요청 응답에 실제 메뉴 항목이 보이도록 프롬프트와 보정 로직을 수정한다.

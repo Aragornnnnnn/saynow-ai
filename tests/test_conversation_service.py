@@ -46,6 +46,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["temperature"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
         self.assertEqual(result.translatedQuestion, "어떤 사이즈로 드릴까요?")
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_returns_null_when_all_unfilled_slots_are_newly_filled(self):
         from app.models.conversation import NextQuestionRequest
@@ -75,6 +76,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["size", "temperature"])
         self.assertIsNone(result.nextQuestion)
         self.assertIsNone(result.translatedQuestion)
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_blocks_non_answer_utterances_even_when_model_returns_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -113,6 +115,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_blocks_incomplete_order_fragments_for_drink_slot(self):
         from app.models.conversation import NextQuestionRequest
@@ -158,6 +161,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_blocks_generic_order_objects_for_drink_slot(self):
         from app.models.conversation import NextQuestionRequest
@@ -200,6 +204,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_allows_order_fragments_when_concrete_drink_exists(self):
         from app.models.conversation import NextQuestionRequest
@@ -231,6 +236,111 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["drink"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
+        self.assertEqual(result.turnClassification, "ANSWER")
+
+    def test_next_question_classifies_recommendation_request_without_filling_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What do you recommend?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "I recommend a cappuccino. Would you like to order that?",
+            "translatedQuestion": "카푸치노를 추천해요. 그걸로 주문하시겠어요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+
+    def test_next_question_classifies_information_request_as_assistance_and_provides_visible_options(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "Here are the menu options. What would you like to order?",
+            "translatedQuestion": "메뉴 옵션은 이렇습니다. 어떤 음료를 주문하고 싶으신가요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(
+            result.nextQuestion,
+            "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
+        )
+
+    def test_next_question_classifies_option_completion_before_slot_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Would you like any other options?",
+            "userUtterance": "That's all.",
+            "scenarioTitle": "커스텀 음료 제작하기",
+            "scenarioGoal": "원하는 커스텀 음료 옵션을 자연스럽게 말할 수 있다.",
+            "slots": [
+                {"slotName": "baseDrink", "filled": True},
+                {"slotName": "size", "filled": True},
+                {"slotName": "customOptions", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "customOptions"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["customOptions"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+
+    def test_next_question_classifies_non_cafe_slot_preference_as_slot_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Would you prefer a window seat or an aisle seat?",
+            "userUtterance": "Window seat, please.",
+            "scenarioTitle": "공항 체크인",
+            "scenarioGoal": "좌석 선호도를 자연스럽게 말할 수 있다.",
+            "slots": [
+                {"slotName": "seatPreference", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "seatPreference"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["seatPreference"])
+        self.assertEqual(result.turnClassification, "ANSWER")
 
     def test_next_question_prompt_requires_explicit_slot_evidence(self):
         prompt = self.service._next_question_system_prompt()
@@ -245,6 +355,24 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I don't know", prompt)
         self.assertIn("I do not want to order anything", prompt)
         self.assertIn("Do not include lists, explanations, or multiple follow-up questions", prompt)
+
+    def test_next_question_prompt_contains_few_shot_calibration_for_valid_no_slot_and_option_completion(self):
+        prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("Decision Workflow", prompt)
+        self.assertIn("Assistance request", prompt)
+        self.assertIn("turnClassification", prompt)
+        self.assertIn("ANSWER", prompt)
+        self.assertIn("ASSISTANCE_REQUEST", prompt)
+        self.assertIn("INVALID_RESPONSE", prompt)
+        self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
+        self.assertIn("Few-shot calibration examples", prompt)
+        self.assertIn("Can you recommend something?", prompt)
+        self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
+        self.assertIn("Can I see the menu?", prompt)
+        self.assertIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
+        self.assertIn("That's all.", prompt)
+        self.assertIn('"filledSlots":[{"slotName":"customOptions"}]', prompt)
 
     def test_feedback_preserves_backend_turn_ids_and_feedback_fields(self):
         from app.models.conversation import ConversationFeedbackRequest
@@ -605,6 +733,106 @@ class ConversationServiceTest(unittest.TestCase):
             "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
         )
 
+    def test_feedback_fills_missing_required_fields_for_known_off_topic_before_validation(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 109,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "My shoes are swimming in the moon today.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 0,
+            "feedbackSummary": "주문 내용이 이해되지 않았습니다. 음료 주문에 집중해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 109,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 의미 없는 문장을 말했다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '내 신발이 오늘 달에서 수영하고 있어요'처럼 들려요.",
+                    "betterExpression": None,
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeUnderstanding,
+            "외국인은 사용자가 신발이 달에서 수영하고 있다고 말한다고 이해했어요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].nativeLanguageInterpretation,
+            "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+        )
+        self.assertEqual(
+            result.turnFeedbacks[0].betterExpression,
+            "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요.",
+        )
+
+    def test_feedback_replaces_generic_better_expression_for_known_off_topic(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 109,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "My shoes are swimming in the moon today.",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 0,
+                "feedbackSummary": "주문 내용이 이해되지 않았습니다. 음료 주문에 집중해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 109,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 신발이 달에서 수영하고 있다고 말한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+                        "betterExpression": "I'd like a drink, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+            {"pass": False, "issues": ["turnId 109: betterExpression should use a concrete in-scenario example."]},
+            {
+                "comprehensionScore": 0,
+                "feedbackSummary": "주문 내용이 이해되지 않았습니다. 음료 주문에 집중해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 109,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 신발이 달에서 수영하고 있다고 말한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '달에서 신발이 수영한다'처럼 들려요.",
+                        "betterExpression": "I'd like a drink, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(
+            result.turnFeedbacks[0].betterExpression,
+            "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요.",
+        )
+
     def test_feedback_repairs_deterministic_contract_violations_once(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -853,6 +1081,264 @@ class ConversationServiceTest(unittest.TestCase):
             result.feedbackSummary,
             "주문하려는 음료가 전달되지 않아 목표를 달성하지 못했어요. 다음에는 음료 이름을 넣어 완성된 주문 문장으로 말해 보세요.",
         )
+
+    def test_feedback_repairs_generic_better_expression_for_generic_order_object(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 104,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want drink.",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 39,
+                "feedbackSummary": "주문할 음료가 명확하지 않았습니다. 구체적인 음료 이름을 사용해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 104,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 음료를 원한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '나는 음료를 원한다'처럼 들려요.",
+                        "betterExpression": "I'd like a drink, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+            {
+                "pass": True,
+                "issues": [],
+            },
+            {
+                "comprehensionScore": 39,
+                "feedbackSummary": "주문할 음료가 아직 구체적이지 않았어요. 다음에는 음료 이름을 넣어 완성된 주문 문장으로 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 104,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 어떤 음료를 주문하는지 이해할 수 없었어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '나는 음료를 원한다'처럼 들려요.",
+                        "betterExpression": "I'd like a coffee, please. 이렇게 말하면 구체적인 음료를 넣어 주문할 수 있어요.",
+                    }
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 3)
+        self.assertIn("quality reviewer", systems[1])
+        self.assertIn("repair", systems[2].lower())
+        self.assertEqual(
+            result.turnFeedbacks[0].betterExpression,
+            "I'd like a coffee, please. 이렇게 말하면 구체적인 음료를 넣어 주문할 수 있어요.",
+        )
+
+    def test_feedback_repair_preserves_recommendation_request_intent(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 105,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "Can you recommend a menu?",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 45,
+                "feedbackSummary": "주문하고자 하는 음료를 명확히 전달하지 못했어요. 다음에는 구체적인 음료를 요청해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 105,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 메뉴 추천을 요청했다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '메뉴를 추천해 주세요'처럼 들려요.",
+                        "betterExpression": "I'd like to order a drink, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.",
+                    }
+                ],
+            },
+            {
+                "pass": False,
+                "issues": ["turnId 105: recommendation request intent must be preserved in betterExpression."],
+            },
+            {
+                "comprehensionScore": 70,
+                "feedbackSummary": "추천을 요청하는 의도는 잘 전달됐어요. 다음에는 추천받은 음료를 주문까지 이어 가 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 105,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 메뉴 추천을 요청한다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '메뉴를 추천해 주세요'처럼 들려요.",
+                        "betterExpression": "What do you recommend? 이렇게 말하면 추천 요청을 더 자연스럽게 전달할 수 있어요.",
+                    }
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 3)
+        self.assertIn("quality reviewer", systems[1])
+        self.assertIn("repair", systems[2].lower())
+        self.assertEqual(
+            result.turnFeedbacks[0].betterExpression,
+            "What do you recommend? 이렇게 말하면 추천 요청을 더 자연스럽게 전달할 수 있어요.",
+        )
+
+    def test_feedback_fallback_marks_no_more_option_response_as_good_after_failed_repair(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "커스텀 음료 만들기",
+            "scenarioGoal": "원하는 음료와 옵션을 말할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 106,
+                    "originalQuestion": "What custom options would you like for your drink?",
+                    "userUtterance": "That's all.",
+                }
+            ],
+        })
+        bad_feedback = {
+            "comprehensionScore": 82,
+            "feedbackSummary": "주문이 잘 전달되었지만 조금 더 자연스럽게 표현할 수 있어요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 106,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 추가 옵션이 없다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '더 이상 필요하지 않다'처럼 들려요.",
+                    "betterExpression": "I don't need anything else, thank you. 이렇게 말하면 더 부드럽게 표현할 수 있어요.",
+                }
+            ],
+        }
+        responses = [
+            bad_feedback,
+            {
+                "pass": False,
+                "issues": ["turnId 106: already natural no-more options response; feedbackRequired should be false."],
+            },
+            bad_feedback,
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertGreaterEqual(result.comprehensionScore, 90)
+        self.assertFalse(result.turnFeedbacks[0].feedbackRequired)
+        self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
+        self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
+        self.assertIsNone(result.turnFeedbacks[0].betterExpression)
+
+    def test_feedback_fallback_marks_clear_preference_answers_as_good_after_failed_repair(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        cases = [
+            (
+                "카페 옵션",
+                "원하는 음료 옵션을 자연스럽게 말할 수 있다.",
+                "Would you like any other options?",
+                "No sugar, please.",
+            ),
+            (
+                "공항 체크인",
+                "좌석 선호도를 자연스럽게 말할 수 있다.",
+                "Would you prefer a window seat or an aisle seat?",
+                "Window seat, please.",
+            ),
+            (
+                "호텔 체크인",
+                "객실 선호도를 자연스럽게 말할 수 있다.",
+                "Do you have any room preferences?",
+                "Non-smoking room, please.",
+            ),
+            (
+                "식당 예약",
+                "인원과 좌석 요청을 자연스럽게 말할 수 있다.",
+                "How many people are in your party?",
+                "Table for two, please.",
+            ),
+        ]
+
+        for index, (scenario_title, scenario_goal, original_question, user_utterance) in enumerate(cases, start=1):
+            with self.subTest(user_utterance=user_utterance):
+                turn_id = 500 + index
+                request = ConversationFeedbackRequest.model_validate({
+                    "scenarioTitle": scenario_title,
+                    "scenarioGoal": scenario_goal,
+                    "turns": [
+                        {
+                            "turnId": turn_id,
+                            "originalQuestion": original_question,
+                            "userUtterance": user_utterance,
+                        }
+                    ],
+                })
+                bad_feedback = {
+                    "comprehensionScore": 82,
+                    "feedbackSummary": "의도는 전달됐지만 더 자연스럽게 표현할 수 있어요.",
+                    "turnFeedbacks": [
+                        {
+                            "turnId": turn_id,
+                            "feedbackRequired": True,
+                            "nativeUnderstanding": "외국인은 사용자의 선호를 이해했어요.",
+                            "nativeLanguageInterpretation": "한국어로 비유하자면, '선호를 말하는 것'처럼 들려요.",
+                            "betterExpression": f"{user_utterance} 이렇게 말하면 더 자연스럽습니다.",
+                        }
+                    ],
+                }
+                responses = [
+                    bad_feedback,
+                    {
+                        "pass": False,
+                        "issues": [
+                            f"turnId {turn_id}: already natural clear preference answer; feedbackRequired should be false."
+                        ],
+                    },
+                    bad_feedback,
+                ]
+
+                def sequential_chat(*args, **kwargs):
+                    return json.dumps(responses.pop(0))
+
+                self.service.chat = sequential_chat
+
+                result = self.service.generate_feedback(request)
+
+                self.assertGreaterEqual(result.comprehensionScore, 90)
+                self.assertFalse(result.turnFeedbacks[0].feedbackRequired)
+                self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
+                self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
+                self.assertIsNone(result.turnFeedbacks[0].betterExpression)
 
     def test_feedback_quality_review_repairs_good_response_misclassified_as_feedback_required(self):
         from app.models.conversation import ConversationFeedbackRequest
@@ -1104,15 +1590,17 @@ class ConversationServiceTest(unittest.TestCase):
     def test_feedback_prompt_contains_stable_good_response_rubric_and_plus_one_policy(self):
         prompt = self.service._feedback_system_prompt()
 
+        self.assertIn("Domain-neutral policy", prompt)
         self.assertIn("Classification Policy", prompt)
         self.assertIn("Field Policy", prompt)
         self.assertIn("Self-check before output", prompt)
         self.assertIn("Classify each turn before writing feedback fields", prompt)
+        self.assertIn("Clear preference or option answer", prompt)
         self.assertIn("Incomplete order fragment", prompt)
         self.assertIn("Generic object response", prompt)
-        self.assertIn("Direct want + concrete drink response", prompt)
+        self.assertIn("Direct want + concrete service item response", prompt)
         self.assertIn("must be treated as a near-miss response", prompt)
-        self.assertIn("Do not invent a specific drink for incomplete order fragments or generic object responses", prompt)
+        self.assertIn("Do not invent a specific service item for incomplete order fragments or generic object responses", prompt)
         self.assertIn("Stable feedback decision rubric", prompt)
         self.assertIn("85-100", prompt)
         self.assertIn("feedbackRequired=false", prompt)
@@ -1135,6 +1623,16 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I want ice one", prompt)
         self.assertIn("I'd like it iced, please.", prompt)
         self.assertIn("This drink is hot, but I ordered an iced one.", prompt)
+        self.assertIn("Few-shot calibration examples", prompt)
+        self.assertIn("I want drink", prompt)
+        self.assertIn("Can you recommend a menu?", prompt)
+        self.assertIn("That's all.", prompt)
+        self.assertIn("Window seat, please.", prompt)
+        self.assertIn("Non-smoking room, please.", prompt)
+        self.assertIn("Table for two, please.", prompt)
+        self.assertIn("Preserve the user's conversational intent", prompt)
+        self.assertNotIn("natural cafe order", prompt)
+        self.assertNotIn("Concrete drink values include", prompt)
 
     def test_feedback_repair_prompt_shares_core_classification_policy(self):
         prompt = self.service._feedback_repair_system_prompt()
@@ -1142,14 +1640,15 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Classification Policy", prompt)
         self.assertIn("Incomplete order fragment", prompt)
         self.assertIn("Generic object response", prompt)
-        self.assertIn("Direct want + concrete drink response", prompt)
+        self.assertIn("Direct want + concrete service item response", prompt)
         self.assertIn("must be treated as a near-miss response", prompt)
-        self.assertIn("Do not invent a specific drink for incomplete order fragments or generic object responses", prompt)
+        self.assertIn("Do not invent a specific service item for incomplete order fragments or generic object responses", prompt)
         self.assertIn("Self-check before output", prompt)
         self.assertIn("Never return a one-sentence feedbackSummary", prompt)
         self.assertIn("Do not write nativeUnderstanding as if the listener heard the English words", prompt)
         self.assertIn("For concrete orderable responses, nativeUnderstanding must use a Korean paraphrase of the meaning", prompt)
         self.assertIn("Do not wrap the Korean paraphrase in quotation marks inside nativeUnderstanding", prompt)
+        self.assertIn("Clear preference or option answer", prompt)
 
     def test_feedback_prompt_constrains_turn_feedback_copy_contract(self):
         prompt = self.service._feedback_system_prompt()
@@ -1197,7 +1696,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Examples are format guidance only and must never be copied into output", prompt)
         self.assertNotIn("목성 날씨가 파란 삼각형 맛이 난다", prompt)
         self.assertIn("betterExpression must never be only Korean guidance", prompt)
-        self.assertIn("If the exact answer is unknown, use a generic English example", prompt)
+        self.assertIn("If the exact answer is unknown, use a simple concrete English example", prompt)
         self.assertIn("a small, achievable improvement of roughly 5 to 10 points", prompt)
 
     def test_feedback_uses_deterministic_chat_settings(self):
