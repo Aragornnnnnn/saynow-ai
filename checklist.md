@@ -58,3 +58,6 @@
 - [x] Prompt 2 프롬프트와 feedback review/repair 정책을 구현한다.
 - [x] Prompt 2 테스트와 문서 반영을 검증한다.
 - [x] Prompt 2를 로컬 실제 모델 호출로 `NQ-01`-`NQ-10`, `FB-01`-`FB-10` 재측정하고 Obsidian 결과를 채운다.
+- [x] Prompt 3에서 카페 전용 판단을 도메인 중립 core prompt와 category example로 일반화한다.
+- [x] 명확한 옵션/선호 답변을 좋은 응답으로 보는 정책을 회귀 테스트로 고정한다.
+- [x] 공항, 호텔, 식당 smoke input을 추가해 로컬 실제 모델로 함께 검증한다.

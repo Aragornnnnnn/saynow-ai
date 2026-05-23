@@ -80,3 +80,9 @@
 - 2026-05-23 Prompt 2는 dev SSM의 `/saynow/develop/OPENAI_API_KEY`와 `/saynow/develop/OPENAI_MODEL`을 값 출력 없이 환경변수로만 주입해 로컬 함수 호출로 실제 모델 테스트를 실행했다. 모델은 `gpt-4o-mini`, 커밋은 `84e6228`, `NQ-01`-`NQ-10`과 `FB-01`-`FB-10` 모두 호출 성공했다.
 - 2026-05-23 로컬 실제 모델 결과에서 `That’s all.`은 `NQ-07`, `NQ-08`에서 `customOptions`를 채우고 `FB-06`에서 `feedbackRequired=false`가 되어 기존 문제를 해결했다. `FB-03`, `FB-04`의 `betterExpression`도 generic `drink`가 아니라 `I'd like a coffee, please.`로 개선됐다.
 - 2026-05-23 남은 문제는 `NQ-01`, `NQ-02` 추천 요청이 자연스럽게 추천 응답을 하더라도 `filledSlots=[]`라 백엔드 하트 차감 가능성이 남는 점, `NQ-03` 메뉴 보기 요청이 아직 처리되지 않는 점, `FB-07`의 `No sugar, please.`를 좋은 옵션 응답으로 볼지 near-miss로 볼지 정책 결정이 필요한 점이다. Prompt 2 결과는 Obsidian 실험 로그에 반영했다.
+- 2026-05-23 Prompt 3는 사용자가 선택한 `AI 서버 내부 일반화` 방향으로 진행한다. 목표는 카페 전용 문자열을 core policy에서 걷어내고, 명확한 옵션/선호 답변은 카페, 공항, 호텔, 식당 모두에서 좋은 응답으로 보는 일반 원칙을 고정하는 것이다.
+- 2026-05-23 `No sugar, please.` 자체를 하드코딩하지 않는다. 대신 `clear preference or option answer` 범주를 만들고, 예시는 카페 `No sugar, please.`, 공항 `Window seat, please.`, 호텔 `Non-smoking room, please.`, 식당 `Table for two, please.`처럼 분산한다.
+- 2026-05-23 Prompt 3 구현은 `Domain-neutral policy`, `Information request`, `Clear preference or option answer`, `Direct want + concrete service item response`를 프롬프트에 추가하는 방식으로 했다. 카테고리별 프롬프트 분리는 하지 않는다.
+- 2026-05-23 명확한 옵션/선호 답변 fallback은 짧은 선택형 답변에만 적용한다. `Less ice do please.`처럼 동사 `do`가 들어간 어색한 옵션 요청은 좋은 응답으로 보정하지 않고 기존 +1 피드백 대상에 남긴다.
+- 2026-05-23 실제 GPT-4o mini 호출에서 오프토픽 `FB-09`가 한 번 `feedbackRequired=true`와 `betterExpression=null`을 반환했다. Pydantic 검증 전에 known off-topic 필수 필드를 채우고, generic `I'd like a drink` 개선문은 구체 예시로 보정하는 안전장치를 추가했다.
+- 2026-05-23 Prompt 3 로컬 실제 모델 결과는 공통 `NQ-01`-`NQ-10`, `FB-01`-`FB-10`, 공항/호텔/식당 smoke 6개 모두 성공했다. 남은 핵심 문제는 추천 요청과 메뉴 보기 요청이 `filledSlots=[]`라 백엔드 하트 차감 가능성이 여전히 남는 점이다.
