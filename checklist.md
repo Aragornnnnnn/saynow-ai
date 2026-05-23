@@ -57,3 +57,4 @@
 - [x] Prompt 2 방향인 프롬프트 정리, few-shot 보강, feedback judge 기준 보강의 회귀 테스트를 먼저 추가한다.
 - [x] Prompt 2 프롬프트와 feedback review/repair 정책을 구현한다.
 - [x] Prompt 2 테스트와 문서 반영을 검증한다.
+- [x] Prompt 2를 로컬 실제 모델 호출로 `NQ-01`-`NQ-10`, `FB-01`-`FB-10` 재측정하고 Obsidian 결과를 채운다.
