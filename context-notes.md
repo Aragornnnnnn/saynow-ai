@@ -86,3 +86,5 @@
 - 2026-05-23 명확한 옵션/선호 답변 fallback은 짧은 선택형 답변에만 적용한다. `Less ice do please.`처럼 동사 `do`가 들어간 어색한 옵션 요청은 좋은 응답으로 보정하지 않고 기존 +1 피드백 대상에 남긴다.
 - 2026-05-23 실제 GPT-4o mini 호출에서 오프토픽 `FB-09`가 한 번 `feedbackRequired=true`와 `betterExpression=null`을 반환했다. Pydantic 검증 전에 known off-topic 필수 필드를 채우고, generic `I'd like a drink` 개선문은 구체 예시로 보정하는 안전장치를 추가했다.
 - 2026-05-23 Prompt 3 로컬 실제 모델 결과는 공통 `NQ-01`-`NQ-10`, `FB-01`-`FB-10`, 공항/호텔/식당 smoke 6개 모두 성공했다. 남은 핵심 문제는 추천 요청과 메뉴 보기 요청이 `filledSlots=[]`라 백엔드 하트 차감 가능성이 여전히 남는 점이다.
+- 2026-05-24 다음 개선은 `filledSlots=[]`만으로 하트 차감을 판단하는 문제를 해결하는 것이다. AI 서버는 `turnClassification`으로 발화 성격만 분류하고, 하트 차감 정책은 백엔드가 결정하는 방향으로 잡았다.
+- 2026-05-24 `turnClassification` 후보는 `SLOT_ANSWER`, `RECOMMENDATION_REQUEST`, `INFORMATION_REQUEST`, `OPTION_COMPLETION`, `INVALID_RESPONSE`로 시작한다. `validProgress` boolean은 AI 서버 계약에 넣지 않는다.
