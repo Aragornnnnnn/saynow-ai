@@ -18,6 +18,9 @@ from app.models.conversation import (
 
 logger = get_logger("conversation")
 MAX_FEEDBACK_SUMMARY_CHARS = 120
+DIRECT_WANT_NEAR_MISS_ISSUE = (
+    "direct want + concrete drink response must be treated as a near-miss with feedbackRequired=true."
+)
 
 
 class ConversationGenerationError(Exception):
@@ -141,18 +144,24 @@ def _next_question_user_prompt(request: NextQuestionRequest, unfilled_slot_names
 def _feedback_system_prompt() -> str:
     return (
         "You generate final feedback for an English speaking practice scenario. "
+        "Use this structured policy in order: Output Contract, Classification Policy, Scoring Policy, Field Policy, Self-check before output. "
+        "Output Contract: "
         "Return ONLY valid JSON matching this schema exactly: "
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
-        "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
-        "feedbackSummary is Korean and concise. "
-        "feedbackSummary must be 2 short Korean sentences by default. "
-        "Use 3 sentences only when multiple turns share a recurring grammar or expression pattern. "
-        "Keep feedbackSummary under 120 Korean characters. "
-        "Sentence 1 must summarize whether the scenario goal was achieved and how well the user was understood. "
-        "Sentence 2 must give the single most important next practice focus. "
-        "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
-        "Do not list multiple strengths and weaknesses. "
         "For each turn, preserve the exact turnId from the request. "
+        "Classify each turn before writing feedback fields. "
+        "Classification Policy: "
+        "Good response means the utterance directly answers the AI question, satisfies the scenario intent, and is natural enough for a native listener. "
+        "Near-miss response means the intended answer is clear but grammar, word choice, word order, politeness, or completeness needs a small correction. "
+        "Direct want + concrete drink response means a phrase such as I want coffee or I want iced americano; it is understandable but too direct for a natural cafe order, so it must be treated as a near-miss response. "
+        "Incomplete order fragment means the user starts an order phrase but does not provide a concrete object, such as I want, I need, I'd like, I would like, Can I get, Can I get a, or I want to order. "
+        "Generic object response means the user gives only a generic object such as drink, something, anything, menu, item, thing, or one instead of a concrete orderable drink. "
+        "Off-topic or nonsense means the utterance does not provide usable scenario information and must preserve its literal odd meaning. "
+        "Refusal or non-answer means the user refuses, says they do not know, or avoids answering the AI question. "
+        "Concrete drink values include specific orderable items such as coffee, latte, americano, tea, water, juice, or named menu items. "
+        "Do not invent a specific drink for incomplete order fragments or generic object responses. "
+        "Scoring Policy: "
+        "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
         "Evaluate grammar correctness, naturalness, and fluency in addition to scenario fit. "
         "Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions. "
         "Do not give 100 unless the utterance is completely natural and idiomatic. "
@@ -162,23 +171,41 @@ def _feedback_system_prompt() -> str:
         "60-74 means the main intent is understandable but grammar, word choice, or word order is clearly awkward enough to need correction; "
         "75-84 means the scenario intent is clear but a small correction would noticeably improve naturalness, politeness, or completeness; "
         "85-100 means the answer directly answers the question, a native listener understands it without guessing, and any remaining awkwardness is minor. "
+        "Direct want + concrete drink responses must score 75-84, not 85-100, because they need a +1 politeness and naturalness improvement. "
         "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
         "Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39. "
         "Good Response Conditions: the answer must address the AI question, satisfy the scenario intent for that turn, be understandable without extra inference, and have no meaning-blocking grammar or word-choice issue. "
         "Only set feedbackRequired=false when all Good Response Conditions pass and the internal turn score is 85-100. "
+        "Do not set feedbackRequired=false for Direct want + concrete drink responses. "
         "If any condition fails, or the internal turn score is 84 or below, set feedbackRequired=true. "
         "Apply this exact rubric consistently for every request; do not loosen or tighten it by scenario, user level, or writing style. "
+        "Field Policy: "
+        "feedbackSummary is Korean and concise. "
+        "feedbackSummary must be 2 short Korean sentences by default. "
+        "Never return a one-sentence feedbackSummary. "
+        "Use 3 sentences only when multiple turns share a recurring grammar or expression pattern. "
+        "Keep feedbackSummary under 120 Korean characters. "
+        "Sentence 1 must summarize whether the scenario goal was achieved and how well the user was understood. "
+        "Sentence 2 must give the single most important next practice focus. "
+        "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
+        "Do not list multiple strengths and weaknesses. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
         "nativeUnderstanding must start with '외국인은'. "
         "nativeUnderstanding must end with '라고 이해했어요.'. "
         "For incomplete fragments, nativeUnderstanding may explain that the foreign listener could not understand the missing object and end with '이해할 수 없었어요.'. "
+        "For incomplete order fragments and generic object responses, nativeUnderstanding must say the foreign listener could not identify the specific drink. "
         "nativeUnderstanding must be based only on the same turn's userUtterance. "
         "nativeUnderstanding must be one Korean sentence with a concrete interpretation. "
         "Do not include grammar explanations, improvement directions, or evaluations in nativeUnderstanding. "
         "Do not quote the user's utterance in nativeUnderstanding. "
+        "Do not write nativeUnderstanding as if the listener heard the English words. "
+        "For concrete orderable responses, nativeUnderstanding must use a Korean paraphrase of the meaning, not the English utterance. "
+        "Do not wrap the Korean paraphrase in quotation marks inside nativeUnderstanding. "
+        "Never write patterns like 외국인은 'I want coffee'라고 들었고. "
         "Do not use nativeUnderstanding for meta-evaluation such as saying the utterance is unrelated, figurative, or grammatically wrong. "
         "Incomplete fragments such as bare 'I want' must keep the fragment's literal sound and must not become advice such as saying the user needs to add a drink name. "
+        "For generic object responses, preserve the generic object instead of pretending the listener heard a specific menu item. "
         "Instead, describe the practical intent, uncertainty, or likely misunderstanding a foreign listener would act on. "
         "Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다' or '질문과 관련이 없다'; preserve the listener's literal interpretation instead. "
         "If the user mentions one ice, explain that the listener may think the user wants one ice cube, not less ice in a drink. "
@@ -191,6 +218,7 @@ def _feedback_system_prompt() -> str:
         "Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation. "
         "Use the analogy to help a Korean learner realize how their English sounded. "
         "For incomplete fragments, nativeLanguageInterpretation must mirror the literal Korean-sounding fragment, not the scenario consequence. "
+        "For generic object responses, nativeLanguageInterpretation must mirror the generic meaning, such as wanting a drink or something, not a specific drink. "
         "For nonsensical or off-topic utterances, preserve the strange meaning in the Korean analogy; do not force it into the scenario context. "
         "For nonsensical utterances, nativeLanguageInterpretation must mirror the same nonsensical meaning from that userUtterance. "
         "Meaningful but awkward utterances must stay in their own meaning family. "
@@ -212,10 +240,21 @@ def _feedback_system_prompt() -> str:
         "For 'I want ice one', betterExpression should start with 'I'd like it iced, please.' or 'I want it iced, please.' "
         "For 'This drink is hot but I order ice one', betterExpression should start with 'This drink is hot, but I ordered an iced one.' or 'I ordered an iced drink, but this one is hot.' "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
+        "For Direct want + concrete drink responses, the +1 improved sentence should start with I'd like plus the same drink and please. "
         "When the user's utterance does not answer the AI question or scenario intent, give a simple English answer without wrapping it in quotation marks, then explain why it fits. "
         "The English example must appear plainly without double quotation marks, for example 'I'd like an Americano, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
         "If the exact answer is unknown, use a generic English example that fits the scenario, such as 'I'd like a coffee, please.' for ordering a drink. "
-        "Do not return only an English sentence with a parenthesized Korean translation."
+        "Do not return only an English sentence with a parenthesized Korean translation. "
+        "Self-check before output: "
+        "Verify the JSON has exactly the required fields. "
+        "Verify each turnId matches the request. "
+        "Verify feedbackRequired=false has null turn feedback fields. "
+        "Verify Direct want + concrete drink responses have feedbackRequired=true and a 75-84 score. "
+        "Verify incomplete order fragments and generic object responses do not invent a specific drink. "
+        "Verify nativeUnderstanding does not quote or copy English words for concrete orderable responses. "
+        "Verify nativeUnderstanding, nativeLanguageInterpretation, betterExpression, and feedbackSummary do not repeat each other's responsibilities. "
+        "Verify feedbackSummary is exactly 2 short Korean sentences by default, under 120 Korean characters, and at most 3 sentences. "
+        "If any check fails, revise before returning the JSON."
     )
 
 
@@ -304,6 +343,7 @@ def _enforce_turn_feedback_contract(
     response: ConversationFeedbackResponse,
 ) -> None:
     turns_by_id = {turn.turnId: turn for turn in request.turns}
+    marked_direct_want_near_miss = False
     for turn_feedback in response.turnFeedbacks:
         if not turn_feedback.feedbackRequired:
             continue
@@ -313,12 +353,24 @@ def _enforce_turn_feedback_contract(
             continue
 
         understanding = _native_understanding_override(turn.userUtterance)
+        if _is_direct_want_concrete_order_near_miss(turn.userUtterance):
+            _apply_direct_want_concrete_order_feedback(turn.userUtterance, turn_feedback)
+            response.comprehensionScore = min(max(response.comprehensionScore, 75), 84)
+            marked_direct_want_near_miss = True
+            continue
+
         if understanding is not None:
             turn_feedback.nativeUnderstanding = understanding
 
         interpretation = _native_language_interpretation_override(turn.userUtterance)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
+
+    if marked_direct_want_near_miss and len(response.turnFeedbacks) == 1:
+        response.feedbackSummary = (
+            "시나리오 목표는 대체로 달성했어요. "
+            "다음에는 더 자연스럽고 공손한 주문 표현을 연습해 보세요."
+        )
 
 
 def _verify_and_repair_feedback(
@@ -373,6 +425,8 @@ def _deterministic_feedback_issues(
         issue_prefix = f"turnId {turn_feedback.turnId}: "
 
         if not turn_feedback.feedbackRequired:
+            if turn is not None and _is_direct_want_concrete_order_near_miss(turn.userUtterance):
+                issues.append(issue_prefix + DIRECT_WANT_NEAR_MISS_ISSUE)
             if any([
                 turn_feedback.nativeUnderstanding is not None,
                 turn_feedback.nativeLanguageInterpretation is not None,
@@ -481,6 +535,7 @@ def _feedback_quality_review_system_prompt() -> str:
         "Review whether the feedback follows the product policy, not whether the JSON schema is valid. "
         "Check especially: a clearly good answer must not receive unnecessary turn feedback; "
         "feedbackRequired=false is allowed only for genuinely good answers; "
+        "Direct want + concrete drink responses such as I want coffee must receive +1 feedback for naturalness and politeness; "
         "betterExpression must not claim to fix something already present in the user's utterance; "
         "nativeUnderstanding must not quote the user's English utterance; "
         "nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning; "
@@ -505,19 +560,37 @@ def _feedback_quality_review_user_prompt(
 def _feedback_repair_system_prompt() -> str:
     return (
         "You repair final feedback JSON for an English speaking practice scenario. "
+        "Use this structured policy in order: Output Contract, Classification Policy, Field Policy, Self-check before output. "
+        "Output Contract: "
         "Return ONLY valid JSON matching this schema exactly: "
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
         "Fix only the listed issues while preserving the request turn order and exact turnId values. "
         "Do not add or remove fields. "
-        "feedbackSummary must be concise: 2 short Korean sentences by default, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
+        "Classification Policy: "
+        "Incomplete order fragment means the user starts an order phrase but does not provide a concrete object, such as I want, I need, I'd like, I would like, Can I get, Can I get a, or I want to order. "
+        "Generic object response means the user gives only a generic object such as drink, something, anything, menu, item, thing, or one instead of a concrete orderable drink. "
+        "Direct want + concrete drink response means a phrase such as I want coffee or I want iced americano; it is understandable but too direct for a natural cafe order, so it must be treated as a near-miss response. "
+        "Concrete drink values include specific orderable items such as coffee, latte, americano, tea, water, juice, or named menu items. "
+        "Do not invent a specific drink for incomplete order fragments or generic object responses. "
+        "Field Policy: "
+        "feedbackSummary must be concise: 2 short Korean sentences by default, never one sentence, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
+        "Never return a one-sentence feedbackSummary. "
         "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
         "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
         "For incomplete order fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "
+        "For incomplete order fragments and generic object responses, nativeUnderstanding must say the foreign listener could not identify the specific drink. "
         "nativeUnderstanding must not quote the user's English utterance and must not include grammar explanations, improvement directions, or evaluations. "
+        "Do not write nativeUnderstanding as if the listener heard the English words. "
+        "For concrete orderable responses, nativeUnderstanding must use a Korean paraphrase of the meaning, not the English utterance. "
+        "Do not wrap the Korean paraphrase in quotation marks inside nativeUnderstanding. "
         "nativeLanguageInterpretation must follow this pattern exactly: 한국어로 비유하자면, '...'처럼 들려요. "
+        "For generic object responses, nativeLanguageInterpretation must mirror the generic meaning, not a specific drink. "
         "betterExpression must start with an English improved expression followed by a short Korean reason. "
-        "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn."
+        "For Direct want + concrete drink responses, keep feedbackRequired=true, keep comprehensionScore at 75-84, and start betterExpression with I'd like plus the same drink and please. "
+        "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn. "
+        "Self-check before output: "
+        "Verify the repaired JSON still matches the schema, preserves turnId values, keeps summary at 2 short Korean sentences by default, keeps Direct want + concrete drink responses as feedbackRequired=true, does not quote English utterances in nativeUnderstanding, and does not invent a drink for incomplete or generic responses."
     )
 
 
@@ -634,11 +707,19 @@ def _apply_feedback_safety_fallbacks(
         "already natural" in issue or "feedbackRequired should be false" in issue
         for issue in issues
     )
+    force_direct_want_near_miss = any(DIRECT_WANT_NEAR_MISS_ISSUE in issue for issue in issues)
     marked_good = False
+    marked_direct_want_near_miss = False
 
     for turn_feedback in response.turnFeedbacks:
         turn = turns_by_id.get(turn_feedback.turnId)
         if turn is None:
+            continue
+
+        if force_direct_want_near_miss and _is_direct_want_concrete_order_near_miss(turn.userUtterance):
+            _apply_direct_want_concrete_order_feedback(turn.userUtterance, turn_feedback)
+            response.comprehensionScore = min(max(response.comprehensionScore, 75), 84)
+            marked_direct_want_near_miss = True
             continue
 
         if force_good_response and _is_likely_good_response(turn.userUtterance):
@@ -675,26 +756,92 @@ def _apply_feedback_safety_fallbacks(
             "다음 연습에서도 공손하고 구체적인 표현을 유지해 보세요."
         )
 
+    if marked_direct_want_near_miss and len(response.turnFeedbacks) == 1:
+        response.feedbackSummary = (
+            "시나리오 목표는 대체로 달성했어요. "
+            "다음에는 더 자연스럽고 공손한 주문 표현을 연습해 보세요."
+        )
+
 
 def _is_likely_good_response(user_utterance: str) -> bool:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     return bool(re.match(r"^(i would like|id like) .+ please$", compact)) and len(compact.split()) >= 6
 
 
+def _is_direct_want_concrete_order_near_miss(user_utterance: str) -> bool:
+    return _direct_want_concrete_order_parts(user_utterance) is not None
+
+
+def _apply_direct_want_concrete_order_feedback(user_utterance: str, turn_feedback: Any) -> None:
+    parts = _direct_want_concrete_order_parts(user_utterance)
+    if parts is None:
+        return
+
+    turn_feedback.feedbackRequired = True
+    turn_feedback.nativeUnderstanding = (
+        f"외국인은 사용자가 {parts['korean_object_particle']} 주문하고 싶다고 이해했어요."
+    )
+    turn_feedback.nativeLanguageInterpretation = (
+        f"한국어로 비유하자면, '{parts['korean_object']} 원해요'처럼 들려요."
+    )
+    turn_feedback.betterExpression = (
+        f"I'd like {parts['english_object']}, please. "
+        "이렇게 말하면 더 자연스럽고 공손하게 주문할 수 있어요."
+    )
+
+
+def _direct_want_concrete_order_parts(user_utterance: str) -> dict[str, str] | None:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    if not re.fullmatch(r"i want (?:a |an |the )?.+", compact):
+        return None
+    if _generic_order_object_analogy(compact) is not None:
+        return None
+
+    drink_parts = [
+        ("iced americano", "아이스 아메리카노", "아이스 아메리카노를", "an iced Americano"),
+        ("americano", "아메리카노", "아메리카노를", "an Americano"),
+        ("cappuccino", "카푸치노", "카푸치노를", "a cappuccino"),
+        ("espresso", "에스프레소", "에스프레소를", "an espresso"),
+        ("smoothie", "스무디", "스무디를", "a smoothie"),
+        ("coffee", "커피", "커피를", "a coffee"),
+        ("latte", "라떼", "라떼를", "a latte"),
+        ("mocha", "모카", "모카를", "a mocha"),
+        ("water", "물", "물을", "some water"),
+        ("juice", "주스", "주스를", "some juice"),
+        ("tea", "차", "차를", "some tea"),
+    ]
+    for token, korean_object, korean_object_particle, english_object in drink_parts:
+        if re.search(rf"\b{re.escape(token)}\b", compact):
+            return {
+                "korean_object": korean_object,
+                "korean_object_particle": korean_object_particle,
+                "english_object": english_object,
+            }
+    return None
+
+
 def _normalize_native_understanding_format(value: str | None) -> str | None:
     if value is None:
         return None
 
+    quoted_meaning_match = re.search(r"[\"'‘’“”]([^\"'‘’“”]+)[\"'‘’“”](?:라는|는) 의미로 이해했어요\.", value)
+    if quoted_meaning_match:
+        phrase = _to_reported_understanding_phrase(quoted_meaning_match.group(1))
+        return f"외국인은 사용자가 {phrase} 이해했어요."
+
     quoted_match = re.search(r"[\"'‘’“”]([^\"'‘’“”]+)[\"'‘’“”]\s*(?:라)?고 이해했어요\.", value)
     if quoted_match:
-        phrase = quoted_match.group(1).strip().rstrip(".")
-        if phrase.endswith("다"):
-            phrase = phrase[:-1] + "다고"
-        else:
-            phrase = phrase + "라고"
+        phrase = _to_reported_understanding_phrase(quoted_match.group(1))
         return f"외국인은 사용자가 {phrase} 이해했어요."
 
     return value
+
+
+def _to_reported_understanding_phrase(value: str) -> str:
+    phrase = value.strip().rstrip(".")
+    if phrase.endswith("다"):
+        return phrase[:-1] + "다고"
+    return phrase + "라고"
 
 
 def _normalize_native_language_interpretation_format(value: str | None) -> str | None:

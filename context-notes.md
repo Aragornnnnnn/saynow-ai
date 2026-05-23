@@ -49,3 +49,9 @@
 - `feedbackSummary`는 턴별 상세 피드백을 다시 설명하지 않는다. 기본 2문장, 반복 문제가 여러 턴에 걸쳐 있을 때만 3문장, 120자 이내의 짧은 세션 총평으로 제한한다.
 - `next-question`은 `I want`, `I'd like`, `Can I get a`처럼 목적어가 없는 주문 시작 조각을 구체적인 슬롯 값으로 보면 안 된다. `drink`가 아직 비어 있으면 LLM 호출 전에 같은 음료 질문을 다시 반환한다.
 - `I want drink`, `I want something`, `I want menu`처럼 목적어가 있어도 주문 가능한 구체 음료가 아닌 generic object면 `drink` 슬롯을 채우지 않는다.
+- 프롬프트 개선은 규칙을 추가로 길게 늘리는 것보다 taxonomy, field policy, self-check로 섹션을 나눠 모델이 먼저 발화를 분류하고 그다음 필드별 책임을 지키도록 유도한다.
+- 1차 로컬 비교에서 `I want coffee`의 `nativeUnderstanding`이 영어 원문을 인용하는 회귀가 나왔다. concrete orderable response는 영어를 들었다고 쓰지 않고, 한국어 의미 paraphrase만 쓰도록 생성 프롬프트와 repair 프롬프트 모두에 명시했다.
+- 2차 로컬, Dev 비교에서 `I want`, `I want drink`, `I'd like something`은 슬롯과 피드백 의미가 일치했다. `I want coffee`는 로컬이 영어 원문 인용 없이 한국어 의미 paraphrase로 고쳤지만, Dev는 피드백 불필요로 판단하고 로컬은 더 정중한 표현을 제안하는 차이가 남았다.
+- 최종 로컬 비교에서는 `I want coffee`가 `feedbackRequired=false`로 떨어졌다. 이 케이스를 “음료는 명확하므로 통과”로 볼지, “주문 표현이 직접적이므로 +1 피드백 필요”로 볼지는 제품 정책 결정이 필요하다.
+- 제품 정책은 `I want coffee`처럼 `I want + 구체 음료`가 문법적으로 완벽하지 않으므로 +1 피드백을 주는 방향으로 확정했다. 슬롯 추출은 성공으로 유지하되 최종 피드백에서는 near-miss로 분류한다.
+- 로컬 서버 검증에서 `I want coffee`는 82점, `feedbackRequired=true`, `nativeUnderstanding=외국인은 사용자가 커피를 주문하고 싶다고 이해했어요.`, `nativeLanguageInterpretation=한국어로 비유하자면, '커피 원해요'처럼 들려요.`, `betterExpression=I'd like a coffee, please...`로 정리됐다.
