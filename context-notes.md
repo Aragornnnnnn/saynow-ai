@@ -88,3 +88,6 @@
 - 2026-05-23 Prompt 3 로컬 실제 모델 결과는 공통 `NQ-01`-`NQ-10`, `FB-01`-`FB-10`, 공항/호텔/식당 smoke 6개 모두 성공했다. 남은 핵심 문제는 추천 요청과 메뉴 보기 요청이 `filledSlots=[]`라 백엔드 하트 차감 가능성이 여전히 남는 점이다.
 - 2026-05-24 다음 개선은 `filledSlots=[]`만으로 하트 차감을 판단하는 문제를 해결하는 것이다. AI 서버는 `turnClassification`으로 발화 성격만 분류하고, 하트 차감 정책은 백엔드가 결정하는 방향으로 잡았다.
 - 2026-05-24 `turnClassification` 후보는 `SLOT_ANSWER`, `RECOMMENDATION_REQUEST`, `INFORMATION_REQUEST`, `OPTION_COMPLETION`, `INVALID_RESPONSE`로 시작한다. `validProgress` boolean은 AI 서버 계약에 넣지 않는다.
+- 2026-05-24 `next-question` 응답에 `turnClassification`을 추가했다. 추천 요청은 `RECOMMENDATION_REQUEST`, 메뉴 보기 요청은 `INFORMATION_REQUEST`, custom option 완료는 `OPTION_COMPLETION`, 실패 발화는 `INVALID_RESPONSE`, 일반 슬롯 답변은 `SLOT_ANSWER`로 정규화한다.
+- 2026-05-24 실제 GPT-4o mini 로컬 평가에서 공통 `NQ-01`-`NQ-10`은 모두 성공했다. `NQ-01`, `NQ-02`는 `RECOMMENDATION_REQUEST`, `NQ-03`은 `INFORMATION_REQUEST`, `NQ-05`는 `INVALID_RESPONSE`, `NQ-07`-`NQ-10`은 `OPTION_COMPLETION`으로 분류됐다.
+- 2026-05-24 공항, 호텔, 식당 smoke next-question은 슬롯을 채우는 답변이므로 `SLOT_ANSWER`로 보정했다. `Window seat, please.`, `Non-smoking room, please.`, `Table for two, please.`는 모두 `filledSlots`가 채워지고 하트 차감 대상이 아니다.

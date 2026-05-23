@@ -46,6 +46,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["temperature"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
         self.assertEqual(result.translatedQuestion, "어떤 사이즈로 드릴까요?")
+        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
 
     def test_next_question_returns_null_when_all_unfilled_slots_are_newly_filled(self):
         from app.models.conversation import NextQuestionRequest
@@ -75,6 +76,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["size", "temperature"])
         self.assertIsNone(result.nextQuestion)
         self.assertIsNone(result.translatedQuestion)
+        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
 
     def test_next_question_blocks_non_answer_utterances_even_when_model_returns_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -113,6 +115,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_blocks_incomplete_order_fragments_for_drink_slot(self):
         from app.models.conversation import NextQuestionRequest
@@ -158,6 +161,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_blocks_generic_order_objects_for_drink_slot(self):
         from app.models.conversation import NextQuestionRequest
@@ -200,6 +204,7 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.filledSlots, [])
                 self.assertEqual(result.nextQuestion, "What drink would you like to order?")
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
     def test_next_question_allows_order_fragments_when_concrete_drink_exists(self):
         from app.models.conversation import NextQuestionRequest
@@ -231,6 +236,107 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual([slot.slotName for slot in result.filledSlots], ["drink"])
         self.assertEqual(result.nextQuestion, "What size would you like?")
+        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
+
+    def test_next_question_classifies_recommendation_request_without_filling_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What do you recommend?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "I recommend a cappuccino. Would you like to order that?",
+            "translatedQuestion": "카푸치노를 추천해요. 그걸로 주문하시겠어요?",
+            "turnClassification": "RECOMMENDATION_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "RECOMMENDATION_REQUEST")
+
+    def test_next_question_classifies_information_request_without_filling_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "Here are the menu options. What would you like to order?",
+            "translatedQuestion": "메뉴 옵션은 이렇습니다. 어떤 음료를 주문하고 싶으신가요?",
+            "turnClassification": "INFORMATION_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "INFORMATION_REQUEST")
+
+    def test_next_question_classifies_option_completion_before_slot_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Would you like any other options?",
+            "userUtterance": "That's all.",
+            "scenarioTitle": "커스텀 음료 제작하기",
+            "scenarioGoal": "원하는 커스텀 음료 옵션을 자연스럽게 말할 수 있다.",
+            "slots": [
+                {"slotName": "baseDrink", "filled": True},
+                {"slotName": "size", "filled": True},
+                {"slotName": "customOptions", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "customOptions"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "SLOT_ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["customOptions"])
+        self.assertEqual(result.turnClassification, "OPTION_COMPLETION")
+
+    def test_next_question_classifies_non_cafe_slot_preference_as_slot_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Would you prefer a window seat or an aisle seat?",
+            "userUtterance": "Window seat, please.",
+            "scenarioTitle": "공항 체크인",
+            "scenarioGoal": "좌석 선호도를 자연스럽게 말할 수 있다.",
+            "slots": [
+                {"slotName": "seatPreference", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "seatPreference"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "OPTION_COMPLETION",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["seatPreference"])
+        self.assertEqual(result.turnClassification, "SLOT_ANSWER")
 
     def test_next_question_prompt_requires_explicit_slot_evidence(self):
         prompt = self.service._next_question_system_prompt()
@@ -253,6 +359,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Recommendation request", prompt)
         self.assertIn("Information request", prompt)
         self.assertIn("No-more options completion", prompt)
+        self.assertIn("turnClassification", prompt)
+        self.assertIn("SLOT_ANSWER", prompt)
+        self.assertIn("INFORMATION_REQUEST", prompt)
+        self.assertIn("INVALID_RESPONSE", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
         self.assertIn("Can you recommend something?", prompt)
         self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)

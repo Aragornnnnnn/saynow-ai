@@ -13,6 +13,7 @@ from app.models.conversation import (
     FilledSlotResponse,
     NextQuestionRequest,
     NextQuestionResponse,
+    NextQuestionTurnClassification,
 )
 
 
@@ -34,6 +35,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             nextQuestion=None,
             translatedQuestion=None,
             filledSlots=[],
+            turnClassification=NextQuestionTurnClassification.SLOT_ANSWER,
         )
 
     if _must_not_fill_slots(request.userUtterance):
@@ -47,6 +49,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     )
     data = _parse_json_object(raw)
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
+    turn_classification = _resolve_next_question_turn_classification(data, request, filled_slots)
     remaining_slots = [slot_name for slot_name in unfilled_slot_names if slot_name not in {slot.slotName for slot in filled_slots}]
 
     if not remaining_slots:
@@ -54,6 +57,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             nextQuestion=None,
             translatedQuestion=None,
             filledSlots=filled_slots,
+            turnClassification=turn_classification,
         )
 
     next_question = _optional_non_blank_string(data.get("nextQuestion"))
@@ -65,6 +69,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         nextQuestion=next_question,
         translatedQuestion=translated_question,
         filledSlots=filled_slots,
+        turnClassification=turn_classification,
     )
 
 
@@ -156,12 +161,13 @@ def _next_question_system_prompt() -> str:
     return (
         "You generate follow-up questions for an English speaking practice scenario. "
         "Return ONLY valid JSON matching this schema exactly: "
-        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>"}. '
+        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"SLOT_ANSWER|RECOMMENDATION_REQUEST|INFORMATION_REQUEST|OPTION_COMPLETION|INVALID_RESPONSE"}. '
         "Decision Workflow: first identify whether the latest utterance is a concrete slot answer, a recommendation request, an information request, a no-more options completion, or a non-answer. "
         "A concrete slot answer can newly fill a slot. "
         "Recommendation request means the user asks what you recommend; it is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value. "
         "Information request means the user asks to see a menu, options, available choices, rules, or details; it is relevant, but it does not fill a target slot by itself. "
         "No-more options completion means the user says That's all, That's it, nothing else, or no more after an option or customization question; it fills the current option or customization slot. "
+        "turnClassification must describe the latest utterance: SLOT_ANSWER for concrete slot answers, RECOMMENDATION_REQUEST for recommendation requests, INFORMATION_REQUEST for information requests, OPTION_COMPLETION for option or customization completion, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses. "
         "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
         "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
         "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
@@ -178,10 +184,10 @@ def _next_question_system_prompt() -> str:
         "Do not include lists, explanations, or multiple follow-up questions. "
         "Use only the provided slot names. "
         "Few-shot calibration examples: "
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"Here are the menu options. What would you like to choose?","translatedQuestion":"메뉴 옵션은 이렇습니다. 무엇을 선택하시겠어요?"}. '
-        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?"}.'
+        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"RECOMMENDATION_REQUEST"}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"Here are the menu options. What would you like to choose?","translatedQuestion":"메뉴 옵션은 이렇습니다. 무엇을 선택하시겠어요?","turnClassification":"INFORMATION_REQUEST"}. '
+        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"OPTION_COMPLETION"}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
     )
 
 
@@ -385,12 +391,14 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
             nextQuestion="What drink would you like to order?",
             translatedQuestion="어떤 음료를 주문하고 싶으신가요?",
             filledSlots=[],
+            turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
         )
     if slot_key == "size":
         return NextQuestionResponse(
             nextQuestion="What size would you like?",
             translatedQuestion="어떤 사이즈로 하시겠어요?",
             filledSlots=[],
+            turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
         )
 
     readable_slot = slot_name.replace("_", " ")
@@ -398,6 +406,7 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
         nextQuestion=f"Could you tell me your {readable_slot}?",
         translatedQuestion=f"{slot_name} 정보를 알려주시겠어요?",
         filledSlots=[],
+        turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
     )
 
 
@@ -931,6 +940,25 @@ def _is_recommendation_request(user_utterance: str) -> bool:
     ])
 
 
+def _is_information_request(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return any([
+        "can i see" in compact,
+        "could i see" in compact,
+        "may i see" in compact,
+        "show me" in compact,
+        "show the" in compact,
+        "what options" in compact,
+        "what are the options" in compact,
+        "what choices" in compact,
+        "what are the choices" in compact,
+        "available options" in compact,
+        "available choices" in compact,
+        "do you have a menu" in compact,
+        "do you have any options" in compact,
+    ])
+
+
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
     compact_question = _normalize_utterance(original_question).replace("'", "")
     compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
@@ -967,10 +995,8 @@ def _is_clear_preference_or_option_answer(original_question: str, user_utterance
         return False
 
     detail_question_markers = [
-        "would you like",
         "would you prefer",
         "do you have any",
-        "what would you like",
         "which",
         "option",
         "custom",
@@ -1010,6 +1036,50 @@ def _is_clear_preference_or_option_answer(original_question: str, user_utterance
         return False
 
     return True
+
+
+def _resolve_next_question_turn_classification(
+    data: dict[str, Any],
+    request: NextQuestionRequest,
+    filled_slots: list[FilledSlotResponse],
+) -> NextQuestionTurnClassification:
+    if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
+        return NextQuestionTurnClassification.OPTION_COMPLETION
+    if filled_slots and _fills_option_or_customization_slot(filled_slots):
+        return NextQuestionTurnClassification.OPTION_COMPLETION
+    if filled_slots:
+        return NextQuestionTurnClassification.SLOT_ANSWER
+    if _is_clear_preference_or_option_answer(request.originalQuestion, request.userUtterance):
+        return NextQuestionTurnClassification.OPTION_COMPLETION
+    if _is_recommendation_request(request.userUtterance):
+        return NextQuestionTurnClassification.RECOMMENDATION_REQUEST
+    if _is_information_request(request.userUtterance):
+        return NextQuestionTurnClassification.INFORMATION_REQUEST
+
+    raw_classification = data.get("turnClassification")
+    if isinstance(raw_classification, str):
+        try:
+            classification = NextQuestionTurnClassification(raw_classification.strip())
+        except ValueError:
+            classification = None
+        if classification in {
+            NextQuestionTurnClassification.RECOMMENDATION_REQUEST,
+            NextQuestionTurnClassification.INFORMATION_REQUEST,
+            NextQuestionTurnClassification.OPTION_COMPLETION,
+            NextQuestionTurnClassification.INVALID_RESPONSE,
+        }:
+            return classification
+
+    return NextQuestionTurnClassification.INVALID_RESPONSE
+
+
+def _fills_option_or_customization_slot(filled_slots: list[FilledSlotResponse]) -> bool:
+    option_markers = {"option", "options", "custom", "customization", "customizations"}
+    for slot in filled_slots:
+        normalized_slot = _normalize_utterance(slot.slotName)
+        if any(marker in normalized_slot for marker in option_markers):
+            return True
+    return False
 
 
 def _better_expression_stays_generic_order(value: str) -> bool:

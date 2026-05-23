@@ -16,6 +16,7 @@ class ConversationRoutesTest(unittest.TestCase):
             ConversationFeedbackResponse,
             FilledSlotResponse,
             NextQuestionResponse,
+            NextQuestionTurnClassification,
             TurnFeedbackResponse,
         )
 
@@ -28,6 +29,7 @@ class ConversationRoutesTest(unittest.TestCase):
             nextQuestion="What size would you like?",
             translatedQuestion="어떤 사이즈로 드릴까요?",
             filledSlots=[FilledSlotResponse(slotName="drink")],
+            turnClassification=NextQuestionTurnClassification.SLOT_ANSWER,
         )
         conversation.generate_feedback = lambda request: ConversationFeedbackResponse(
             comprehensionScore=82,
@@ -63,6 +65,7 @@ class ConversationRoutesTest(unittest.TestCase):
             "nextQuestion": "What size would you like?",
             "translatedQuestion": "어떤 사이즈로 드릴까요?",
             "filledSlots": [{"slotName": "drink"}],
+            "turnClassification": "SLOT_ANSWER",
         })
 
     def test_feedback_route_returns_documented_shape(self):
