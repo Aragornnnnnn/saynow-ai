@@ -108,6 +108,10 @@ def _next_question_system_prompt() -> str:
         "You generate follow-up questions for an English speaking practice scenario. "
         "Return ONLY valid JSON matching this schema exactly: "
         '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>"}. '
+        "Decision Workflow: first identify whether the latest utterance is a concrete slot answer, a recommendation request, a no-more options completion, or a non-answer. "
+        "A concrete slot answer can newly fill a slot. "
+        "Recommendation request means the user asks what you recommend; it is relevant, but it does not fill the drink slot unless the user accepts or names a concrete drink. "
+        "No-more options completion means the user says That's all, That's it, nothing else, or no more after an option or customization question; it fills the current option or customization slot. "
         "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
         "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
         "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
@@ -121,7 +125,11 @@ def _next_question_system_prompt() -> str:
         "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
         "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
         "Do not include lists, explanations, or multiple follow-up questions. "
-        "Use only the provided slot names."
+        "Use only the provided slot names. "
+        "Few-shot calibration examples: "
+        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?"}. '
+        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?"}.'
     )
 
 
@@ -156,10 +164,13 @@ def _feedback_system_prompt() -> str:
         "Direct want + concrete drink response means a phrase such as I want coffee or I want iced americano; it is understandable but too direct for a natural cafe order, so it must be treated as a near-miss response. "
         "Incomplete order fragment means the user starts an order phrase but does not provide a concrete object, such as I want, I need, I'd like, I would like, Can I get, Can I get a, or I want to order. "
         "Generic object response means the user gives only a generic object such as drink, something, anything, menu, item, thing, or one instead of a concrete orderable drink. "
+        "Recommendation request means the user asks for a menu, drink, or option recommendation; it is relevant help-seeking and must preserve the recommendation-request intent. "
+        "No-more options response means the user says That's all, That's it, nothing else, or no more after an option or customization question; it is a natural completion response. "
         "Off-topic or nonsense means the utterance does not provide usable scenario information and must preserve its literal odd meaning. "
         "Refusal or non-answer means the user refuses, says they do not know, or avoids answering the AI question. "
         "Concrete drink values include specific orderable items such as coffee, latte, americano, tea, water, juice, or named menu items. "
-        "Do not invent a specific drink for incomplete order fragments or generic object responses. "
+        "Do not invent a specific drink for incomplete order fragments or generic object responses in listener-meaning fields. "
+        "Do not invent a specific drink inside nativeUnderstanding or nativeLanguageInterpretation for incomplete order fragments or generic object responses. "
         "Scoring Policy: "
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
         "Evaluate grammar correctness, naturalness, and fluency in addition to scenario fit. "
@@ -176,6 +187,7 @@ def _feedback_system_prompt() -> str:
         "Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39. "
         "Good Response Conditions: the answer must address the AI question, satisfy the scenario intent for that turn, be understandable without extra inference, and have no meaning-blocking grammar or word-choice issue. "
         "Only set feedbackRequired=false when all Good Response Conditions pass and the internal turn score is 85-100. "
+        "For No-more options responses after an option or customization question, feedbackRequired=false is allowed because the turn goal is complete. "
         "Do not set feedbackRequired=false for Direct want + concrete drink responses. "
         "If any condition fails, or the internal turn score is 84 or below, set feedbackRequired=true. "
         "Apply this exact rubric consistently for every request; do not loosen or tighten it by scenario, user level, or writing style. "
@@ -229,6 +241,7 @@ def _feedback_system_prompt() -> str:
         "Do not include backslash characters in any response string. "
         "Do not use double quotation marks inside any response string because JSON will escape them with backslashes. "
         "betterExpression +1 policy: improve the user's utterance by exactly one practical step. "
+        "Preserve the user's conversational intent: recommendation requests should improve into a clearer recommendation request, not into an order; option-completion responses should not be rewritten when they are already natural. "
         "Target a small, achievable improvement of roughly 5 to 10 points, not a perfect rewrite. "
         "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
@@ -241,16 +254,24 @@ def _feedback_system_prompt() -> str:
         "For 'This drink is hot but I order ice one', betterExpression should start with 'This drink is hot, but I ordered an iced one.' or 'I ordered an iced drink, but this one is hot.' "
         "When the user's utterance answers the question but sounds awkward, give a +1 improved sentence and explain why that small change helps. "
         "For Direct want + concrete drink responses, the +1 improved sentence should start with I'd like plus the same drink and please. "
+        "For recommendation requests, the +1 improved sentence should ask for a recommendation, such as What do you recommend? or Could you recommend something? "
+        "For incomplete or generic order responses, betterExpression may use a simple concrete example such as I'd like a coffee, please. to show the missing object, but nativeUnderstanding and nativeLanguageInterpretation must not claim the user said coffee. "
         "When the user's utterance does not answer the AI question or scenario intent, give a simple English answer without wrapping it in quotation marks, then explain why it fits. "
         "The English example must appear plainly without double quotation marks, for example 'I'd like an Americano, please. 이렇게 말하면 원하는 음료를 명확하게 전달할 수 있어요.' "
-        "If the exact answer is unknown, use a generic English example that fits the scenario, such as 'I'd like a coffee, please.' for ordering a drink. "
+        "If the exact answer is unknown, use a simple concrete English example that fits the scenario, such as 'I'd like a coffee, please.' for ordering a drink. "
         "Do not return only an English sentence with a parenthesized Korean translation. "
+        "Few-shot calibration examples: "
+        "Example A input userUtterance=I want drink. Output direction: feedbackRequired=true, nativeUnderstanding says the listener cannot identify the specific drink, nativeLanguageInterpretation mirrors '나는 음료를 원한다', betterExpression starts with I'd like a coffee, please. "
+        "Example B input userUtterance=Can you recommend a menu? Output direction: preserve recommendation intent, nativeUnderstanding says the listener understood a menu recommendation request, betterExpression starts with What do you recommend? "
+        "Example C input originalQuestion=What custom options would you like for your drink? userUtterance=That's all. Output direction: feedbackRequired=false with null turn feedback fields. "
         "Self-check before output: "
         "Verify the JSON has exactly the required fields. "
         "Verify each turnId matches the request. "
         "Verify feedbackRequired=false has null turn feedback fields. "
         "Verify Direct want + concrete drink responses have feedbackRequired=true and a 75-84 score. "
         "Verify incomplete order fragments and generic object responses do not invent a specific drink. "
+        "Verify recommendation requests preserve the recommendation intent. "
+        "Verify No-more options responses after option or customization questions do not receive unnecessary feedback. "
         "Verify nativeUnderstanding does not quote or copy English words for concrete orderable responses. "
         "Verify nativeUnderstanding, nativeLanguageInterpretation, betterExpression, and feedbackSummary do not repeat each other's responsibilities. "
         "Verify feedbackSummary is exactly 2 short Korean sentences by default, under 120 Korean characters, and at most 3 sentences. "
@@ -379,7 +400,10 @@ def _verify_and_repair_feedback(
 ) -> ConversationFeedbackResponse:
     issues = _deterministic_feedback_issues(request, response)
     issues.extend(_good_response_policy_issues(request, response))
-    if not _should_review_feedback_quality(response):
+    semantic_issues = _semantic_feedback_policy_issues(request, response)
+    issues.extend(semantic_issues)
+    should_review = _should_review_feedback_quality(response) or bool(semantic_issues)
+    if not should_review:
         if issues:
             return _repair_feedback(request, response, issues)
         return response
@@ -466,6 +490,43 @@ def _deterministic_feedback_issues(
     return issues
 
 
+def _semantic_feedback_policy_issues(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> list[str]:
+    turns_by_id = {turn.turnId: turn for turn in request.turns}
+    issues: list[str] = []
+    for turn_feedback in response.turnFeedbacks:
+        turn = turns_by_id.get(turn_feedback.turnId)
+        if turn is None:
+            continue
+
+        issue_prefix = f"turnId {turn_feedback.turnId}: "
+        if _is_no_more_options_response(turn.originalQuestion, turn.userUtterance):
+            if turn_feedback.feedbackRequired:
+                issues.append(issue_prefix + "already natural no-more options response; feedbackRequired should be false.")
+            continue
+
+        if not turn_feedback.feedbackRequired:
+            continue
+
+        better_expression = turn_feedback.betterExpression or ""
+        if _is_incomplete_utterance_fragment(turn.userUtterance) and _better_expression_stays_generic_order(
+            better_expression
+        ):
+            issues.append(
+                issue_prefix
+                + "betterExpression should give a concrete practice example instead of staying with a generic drink order."
+            )
+
+        if _is_recommendation_request(turn.userUtterance) and _better_expression_changes_recommendation_intent(
+            better_expression
+        ):
+            issues.append(issue_prefix + "recommendation request intent must be preserved in betterExpression.")
+
+    return issues
+
+
 def _feedback_summary_issues(feedback_summary: str) -> list[str]:
     issues: list[str] = []
     if len(feedback_summary.strip()) > MAX_FEEDBACK_SUMMARY_CHARS:
@@ -537,6 +598,9 @@ def _feedback_quality_review_system_prompt() -> str:
         "feedbackRequired=false is allowed only for genuinely good answers; "
         "Direct want + concrete drink responses such as I want coffee must receive +1 feedback for naturalness and politeness; "
         "betterExpression must not claim to fix something already present in the user's utterance; "
+        "incomplete or generic order responses must not keep betterExpression at a generic drink order such as I'd like a drink; "
+        "recommendation requests must preserve recommendation-request intent instead of being rewritten as a direct order; "
+        "no-more options responses after option or customization questions must not receive unnecessary feedback; "
         "nativeUnderstanding must not quote the user's English utterance; "
         "nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning; "
         "off-topic utterances must preserve their literal odd meaning instead of being forced into the scenario. "
@@ -569,9 +633,11 @@ def _feedback_repair_system_prompt() -> str:
         "Classification Policy: "
         "Incomplete order fragment means the user starts an order phrase but does not provide a concrete object, such as I want, I need, I'd like, I would like, Can I get, Can I get a, or I want to order. "
         "Generic object response means the user gives only a generic object such as drink, something, anything, menu, item, thing, or one instead of a concrete orderable drink. "
+        "Recommendation request means the user asks for a menu, drink, or option recommendation; preserve that conversational intent. "
+        "No-more options response means the user says That's all, That's it, nothing else, or no more after an option or customization question; it should usually be feedbackRequired=false. "
         "Direct want + concrete drink response means a phrase such as I want coffee or I want iced americano; it is understandable but too direct for a natural cafe order, so it must be treated as a near-miss response. "
         "Concrete drink values include specific orderable items such as coffee, latte, americano, tea, water, juice, or named menu items. "
-        "Do not invent a specific drink for incomplete order fragments or generic object responses. "
+        "Do not invent a specific drink for incomplete order fragments or generic object responses in listener-meaning fields. "
         "Field Policy: "
         "feedbackSummary must be concise: 2 short Korean sentences by default, never one sentence, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
         "Never return a one-sentence feedbackSummary. "
@@ -587,6 +653,9 @@ def _feedback_repair_system_prompt() -> str:
         "nativeLanguageInterpretation must follow this pattern exactly: 한국어로 비유하자면, '...'처럼 들려요. "
         "For generic object responses, nativeLanguageInterpretation must mirror the generic meaning, not a specific drink. "
         "betterExpression must start with an English improved expression followed by a short Korean reason. "
+        "Preserve the user's conversational intent: recommendation requests should improve into recommendation requests, not direct orders. "
+        "For incomplete or generic order responses, betterExpression may use a simple concrete example such as I'd like a coffee, please. to model the missing object. "
+        "For No-more options responses after option or customization questions, set feedbackRequired=false and keep nativeUnderstanding, nativeLanguageInterpretation, and betterExpression null. "
         "For Direct want + concrete drink responses, keep feedbackRequired=true, keep comprehensionScore at 75-84, and start betterExpression with I'd like plus the same drink and please. "
         "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn. "
         "Self-check before output: "
@@ -722,7 +791,10 @@ def _apply_feedback_safety_fallbacks(
             marked_direct_want_near_miss = True
             continue
 
-        if force_good_response and _is_likely_good_response(turn.userUtterance):
+        if force_good_response and (
+            _is_likely_good_response(turn.userUtterance)
+            or _is_no_more_options_response(turn.originalQuestion, turn.userUtterance)
+        ):
             turn_feedback.feedbackRequired = False
             turn_feedback.nativeUnderstanding = None
             turn_feedback.nativeLanguageInterpretation = None
@@ -766,6 +838,49 @@ def _apply_feedback_safety_fallbacks(
 def _is_likely_good_response(user_utterance: str) -> bool:
     compact = _normalize_utterance(user_utterance).replace("'", "")
     return bool(re.match(r"^(i would like|id like) .+ please$", compact)) and len(compact.split()) >= 6
+
+
+def _is_recommendation_request(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return any([
+        "recommend" in compact,
+        "suggest" in compact,
+        "what should i get" in compact,
+        "what do you think i should get" in compact,
+    ])
+
+
+def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
+    compact_question = _normalize_utterance(original_question).replace("'", "")
+    compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
+    option_question = any(
+        marker in compact_question
+        for marker in ["option", "custom", "customize", "anything else", "add on", "extra", "topping"]
+    )
+    no_more_response = compact_utterance in {
+        "thats all",
+        "that s all",
+        "that is all",
+        "thats it",
+        "that s it",
+        "that is it",
+        "nothing else",
+        "no more",
+        "no nothing else",
+    }
+    return option_question and no_more_response
+
+
+def _better_expression_stays_generic_order(value: str) -> bool:
+    compact = _normalize_utterance(value).replace("'", "")
+    return bool(re.search(r"\b(?:like|want|order|get|have) (?:a |an |the )?drink\b", compact))
+
+
+def _better_expression_changes_recommendation_intent(value: str) -> bool:
+    compact = _normalize_utterance(value).replace("'", "")
+    if "recommend" in compact or "suggest" in compact:
+        return False
+    return bool(re.search(r"\b(?:like|want|order|get|have) (?:a |an |the )?(?:drink|coffee|latte|americano|tea|juice|water)\b", compact))
 
 
 def _is_direct_want_concrete_order_near_miss(user_utterance: str) -> bool:

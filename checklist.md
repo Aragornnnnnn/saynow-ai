@@ -44,3 +44,16 @@
 - [x] near-miss 정책을 로컬 서버와 Dev 배포 서버에서 검증.
 - [x] Solar Pro 3와 GPT-4o mini에 동일 피드백 입력을 넣고 출력 품질 비교.
 - [x] Dev 배포 서버 LLM provider를 OpenAI GPT-4o mini로 전환하고 런타임 검증.
+- [x] 시나리오 1 메뉴 추천 요청의 슬롯 추출 결과를 재현한다.
+- [x] 시나리오 3 커스텀 음료 제작에서 `That’s all` 발화의 슬롯 추출 결과를 재현한다.
+- [x] 재현 결과를 근거로 하트 차감 원인과 추가 검증 필요 여부를 정리한다.
+- [x] Obsidian에 SayNow AI 프롬프트 실험 로그 문서 초안을 만든다.
+- [x] 프롬프트별 기록 양식과 공통 10개 input을 문서 최상단에 고정한다.
+- [x] vault 반영 경로와 파일 내용을 검증한다.
+- [x] feedback 품질 테스트용 공통 10개 input과 기록 파트를 Obsidian 문서에 추가한다.
+- [x] baseline 현재 프롬프트를 로컬 `conversation_service.py` 프롬프트 원문으로 교체한다.
+- [x] NQ 기록 양식에 들어온 AI 질문, 사용자 입력, output 요약을 함께 남기도록 보강한다.
+- [x] 현재 프롬프트로 `FB-01`부터 `FB-10`까지 실제 feedback 품질을 호출하고 Obsidian baseline에 결과를 채운다.
+- [x] Prompt 2 방향인 프롬프트 정리, few-shot 보강, feedback judge 기준 보강의 회귀 테스트를 먼저 추가한다.
+- [x] Prompt 2 프롬프트와 feedback review/repair 정책을 구현한다.
+- [x] Prompt 2 테스트와 문서 반영을 검증한다.
