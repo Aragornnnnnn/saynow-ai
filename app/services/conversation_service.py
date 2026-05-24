@@ -187,6 +187,9 @@ def _next_question_system_prompt() -> str:
         "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
         "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, options, available choices, rules, or details, include concrete useful information inside nextQuestion before asking the next short question. "
         "Do not answer information requests with empty phrases such as Here are the options or Here is the menu unless you also include the actual options. "
+        "Use availableOptions as the source of truth for menus, recommendations, available choices, and option details when availableOptions are provided. "
+        "Do not invent options outside availableOptions. "
+        "If no availableOptions are provided for the requested slot, do not list specific options that were not provided. "
         "Do not include lists, explanations, or multiple follow-up questions. "
         "Use only the provided slot names. "
         "Few-shot calibration examples: "
@@ -203,14 +206,26 @@ def _next_question_user_prompt(request: NextQuestionRequest, unfilled_slot_names
         for slot in request.slots
     )
     unfilled_lines = "\n".join(f"- {slot_name}" for slot_name in unfilled_slot_names)
+    available_option_lines = _available_option_prompt_lines(request, unfilled_slot_names)
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
         f"Previous AI question: {request.originalQuestion}\n"
         f"User utterance: {request.userUtterance}\n\n"
         f"Current slot state:\n{slot_lines}\n\n"
-        f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}"
+        f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
+        f"Available options for unfilled slots:\n{available_option_lines}"
     )
+
+
+def _available_option_prompt_lines(request: NextQuestionRequest, unfilled_slot_names: list[str]) -> str:
+    options_by_slot = _available_options_by_slot(request)
+    lines = []
+    for slot_name in unfilled_slot_names:
+        options = options_by_slot.get(slot_name)
+        if options:
+            lines.append(f"- {slot_name}: {', '.join(options)}")
+    return "\n".join(lines) if lines else "- None provided"
 
 
 def _feedback_system_prompt() -> str:
@@ -970,15 +985,28 @@ def _ensure_visible_information_response(
     next_question: str,
     translated_question: str,
 ) -> tuple[str, str]:
-    if not _is_menu_information_request(request):
-        return next_question, translated_question
-    if _has_visible_menu_options(next_question):
+    assistance_request = _is_information_request(request.userUtterance) or _is_recommendation_request(request.userUtterance)
+    if not assistance_request:
         return next_question, translated_question
 
-    return (
-        "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
-        "메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?",
-    )
+    slot_name, options = _first_available_options_for_unfilled_slot(request)
+    if options:
+        if _is_recommendation_request(request.userUtterance):
+            if _contains_available_option(next_question, options):
+                return next_question, translated_question
+            return _available_option_recommendation_response(request, options[0])
+
+        if _contains_enough_available_options(next_question, options):
+            return next_question, translated_question
+        return _available_options_information_response(request, slot_name, options)
+
+    if _mentions_unprovided_options(next_question):
+        return _missing_available_options_response(request)
+
+    if not _is_menu_information_request(request):
+        return next_question, translated_question
+
+    return _missing_available_options_response(request)
 
 
 def _is_menu_information_request(request: NextQuestionRequest) -> bool:
@@ -1013,6 +1041,153 @@ def _has_visible_menu_options(next_question: str) -> bool:
         "juice",
     ]
     return sum(1 for item in menu_items if item in compact) >= 2
+
+
+def _available_options_by_slot(request: NextQuestionRequest) -> dict[str, list[str]]:
+    return {
+        available_option.slotName: available_option.options
+        for available_option in request.availableOptions
+    }
+
+
+def _first_available_options_for_unfilled_slot(request: NextQuestionRequest) -> tuple[str, list[str]]:
+    options_by_slot = _available_options_by_slot(request)
+    for slot in request.slots:
+        if slot.filled:
+            continue
+        options = options_by_slot.get(slot.slotName)
+        if options:
+            return slot.slotName, options
+    return "", []
+
+
+def _contains_available_option(next_question: str, options: list[str]) -> bool:
+    compact_question = _normalize_utterance(next_question)
+    return any(_normalize_utterance(option) in compact_question for option in options)
+
+
+def _contains_enough_available_options(next_question: str, options: list[str]) -> bool:
+    compact_question = _normalize_utterance(next_question)
+    return sum(1 for option in options if _normalize_utterance(option) in compact_question) >= min(2, len(options))
+
+
+def _mentions_unprovided_options(next_question: str) -> bool:
+    compact = _normalize_utterance(next_question).replace("'", "")
+    empty_option_markers = [
+        "here are the menu options",
+        "here are the options",
+        "here is the menu",
+        "menu options are",
+        "the menu includes",
+    ]
+    recommendation_markers = [
+        "i recommend",
+        "i suggest",
+    ]
+    return (
+        any(marker in compact for marker in empty_option_markers)
+        or any(marker in compact for marker in recommendation_markers)
+        or _has_visible_menu_options(next_question)
+    )
+
+
+def _available_options_information_response(
+    request: NextQuestionRequest,
+    slot_name: str,
+    options: list[str],
+) -> tuple[str, str]:
+    slot_label = _english_slot_label(slot_name)
+    options_text = _format_english_list(options)
+    korean_slot_label = _korean_slot_label(slot_name)
+    korean_options_text = ", ".join(options)
+    if _is_order_context(request):
+        return (
+            f"The {slot_label} options are {options_text}. What would you like to order?",
+            f"{korean_slot_label} 선택지는 {korean_options_text}입니다. 무엇을 주문하시겠어요?",
+        )
+    return (
+        f"The {slot_label} options are {options_text}. Which would you prefer?",
+        f"{korean_slot_label} 선택지는 {korean_options_text}입니다. 무엇을 선택하시겠어요?",
+    )
+
+
+def _available_option_recommendation_response(
+    request: NextQuestionRequest,
+    option: str,
+) -> tuple[str, str]:
+    if _is_order_context(request):
+        return (
+            f"I recommend {option}. Would you like to order that?",
+            f"{option}를 추천해요. 그걸로 주문하시겠어요?",
+        )
+    return (
+        f"I recommend {option}. Would you like to choose that?",
+        f"{option}를 추천해요. 그걸로 선택하시겠어요?",
+    )
+
+
+def _missing_available_options_response(request: NextQuestionRequest) -> tuple[str, str]:
+    if _is_order_context(request):
+        return (
+            "I don't have the available options here. What would you like to order?",
+            "제공된 선택지가 없어요. 무엇을 주문하시겠어요?",
+        )
+    return (
+        "I don't have the available options here. Which would you prefer?",
+        "제공된 선택지가 없어요. 무엇을 선택하시겠어요?",
+    )
+
+
+def _is_order_context(request: NextQuestionRequest) -> bool:
+    compact_context = _normalize_utterance(
+        " ".join([
+            request.originalQuestion,
+            request.scenarioTitle,
+            request.scenarioGoal,
+            " ".join(slot.slotName for slot in request.slots),
+        ])
+    ).replace("'", "")
+    order_markers = ["order", "drink", "coffee", "cafe", "beverage", "menu"]
+    return any(marker in compact_context for marker in order_markers)
+
+
+def _english_slot_label(slot_name: str) -> str:
+    slot_labels = {
+        "drink": "drink",
+        "size": "size",
+        "temperature": "temperature",
+        "customOptions": "custom option",
+        "seatPreference": "seat",
+        "roomPreference": "room preference",
+        "partySize": "party size",
+    }
+    return slot_labels.get(slot_name, _split_slot_name(slot_name))
+
+
+def _korean_slot_label(slot_name: str) -> str:
+    slot_labels = {
+        "drink": "음료",
+        "size": "사이즈",
+        "temperature": "온도",
+        "customOptions": "커스텀 옵션",
+        "seatPreference": "좌석",
+        "roomPreference": "객실 선호",
+        "partySize": "인원",
+    }
+    return slot_labels.get(slot_name, _split_slot_name(slot_name))
+
+
+def _split_slot_name(slot_name: str) -> str:
+    with_spaces = re.sub(r"(?<!^)(?=[A-Z])", " ", slot_name)
+    return with_spaces.replace("_", " ").lower()
+
+
+def _format_english_list(values: list[str]) -> str:
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:

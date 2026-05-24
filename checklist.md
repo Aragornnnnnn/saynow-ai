@@ -68,3 +68,7 @@
 - [x] 관련 단위 테스트와 로컬 실제 모델 smoke 검증을 실행한다.
 - [x] `turnClassification`을 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화하는 회귀 테스트를 추가한다.
 - [x] 메뉴 정보 요청 응답에 실제 메뉴 항목이 보이도록 프롬프트와 보정 로직을 수정한다.
+- [x] `availableOptions` 요청 계약을 추가해 메뉴와 옵션 정보를 structured context로 전달한다.
+- [x] 메뉴와 추천 요청이 제공된 `availableOptions` 안에서만 응답하도록 회귀 테스트를 추가한다.
+- [x] `availableOptions`가 없을 때 AI 서버가 구체 옵션을 지어내지 않도록 보정한다.
+- [x] 관련 단위 테스트와 compileall, diff check를 실행한다.

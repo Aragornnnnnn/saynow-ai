@@ -263,6 +263,80 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.filledSlots, [])
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
 
+    def test_next_question_accepts_available_options_context(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+            "availableOptions": [
+                {"slotName": "drink", "options": ["iced Americano", "latte", "tea"]},
+            ],
+        })
+
+        self.assertEqual(request.availableOptions[0].slotName, "drink")
+        self.assertEqual(request.availableOptions[0].options, ["iced Americano", "latte", "tea"])
+
+    def test_next_question_rejects_blank_available_options(self):
+        from pydantic import ValidationError
+        from app.models.conversation import NextQuestionRequest
+
+        with self.assertRaises(ValidationError):
+            NextQuestionRequest.model_validate({
+                "originalQuestion": "What would you like to order?",
+                "userUtterance": "Can I see the menu?",
+                "scenarioTitle": "카페에서 주문하기",
+                "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                "slots": [
+                    {"slotName": "drink", "filled": False},
+                ],
+                "availableOptions": [
+                    {"slotName": "drink", "options": ["iced Americano", " "]},
+                ],
+            })
+
+    def test_next_question_user_prompt_includes_available_options_for_unfilled_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+                {"slotName": "size", "filled": True},
+            ],
+            "availableOptions": [
+                {"slotName": "drink", "options": ["iced Americano", "latte"]},
+                {"slotName": "size", "options": ["small", "medium"]},
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [],
+                "nextQuestion": "The drink options are iced Americano and latte. What would you like to order?",
+                "translatedQuestion": "음료 선택지는 iced Americano, latte입니다. 무엇을 주문하시겠어요?",
+                "turnClassification": "ASSISTANCE_REQUEST",
+            })
+
+        self.service.chat = capture_chat
+
+        self.service.generate_next_question(request)
+
+        user_prompt = calls[0][1]
+        self.assertIn("Available options for unfilled slots:", user_prompt)
+        self.assertIn("- drink: iced Americano, latte", user_prompt)
+        self.assertNotIn("- size: small, medium", user_prompt)
+
     def test_next_question_classifies_information_request_as_assistance_and_provides_visible_options(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -274,6 +348,9 @@ class ConversationServiceTest(unittest.TestCase):
             "slots": [
                 {"slotName": "drink", "filled": False},
                 {"slotName": "size", "filled": False},
+            ],
+            "availableOptions": [
+                {"slotName": "drink", "options": ["iced Americano", "latte", "tea"]},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -289,7 +366,61 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
         self.assertEqual(
             result.nextQuestion,
-            "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
+            "The drink options are iced Americano, latte, and tea. What would you like to order?",
+        )
+
+    def test_next_question_uses_available_options_for_recommendation_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What do you recommend?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+            "availableOptions": [
+                {"slotName": "drink", "options": ["iced Americano", "latte"]},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "I recommend a cappuccino. Would you like to order that?",
+            "translatedQuestion": "카푸치노를 추천해요. 그걸로 주문하시겠어요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(result.nextQuestion, "I recommend iced Americano. Would you like to order that?")
+
+    def test_next_question_does_not_invent_options_without_available_options(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "Here are the menu options. What would you like to order?",
+            "translatedQuestion": "메뉴 옵션은 이렇습니다. 어떤 음료를 주문하고 싶으신가요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(
+            result.nextQuestion,
+            "I don't have the available options here. What would you like to order?",
         )
 
     def test_next_question_classifies_option_completion_before_slot_answer(self):
@@ -366,6 +497,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("ASSISTANCE_REQUEST", prompt)
         self.assertIn("INVALID_RESPONSE", prompt)
         self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
+        self.assertIn("Use availableOptions as the source of truth", prompt)
+        self.assertIn("Do not invent options outside availableOptions", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
         self.assertIn("Can you recommend something?", prompt)
         self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
