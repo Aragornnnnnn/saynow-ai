@@ -87,3 +87,9 @@
 - [x] Prompt 9 live 테스트 결과를 Obsidian에 기록한다.
 - [x] Supabase RAG 테이블 적용 SQL을 repo에 추가하고, live 검증에서 테이블 미생성 상태를 기록한다.
 - [x] 반복 도움 요청을 자동으로 `candidate`로 승격하고 live DB에서 검증한다.
+- [x] SSE 피드백 스트리밍용 summary/turn 단위 서비스 계약 추가.
+- [x] `/api/v1/conversation/feedback/stream` SSE 라우터 추가.
+- [x] SSE 이벤트 순서와 기존 동기 API 회귀 테스트 실행.
+- [x] 피드백 요청에 백엔드 확정 `sessionResult` 계약 추가.
+- [x] 기본 피드백과 SSE 피드백 프롬프트가 같은 `sessionResult`를 사용하도록 보강.
+- [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.

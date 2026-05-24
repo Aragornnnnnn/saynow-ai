@@ -35,6 +35,11 @@ class NextQuestionTurnClassification(StrEnum):
     INVALID_RESPONSE = "INVALID_RESPONSE"
 
 
+class SessionResult(StrEnum):
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+
+
 class NextQuestionRequest(BaseModel):
     originalQuestion: str
     userUtterance: str
@@ -69,6 +74,7 @@ class FeedbackTurnRequest(BaseModel):
 class ConversationFeedbackRequest(BaseModel):
     scenarioTitle: str
     scenarioGoal: str
+    sessionResult: SessionResult
     turns: list[FeedbackTurnRequest]
 
     @field_validator("scenarioTitle", "scenarioGoal")
@@ -104,6 +110,16 @@ class TurnFeedbackResponse(BaseModel):
         if any(value is None or not value.strip() for value in required_values):
             raise ValueError("feedback fields must exist when feedbackRequired is true")
         return self
+
+
+class ConversationFeedbackSummaryResponse(BaseModel):
+    comprehensionScore: int = Field(ge=0, le=100)
+    feedbackSummary: str
+
+    @field_validator("feedbackSummary")
+    @classmethod
+    def feedback_summary_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
 
 
 class ConversationFeedbackResponse(BaseModel):

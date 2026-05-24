@@ -24,6 +24,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.conversation_route = conversation
         self.original_next_question = conversation.generate_next_question
         self.original_feedback = conversation.generate_feedback
+        self.original_feedback_stream_events = getattr(conversation, "generate_feedback_stream_events", None)
 
         conversation.generate_next_question = lambda request: NextQuestionResponse(
             nextQuestion="What size would you like?",
@@ -44,10 +45,28 @@ class ConversationRoutesTest(unittest.TestCase):
                 )
             ],
         )
+        conversation.generate_feedback_stream_events = lambda request: iter([
+            ("summary", {
+                "comprehensionScore": 82,
+                "feedbackSummary": "전체적으로 의도는 잘 전달됐지만 주문 표현이 조금 짧게 들립니다.",
+            }),
+            ("turnFeedback", {
+                "turnId": 101,
+                "feedbackRequired": True,
+                "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+                "betterExpression": "I'd like an iced Americano, please.",
+            }),
+            ("done", {"turnCount": 1}),
+        ])
 
     def tearDown(self):
         self.conversation_route.generate_next_question = self.original_next_question
         self.conversation_route.generate_feedback = self.original_feedback
+        if self.original_feedback_stream_events is None:
+            delattr(self.conversation_route, "generate_feedback_stream_events")
+        else:
+            self.conversation_route.generate_feedback_stream_events = self.original_feedback_stream_events
 
     def test_next_question_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/next-question", json={
@@ -72,6 +91,7 @@ class ConversationRoutesTest(unittest.TestCase):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -86,10 +106,57 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.json()["turnFeedbacks"][0]["turnId"], 101)
         self.assertTrue(response.json()["turnFeedbacks"][0]["feedbackRequired"])
 
+    def test_feedback_stream_route_returns_sse_events_in_order(self):
+        with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        }) as response:
+            body = response.read().decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"].split(";")[0], "text/event-stream")
+        self.assertLess(body.index("event: summary"), body.index("event: turnFeedback"))
+        self.assertLess(body.index("event: turnFeedback"), body.index("event: done"))
+        self.assertIn('"comprehensionScore":82', body)
+        self.assertIn('"turnId":101', body)
+
+    def test_feedback_stream_route_returns_error_event_when_generation_fails(self):
+        def fail_stream(request):
+            raise self.conversation_route.ConversationGenerationError("model unavailable")
+
+        self.conversation_route.generate_feedback_stream_events = fail_stream
+
+        with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        }) as response:
+            body = response.read().decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("event: error", body)
+        self.assertIn('"code":"AI_GENERATION_FAILED"', body)
+
     def test_invalid_request_returns_documented_error_shape(self):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
             "turns": [],
         })
 
