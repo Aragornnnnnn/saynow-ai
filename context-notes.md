@@ -98,3 +98,5 @@
 - 2026-05-24 `I need a menu`는 현재 `_must_not_fill_slots`의 generic object blocker가 LLM 호출 전에 막아 `INVALID_RESPONSE`가 된다. `prompt-engineering-patterns` 원칙에 따라 실패 금지 목록을 더 늘리는 대신, `menu`를 broad blocker에서 제거하고 메뉴 요청을 `ASSISTANCE_REQUEST` 대표 예시와 structured output으로 유도한다.
 - 2026-05-24 Prompt 7은 `menu`를 generic object blocker에서 제거하고, `I need a menu`, `Can I get a menu`, `Menu please`를 information request로 인식하도록 했다. `drink`, `something`, `item`, `thing` 같은 generic order object는 계속 슬롯을 채우지 않는다.
 - 2026-05-24 Prompt 7 검증은 focused menu request 테스트 4개와 전체 unittest 55개, compileall, diff check로 확인했다.
+- 2026-05-24 Prompt 8은 `prompt-engineering-patterns`의 system prompt design, structured output, few-shot 원칙을 적용해 next-question system prompt를 섹션화한다. hardcoded 메뉴 few-shot은 `availableOptions`가 입력에 있을 때만 해당 옵션을 쓰는 예시로 바꿔 예시 오염을 줄인다.
+- 2026-05-24 Prompt 8 검증은 focused prompt tests 4개와 전체 unittest 57개, compileall, diff check로 확인했다.

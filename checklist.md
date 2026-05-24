@@ -76,3 +76,7 @@
 - [x] `menu`를 generic object blocker에서 제거하고, 메뉴 요청은 도움 요청으로 판단하도록 프롬프트와 보정 로직을 수정한다.
 - [x] Prompt 7 결과를 Obsidian 프롬프트 실험 로그에 기록한다.
 - [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.
+- [x] `prompt-engineering-patterns` 기준으로 next-question system prompt를 섹션화하는 회귀 테스트를 추가한다.
+- [x] 메뉴와 추천 few-shot을 `availableOptions` 기반 예시로 바꾼다.
+- [x] Prompt 8 결과를 Obsidian 프롬프트 실험 로그에 기록한다.
+- [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.

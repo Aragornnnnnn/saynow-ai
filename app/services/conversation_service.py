@@ -163,43 +163,67 @@ def _simple_better_expression_for_question(original_question: str) -> str:
 
 
 def _next_question_system_prompt() -> str:
-    return (
-        "You generate follow-up questions for an English speaking practice scenario. "
-        "Return ONLY valid JSON matching this schema exactly: "
-        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}. '
-        "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer. "
-        "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question. "
-        "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value. "
-        "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic. "
-        "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses. "
-        "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
-        "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
-        "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
-        "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information. "
-        "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information. "
-        "Treat these as incomplete request fragments across domains. "
-        "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order. "
-        "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value. "
-        "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please. "
-        "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything. "
-        "Never include slots that were already filled before this request. "
-        "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
-        "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
-        "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
-        "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, options, available choices, rules, or details, include concrete useful information inside nextQuestion before asking the next short question. "
-        "Do not answer information requests with empty phrases such as Here are the options or Here is the menu unless you also include the actual options. "
-        "Use availableOptions as the source of truth for menus, recommendations, available choices, and option details when availableOptions are provided. "
-        "Do not invent options outside availableOptions. "
-        "If no availableOptions are provided for the requested slot, do not list specific options that were not provided. "
-        "Do not include lists, explanations, or multiple follow-up questions. "
-        "Use only the provided slot names. "
-        "Few-shot calibration examples: "
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
-        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
-    )
+    return "\n\n".join([
+        (
+            "Role:\n"
+            "You generate follow-up questions for an English speaking practice scenario."
+        ),
+        (
+            "Output Schema:\n"
+            "Return ONLY valid JSON matching this schema exactly: "
+            '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
+        ),
+        (
+            "Decision Policy:\n"
+            "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer.\n"
+            "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question.\n"
+            "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value.\n"
+            "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic.\n"
+            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses."
+        ),
+        (
+            "Slot Policy:\n"
+            "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance.\n"
+            "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot.\n"
+            "Never include slots that were already filled before this request.\n"
+            "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences."
+        ),
+        (
+            "Invalid And Generic Input Policy:\n"
+            "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information.\n"
+            "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information.\n"
+            "Treat these as incomplete request fragments across domains.\n"
+            "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order.\n"
+            "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value.\n"
+            "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please.\n"
+            "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything."
+        ),
+        (
+            "Context Policy:\n"
+            "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, options, available choices, rules, or details, include concrete useful information inside nextQuestion before asking the next short question.\n"
+            "Use availableOptions as the source of truth for menus, recommendations, available choices, and option details when availableOptions are provided.\n"
+            "Do not invent options outside availableOptions.\n"
+            "If no availableOptions are provided for the requested slot, do not list specific options that were not provided.\n"
+            "Do not answer information requests with empty phrases such as Here are the options or Here is the menu unless you also include the actual options."
+        ),
+        (
+            "Response Policy:\n"
+            "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null.\n"
+            "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance.\n"
+            "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation.\n"
+            "Do not include lists, explanations, or multiple follow-up questions.\n"
+            "Use only the provided slot names."
+        ),
+        (
+            "Few-shot Examples:\n"
+            "Few-shot calibration examples use the same schema as the required output.\n"
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Available options=drink: iced Americano, latte, tea. Output: {"filledSlots":[],"nextQuestion":"I recommend iced Americano. Would you like to order that?","translatedQuestion":"아이스 아메리카노를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Available options=drink: iced Americano, latte, tea. Output: {"filledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Available options=drink: iced Americano, latte, tea. Output: {"filledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Available options=None provided. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Available options=drink: iced Americano, latte, tea. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
+        ),
+    ])
 
 
 def _next_question_user_prompt(request: NextQuestionRequest, unfilled_slot_names: list[str]) -> str:

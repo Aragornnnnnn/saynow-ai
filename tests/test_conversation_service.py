@@ -535,6 +535,31 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I do not want to order anything", prompt)
         self.assertIn("Do not include lists, explanations, or multiple follow-up questions", prompt)
 
+    def test_next_question_prompt_uses_sectioned_template(self):
+        prompt = self.service._next_question_system_prompt()
+
+        expected_sections = [
+            "Role",
+            "Output Schema",
+            "Decision Policy",
+            "Slot Policy",
+            "Context Policy",
+            "Response Policy",
+            "Few-shot Examples",
+        ]
+
+        for section in expected_sections:
+            with self.subTest(section=section):
+                self.assertIn(f"{section}:", prompt)
+
+    def test_next_question_prompt_grounds_menu_few_shots_in_available_options(self):
+        prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("Available options=drink: iced Americano, latte, tea", prompt)
+        self.assertIn("The drink options are iced Americano, latte, and tea.", prompt)
+        self.assertIn("I recommend iced Americano. Would you like to order that?", prompt)
+        self.assertNotIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
+
     def test_next_question_prompt_contains_few_shot_calibration_for_valid_no_slot_and_option_completion(self):
         prompt = self.service._next_question_system_prompt()
 
@@ -549,10 +574,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not invent options outside availableOptions", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
         self.assertIn("Can you recommend something?", prompt)
-        self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
+        self.assertIn("I recommend iced Americano. Would you like to order that?", prompt)
         self.assertIn("Can I see the menu?", prompt)
         self.assertIn("I need a menu.", prompt)
-        self.assertIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
+        self.assertIn("The drink options are iced Americano, latte, and tea.", prompt)
         self.assertIn("That's all.", prompt)
         self.assertIn('"filledSlots":[{"slotName":"customOptions"}]', prompt)
 
