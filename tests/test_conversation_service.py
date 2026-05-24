@@ -170,7 +170,7 @@ class ConversationServiceTest(unittest.TestCase):
             "I want drink",
             "I want a drink",
             "I'd like something",
-            "Can I get a menu",
+            "Can I get an item",
             "I want to order something",
         ]
 
@@ -369,6 +369,53 @@ class ConversationServiceTest(unittest.TestCase):
             "The drink options are iced Americano, latte, and tea. What would you like to order?",
         )
 
+    def test_next_question_treats_menu_need_as_assistance_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        menu_requests = [
+            "I need a menu",
+            "Can I get a menu",
+            "Menu please",
+        ]
+
+        for user_utterance in menu_requests:
+            with self.subTest(user_utterance=user_utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": user_utterance,
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "slots": [
+                        {"slotName": "drink", "filled": False},
+                        {"slotName": "size", "filled": False},
+                    ],
+                    "availableOptions": [
+                        {"slotName": "drink", "options": ["iced Americano", "latte", "tea"]},
+                    ],
+                })
+                calls = []
+
+                def capture_chat(*args, **kwargs):
+                    calls.append(args)
+                    return json.dumps({
+                        "filledSlots": [],
+                        "nextQuestion": "Here are the menu options. What would you like to order?",
+                        "translatedQuestion": "메뉴 옵션은 이렇습니다. 무엇을 주문하시겠어요?",
+                        "turnClassification": "ASSISTANCE_REQUEST",
+                    })
+
+                self.service.chat = capture_chat
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+                self.assertEqual(
+                    result.nextQuestion,
+                    "The drink options are iced Americano, latte, and tea. What would you like to order?",
+                )
+
     def test_next_question_uses_available_options_for_recommendation_request(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -480,7 +527,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
         self.assertIn("Incomplete order fragments without a concrete object must return filledSlots=[]", prompt)
         self.assertIn("I want, I need, I'd like, I would like, Can I get", prompt)
-        self.assertIn("Generic objects such as drink, something, menu, item, or thing are not concrete slot values", prompt)
+        self.assertIn("generic order objects such as drink, something, item, or thing", prompt)
+        self.assertIn("A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST", prompt)
         self.assertIn("qwertyuiop asdfghjkl zxcvbnm", prompt)
         self.assertIn("My shoes are swimming in the moon today", prompt)
         self.assertIn("I don't know", prompt)
@@ -503,6 +551,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Can you recommend something?", prompt)
         self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
         self.assertIn("Can I see the menu?", prompt)
+        self.assertIn("I need a menu.", prompt)
         self.assertIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
         self.assertIn("That's all.", prompt)
         self.assertIn('"filledSlots":[{"slotName":"customOptions"}]', prompt)

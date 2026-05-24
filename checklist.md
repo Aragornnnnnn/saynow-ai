@@ -72,3 +72,7 @@
 - [x] 메뉴와 추천 요청이 제공된 `availableOptions` 안에서만 응답하도록 회귀 테스트를 추가한다.
 - [x] `availableOptions`가 없을 때 AI 서버가 구체 옵션을 지어내지 않도록 보정한다.
 - [x] 관련 단위 테스트와 compileall, diff check를 실행한다.
+- [x] `I need a menu`, `Can I get a menu`, `Menu please`가 `ASSISTANCE_REQUEST`로 처리되는 회귀 테스트를 추가한다.
+- [x] `menu`를 generic object blocker에서 제거하고, 메뉴 요청은 도움 요청으로 판단하도록 프롬프트와 보정 로직을 수정한다.
+- [x] Prompt 7 결과를 Obsidian 프롬프트 실험 로그에 기록한다.
+- [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.

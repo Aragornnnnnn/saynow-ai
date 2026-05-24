@@ -179,7 +179,8 @@ def _next_question_system_prompt() -> str:
         "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information. "
         "Treat these as incomplete request fragments across domains. "
         "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order. "
-        "Generic objects such as drink, something, menu, item, or thing are not concrete slot values and must not fill an order, item, option, or service slot. "
+        "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value. "
+        "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please. "
         "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything. "
         "Never include slots that were already filled before this request. "
         "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
@@ -195,6 +196,7 @@ def _next_question_system_prompt() -> str:
         "Few-shot calibration examples: "
         'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
         'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
+        'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
         'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}. '
         'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
     )
@@ -383,6 +385,9 @@ def _must_not_fill_slots(user_utterance: str) -> bool:
     }
     if compact in exact_blocked:
         return True
+
+    if _is_information_request(user_utterance) or _is_recommendation_request(user_utterance):
+        return False
 
     if _is_incomplete_utterance_fragment(user_utterance):
         return True
@@ -832,7 +837,7 @@ def _incomplete_order_fragment_analogy(user_utterance: str) -> str | None:
 
 
 def _generic_order_object_analogy(compact_utterance: str) -> str | None:
-    object_pattern = r"(?P<object>drink|drinks|something|anything|menu|item|thing|one)"
+    object_pattern = r"(?P<object>drink|drinks|something|anything|item|thing|one)"
     patterns = [
         (rf"i want(?: to order)? (?:a |an |the )?{object_pattern}", "want"),
         (rf"i need (?:a |an |the )?{object_pattern}", "need"),
@@ -852,7 +857,6 @@ def _generic_object_analogy_phrase(object_word: str, intent: str) -> str:
         "drinks": "음료",
         "something": "뭔가",
         "anything": "아무거나",
-        "menu": "메뉴",
         "item": "상품",
         "thing": "것",
         "one": "하나",
@@ -963,6 +967,11 @@ def _is_recommendation_request(user_utterance: str) -> bool:
 
 def _is_information_request(user_utterance: str) -> bool:
     compact = _normalize_utterance(user_utterance).replace("'", "")
+    menu_request_patterns = [
+        r"(?:i need|i want|id like|i would like) (?:to see )?(?:a |the )?menu",
+        r"(?:can i get|could i get|may i have) (?:a |the )?menu",
+        r"menu please",
+    ]
     return any([
         "can i see" in compact,
         "could i see" in compact,
@@ -977,7 +986,7 @@ def _is_information_request(user_utterance: str) -> bool:
         "available choices" in compact,
         "do you have a menu" in compact,
         "do you have any options" in compact,
-    ])
+    ]) or any(re.fullmatch(pattern, compact) for pattern in menu_request_patterns)
 
 
 def _ensure_visible_information_response(

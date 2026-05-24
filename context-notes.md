@@ -95,3 +95,6 @@
 - 2026-05-24 사용자는 AI 응답 텍스트만 볼 수 있으므로 메뉴 요청에서 `Here are the menu options`처럼 비어 있는 안내만 주면 안 된다. 메뉴 정보 요청에는 실제 메뉴 항목을 `nextQuestion`에 포함해야 하며, 모델이 구체 옵션을 빠뜨리면 로컬 보정으로 `iced Americano`, `latte`, `cappuccino`, `tea`를 노출한다.
 - 2026-05-24 LLM workflow 개선은 RAG나 Agent Loop가 아니라 structured context 우선으로 진행한다. 꼬리 질문은 단일 모델 workflow를 유지하되 `availableOptions`를 request에 추가해 메뉴, 추천, 선택지 응답이 백엔드가 제공한 옵션 안에서만 나오도록 한다.
 - 2026-05-24 `NextQuestionRequest.availableOptions`를 optional로 추가했다. 모델이 메뉴나 추천 요청에서 제공되지 않은 옵션을 만들면 AI 서버가 제공된 옵션으로 보정하고, 옵션이 없으면 구체 선택지를 지어내지 않는 응답으로 바꾼다. `unittest discover`, `compileall`, `git diff --check`는 모두 통과했다.
+- 2026-05-24 `I need a menu`는 현재 `_must_not_fill_slots`의 generic object blocker가 LLM 호출 전에 막아 `INVALID_RESPONSE`가 된다. `prompt-engineering-patterns` 원칙에 따라 실패 금지 목록을 더 늘리는 대신, `menu`를 broad blocker에서 제거하고 메뉴 요청을 `ASSISTANCE_REQUEST` 대표 예시와 structured output으로 유도한다.
+- 2026-05-24 Prompt 7은 `menu`를 generic object blocker에서 제거하고, `I need a menu`, `Can I get a menu`, `Menu please`를 information request로 인식하도록 했다. `drink`, `something`, `item`, `thing` 같은 generic order object는 계속 슬롯을 채우지 않는다.
+- 2026-05-24 Prompt 7 검증은 focused menu request 테스트 4개와 전체 unittest 55개, compileall, diff check로 확인했다.
