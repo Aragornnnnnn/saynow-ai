@@ -102,3 +102,5 @@
 - 2026-05-24 Prompt 8 검증은 focused prompt tests 4개와 전체 unittest 57개, compileall, diff check로 확인했다.
 - 2026-05-24 이후 프롬프트 실험 로그의 결과 표는 실제 OpenAI `gpt-4o-mini` live 호출 결과만 기록한다. mocked LLM unittest는 프롬프트 구조와 deterministic 보정 회귀 검증으로만 기록하고, 결과 표 대체값으로 사용하지 않는다.
 - 2026-05-24 Prompt 8 live 검증은 `prod-saynow` SSM에서 OpenAI 키와 모델 값을 값 출력 없이 주입하고, `NQ-01`-`NQ-10`, `MENU-01`-`MENU-03`, `FB-01`-`FB-10`을 실제 `gpt-4o-mini`로 호출해 `/private/tmp/saynow_prompt8_gpt4o_mini_live_results.json`에 저장했다.
+- 2026-05-24 workflow 방향을 `availableOptions` 기반 structured context에서 `ASSISTANCE_REQUEST` 전용 RAG workflow로 변경했다. 백엔드 DB에 `availableOptions`나 `scenarioKnowledge`를 미리 저장하지 않고, AI 서버가 내부 벡터 DB에서 유사 질문과 답변을 찾은 뒤 없으면 `gpt-4o-mini`가 역할극 답변을 생성한다.
+- 2026-05-24 MVP RAG 검색 범위는 인터넷이 아니라 SayNow 내부 벡터 DB다. 생성된 도움 요청 답변은 `generated`, `candidate`, `approved` 같은 품질 상태와 함께 저장하고, 반복되는 질문을 재사용 지식으로 승격하는 방향으로 문서화했다.
