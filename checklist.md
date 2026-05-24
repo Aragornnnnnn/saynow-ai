@@ -82,3 +82,7 @@
 - [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.
 - [x] Prompt 8 결과를 실제 OpenAI `gpt-4o-mini` live 호출로 재측정하고, 이후 프롬프트 실험 결과 표는 live 호출만 사용하도록 문서 기준을 정정한다.
 - [x] `availableOptions`를 사용하지 않는 `ASSISTANCE_REQUEST` 전용 RAG workflow 방향을 Obsidian workflow 문서에 반영한다.
+- [x] `availableOptions` 의존을 제거하고 `ASSISTANCE_REQUEST` 전용 RAG workflow 회귀 테스트를 추가한다.
+- [x] pgvector 기반 도움 요청 저장소와 임베딩 호출 경계를 구현한다.
+- [x] Prompt 9 live 테스트 결과를 Obsidian에 기록한다.
+- [x] Supabase RAG 테이블 적용 SQL을 repo에 추가하고, live 검증에서 테이블 미생성 상태를 기록한다.

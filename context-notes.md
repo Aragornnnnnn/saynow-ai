@@ -104,3 +104,8 @@
 - 2026-05-24 Prompt 8 live 검증은 `prod-saynow` SSM에서 OpenAI 키와 모델 값을 값 출력 없이 주입하고, `NQ-01`-`NQ-10`, `MENU-01`-`MENU-03`, `FB-01`-`FB-10`을 실제 `gpt-4o-mini`로 호출해 `/private/tmp/saynow_prompt8_gpt4o_mini_live_results.json`에 저장했다.
 - 2026-05-24 workflow 방향을 `availableOptions` 기반 structured context에서 `ASSISTANCE_REQUEST` 전용 RAG workflow로 변경했다. 백엔드 DB에 `availableOptions`나 `scenarioKnowledge`를 미리 저장하지 않고, AI 서버가 내부 벡터 DB에서 유사 질문과 답변을 찾은 뒤 없으면 `gpt-4o-mini`가 역할극 답변을 생성한다.
 - 2026-05-24 MVP RAG 검색 범위는 인터넷이 아니라 SayNow 내부 벡터 DB다. 생성된 도움 요청 답변은 `generated`, `candidate`, `approved` 같은 품질 상태와 함께 저장하고, 반복되는 질문을 재사용 지식으로 승격하는 방향으로 문서화했다.
+- 2026-05-24 Supabase pgvector 작업은 사용자가 진행했다. AI 서버 구현은 백엔드-AI API 구조를 유지하고, `ASSISTANCE_REQUEST`에서만 내부 RAG 검색을 시도하며, 검색 실패나 저장 실패가 대화 응답을 깨지 않도록 한다.
+- 2026-05-24 Prompt 9는 `availableOptions` 요청 필드를 제거하고 `ASSISTANCE_REQUEST` 전용 RAG workflow를 구현했다. OpenAI embedding은 `text-embedding-3-small`, RAG 기본 테이블은 `ai_rag.assistance_knowledge`로 둔다.
+- 2026-05-24 Supabase develop DB 접속은 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 함께 사용해야 했다. BE JDBC URL의 `prepareThreshold` 같은 JDBC 전용 파라미터는 `psycopg` 연결 전에 제거하도록 했다.
+- 2026-05-24 live 검증에서 Supabase 인증과 접속은 성공했지만 `ai_rag.assistance_knowledge` 테이블이 없었다. 공유 DB DDL 자동 적용은 승인 정책상 진행하지 않았고, 적용용 SQL을 `docs/supabase/2026-05-24-assistance-rag-pgvector.sql`에 추가했다.
+- 2026-05-24 Prompt 9 live 결과는 실제 `gpt-4o-mini`로 `NQ-01`-`NQ-10`, `RAG-01`-`RAG-03`, `FB-01`-`FB-10`을 측정해 `/private/tmp/saynow_prompt9_gpt4o_mini_live_results.json`에 저장했다. RAG 테이블이 없어 검색과 저장은 미검증이지만, no-match fallback은 메뉴, 추천, 원두, 디카페인 질문을 `ASSISTANCE_REQUEST`로 처리했다.

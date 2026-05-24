@@ -20,25 +20,6 @@ class SlotStatusRequest(BaseModel):
         return _validate_not_blank(value)
 
 
-class AvailableOptionRequest(BaseModel):
-    slotName: str
-    options: list[str]
-
-    @field_validator("slotName")
-    @classmethod
-    def slot_name_must_not_be_blank(cls, value: str) -> str:
-        return _validate_not_blank(value)
-
-    @field_validator("options")
-    @classmethod
-    def options_must_not_be_empty_or_blank(cls, value: list[str]) -> list[str]:
-        if not value:
-            raise ValueError("options must not be empty")
-        for option in value:
-            _validate_not_blank(option)
-        return value
-
-
 class FilledSlotResponse(BaseModel):
     slotName: str
 
@@ -60,7 +41,6 @@ class NextQuestionRequest(BaseModel):
     scenarioTitle: str
     scenarioGoal: str
     slots: list[SlotStatusRequest]
-    availableOptions: list[AvailableOptionRequest] = Field(default_factory=list)
 
     @field_validator("originalQuestion", "userUtterance", "scenarioTitle", "scenarioGoal")
     @classmethod
