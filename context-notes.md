@@ -109,3 +109,5 @@
 - 2026-05-24 Supabase develop DB 접속은 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 함께 사용해야 했다. BE JDBC URL의 `prepareThreshold` 같은 JDBC 전용 파라미터는 `psycopg` 연결 전에 제거하도록 했다.
 - 2026-05-24 live 검증에서 Supabase 인증과 접속은 성공했지만 `ai_rag.assistance_knowledge` 테이블이 없었다. 공유 DB DDL 자동 적용은 승인 정책상 진행하지 않았고, 적용용 SQL을 `docs/supabase/2026-05-24-assistance-rag-pgvector.sql`에 추가했다.
 - 2026-05-24 Prompt 9 live 결과는 실제 `gpt-4o-mini`로 `NQ-01`-`NQ-10`, `RAG-01`-`RAG-03`, `FB-01`-`FB-10`을 측정해 `/private/tmp/saynow_prompt9_gpt4o_mini_live_results.json`에 저장했다. RAG 테이블이 없어 검색과 저장은 미검증이지만, no-match fallback은 메뉴, 추천, 원두, 디카페인 질문을 `ASSISTANCE_REQUEST`로 처리했다.
+- 2026-05-24 사용자가 Supabase develop DB에 `ai_rag.assistance_knowledge`를 만든 뒤 Prompt 9 live를 재측정했다. `dbCountBefore=0`, `dbCountAfter=6`으로 도움 요청 6건이 저장됐고 모든 row에 embedding이 채워졌다.
+- 2026-05-24 retrieval smoke는 `Can I see the menu?` row를 `candidate`로 승격한 뒤 같은 질문을 재호출했다. 새 row가 `answer_source=retrieved`, `quality_status=candidate`로 저장되어 pgvector 검색 재사용 경로가 동작함을 확인했다.
