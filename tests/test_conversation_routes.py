@@ -91,6 +91,7 @@ class ConversationRoutesTest(unittest.TestCase):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "scenarioResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -109,6 +110,7 @@ class ConversationRoutesTest(unittest.TestCase):
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "scenarioResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -135,6 +137,7 @@ class ConversationRoutesTest(unittest.TestCase):
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "scenarioResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -153,6 +156,7 @@ class ConversationRoutesTest(unittest.TestCase):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "scenarioResult": "SUCCESS",
             "turns": [],
         })
 

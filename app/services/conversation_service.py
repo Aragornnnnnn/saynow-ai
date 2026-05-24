@@ -16,6 +16,7 @@ from app.models.conversation import (
     NextQuestionRequest,
     NextQuestionResponse,
     NextQuestionTurnClassification,
+    ScenarioResult,
     TurnFeedbackResponse,
 )
 from app.services.assistance_knowledge_store import build_assistance_knowledge_store
@@ -131,6 +132,8 @@ def generate_feedback_summary(request: ConversationFeedbackRequest) -> Conversat
     except ValidationError as exc:
         raise ConversationGenerationError("feedback summary response does not match contract") from exc
 
+    _cap_score_for_backend_scenario_result(request, summary)
+    _align_summary_with_backend_scenario_result(request, summary)
     if all(_must_not_fill_slots(turn.userUtterance) for turn in request.turns):
         summary.comprehensionScore = min(summary.comprehensionScore, 39)
 
@@ -159,6 +162,7 @@ def generate_turn_feedback(
     single_turn_request = ConversationFeedbackRequest(
         scenarioTitle=request.scenarioTitle,
         scenarioGoal=request.scenarioGoal,
+        scenarioResult=request.scenarioResult,
         turns=[turn],
     )
     response = ConversationFeedbackResponse(
@@ -354,6 +358,9 @@ def _feedback_system_prompt() -> str:
         "Do not invent a specific service item inside nativeUnderstanding or nativeLanguageInterpretation for incomplete order fragments or generic object responses. "
         "Scoring Policy: "
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
+        "scenarioResult is already confirmed by the backend and must be treated as source of truth. "
+        "Do not contradict scenarioResult when writing feedbackSummary or assigning comprehensionScore. "
+        "If scenarioResult is FAILURE, the summary must say the scenario goal was not achieved and comprehensionScore must be 59 or below. "
         "Evaluate grammar correctness, naturalness, and fluency in addition to scenario fit. "
         "Deduct points for unnatural phrasing, missing articles, awkward word order, overly literal expressions, or robotic expressions. "
         "Do not give 100 unless the utterance is completely natural and idiomatic. "
@@ -476,6 +483,9 @@ def _feedback_summary_system_prompt() -> str:
         '{"comprehensionScore":82,"feedbackSummary":"..."}. '
         "Do not include turnFeedbacks or any per-turn feedback fields. "
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
+        "scenarioResult is already confirmed by the backend and must be treated as source of truth. "
+        "Do not contradict scenarioResult when writing feedbackSummary or assigning comprehensionScore. "
+        "If scenarioResult is FAILURE, the summary must say the scenario goal was not achieved and comprehensionScore must be 59 or below. "
         "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
         "feedbackSummary must include one focus point for the user's next practice. "
         "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
@@ -513,6 +523,8 @@ def _turn_feedback_user_prompt(
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
+        f"Scenario result: {request.scenarioResult.value}\n"
+        f"Backend has already confirmed this scenario result.\n"
         f"Overall comprehension score: {summary.comprehensionScore}\n"
         f"Overall feedback summary: {summary.feedbackSummary}\n\n"
         f"Turn to evaluate:\n"
@@ -591,6 +603,8 @@ def _enforce_feedback_consistency(
     request: ConversationFeedbackRequest,
     response: ConversationFeedbackResponse,
 ) -> None:
+    _cap_score_for_backend_scenario_result(request, response)
+    _align_summary_with_backend_scenario_result(request, response)
     if not all(_must_not_fill_slots(turn.userUtterance) for turn in request.turns):
         return
 
@@ -606,6 +620,42 @@ def _enforce_feedback_consistency(
             turn_feedback.betterExpression
             or "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요."
         )
+
+
+def _cap_score_for_backend_scenario_result(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse | ConversationFeedbackSummaryResponse,
+) -> None:
+    if request.scenarioResult == ScenarioResult.FAILURE:
+        response.comprehensionScore = min(response.comprehensionScore, 59)
+
+
+def _align_summary_with_backend_scenario_result(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse | ConversationFeedbackSummaryResponse,
+) -> None:
+    if request.scenarioResult != ScenarioResult.FAILURE:
+        return
+
+    if _summary_mentions_failure(response.feedbackSummary):
+        return
+
+    response.feedbackSummary = (
+        "시나리오 목표를 달성하지 못했어요. "
+        "다음에는 질문에 맞는 핵심 정보를 먼저 말해 보세요."
+    )
+
+
+def _summary_mentions_failure(feedback_summary: str) -> bool:
+    failure_markers = (
+        "달성하지 못",
+        "성공하지 못",
+        "실패",
+        "전달되지",
+        "해결하지 못",
+        "이어지지 않았",
+    )
+    return any(marker in feedback_summary for marker in failure_markers)
 
 
 def _enforce_turn_feedback_contract(
@@ -1513,6 +1563,8 @@ def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario goal: {request.scenarioGoal}\n\n"
+        f"Scenario result: {request.scenarioResult.value}\n"
+        f"Backend has already confirmed this scenario result.\n\n"
         f"Turns:\n{turn_lines}"
     )
 
