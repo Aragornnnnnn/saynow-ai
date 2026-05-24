@@ -86,3 +86,4 @@
 - [x] pgvector 기반 도움 요청 저장소와 임베딩 호출 경계를 구현한다.
 - [x] Prompt 9 live 테스트 결과를 Obsidian에 기록한다.
 - [x] Supabase RAG 테이블 적용 SQL을 repo에 추가하고, live 검증에서 테이블 미생성 상태를 기록한다.
+- [x] 반복 도움 요청을 자동으로 `candidate`로 승격하고 live DB에서 검증한다.

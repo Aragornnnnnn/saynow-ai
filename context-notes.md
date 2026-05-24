@@ -111,3 +111,4 @@
 - 2026-05-24 Prompt 9 live 결과는 실제 `gpt-4o-mini`로 `NQ-01`-`NQ-10`, `RAG-01`-`RAG-03`, `FB-01`-`FB-10`을 측정해 `/private/tmp/saynow_prompt9_gpt4o_mini_live_results.json`에 저장했다. RAG 테이블이 없어 검색과 저장은 미검증이지만, no-match fallback은 메뉴, 추천, 원두, 디카페인 질문을 `ASSISTANCE_REQUEST`로 처리했다.
 - 2026-05-24 사용자가 Supabase develop DB에 `ai_rag.assistance_knowledge`를 만든 뒤 Prompt 9 live를 재측정했다. `dbCountBefore=0`, `dbCountAfter=6`으로 도움 요청 6건이 저장됐고 모든 row에 embedding이 채워졌다.
 - 2026-05-24 retrieval smoke는 `Can I see the menu?` row를 `candidate`로 승격한 뒤 같은 질문을 재호출했다. 새 row가 `answer_source=retrieved`, `quality_status=candidate`로 저장되어 pgvector 검색 재사용 경로가 동작함을 확인했다.
+- 2026-05-24 반복 도움 요청은 같은 `scenario_title` 안에서 정규화된 `user_utterance`가 2회 이상 generated로 저장되면 자동으로 `candidate`로 승격한다. live smoke에서 임시 반복 질문 2건이 모두 `candidate`가 되는 것을 확인했고, 테스트 row는 삭제했다.

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     assistance_rag_table: str = "ai_rag.assistance_knowledge"
     assistance_rag_match_threshold: float = 0.78
     assistance_rag_match_count: int = 3
+    assistance_rag_candidate_repeat_threshold: int = 2
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

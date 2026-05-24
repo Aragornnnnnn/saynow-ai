@@ -122,9 +122,43 @@ class PgvectorAssistanceKnowledgeStore:
                             vector_literal,
                         ),
                     )
+                    if answer_source == "generated":
+                        self._promote_repeated_generated_questions(cursor, table_identifier, request)
                 connection.commit()
         except Exception as exc:
             logger.warning("도움 요청 RAG 저장 실패 | error: %s", exc)
+
+    def _promote_repeated_generated_questions(self, cursor: Any, table_identifier: Any, request: Any) -> None:
+        normalized_user_utterance = _normalize_repeated_question_key(request.userUtterance)
+        repeat_threshold = self.config.assistance_rag_candidate_repeat_threshold
+        query = _sql().SQL(
+            """
+            update {table}
+            set quality_status = 'candidate',
+                updated_at = now()
+            where scenario_title = %s
+              and trim(lower(regexp_replace(regexp_replace(user_utterance, '[^A-Za-z0-9[:space:]]', ' ', 'g'), '\\s+', ' ', 'g'))) = %s
+              and quality_status = 'generated'
+              and (
+                  select count(*)
+                  from {table}
+                  where scenario_title = %s
+                    and trim(lower(regexp_replace(regexp_replace(user_utterance, '[^A-Za-z0-9[:space:]]', ' ', 'g'), '\\s+', ' ', 'g'))) = %s
+                    and quality_status = 'generated'
+              ) >= %s
+            """
+        ).format(table=table_identifier)
+
+        cursor.execute(
+            query,
+            (
+                request.scenarioTitle,
+                normalized_user_utterance,
+                request.scenarioTitle,
+                normalized_user_utterance,
+                repeat_threshold,
+            ),
+        )
 
     def _connect(self):
         connection_kwargs = {}
@@ -153,6 +187,12 @@ def _embedding_text_for_request(request: Any) -> str:
         f"Previous AI question: {request.originalQuestion}",
         f"User utterance: {request.userUtterance}",
     ])
+
+
+def _normalize_repeated_question_key(value: str) -> str:
+    lowered = value.lower().strip()
+    no_punctuation = re.sub(r"[^a-z0-9\s]", " ", lowered)
+    return re.sub(r"\s+", " ", no_punctuation).strip()
 
 
 def _normalize_database_url(value: str) -> str:
