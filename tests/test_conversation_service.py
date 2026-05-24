@@ -14,9 +14,11 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.service = conversation_service
         self.original_chat = conversation_service.chat
+        self.original_assistance_knowledge_store = getattr(conversation_service, "assistance_knowledge_store", None)
 
     def tearDown(self):
         self.service.chat = self.original_chat
+        self.service.assistance_knowledge_store = self.original_assistance_knowledge_store
 
     def test_next_question_returns_only_newly_filled_unfilled_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -170,7 +172,7 @@ class ConversationServiceTest(unittest.TestCase):
             "I want drink",
             "I want a drink",
             "I'd like something",
-            "Can I get a menu",
+            "Can I get an item",
             "I want to order something",
         ]
 
@@ -263,9 +265,126 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.filledSlots, [])
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
 
-    def test_next_question_classifies_information_request_as_assistance_and_provides_visible_options(self):
+    def test_next_question_ignores_available_options_context(self):
         from app.models.conversation import NextQuestionRequest
 
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+            "availableOptions": [
+                {"slotName": "drink", "options": ["iced Americano", "latte", "tea"]},
+            ],
+        })
+
+        self.assertFalse(hasattr(request, "availableOptions"))
+
+    def test_next_question_uses_retrieved_assistance_context_for_assistance_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.find_calls = []
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                self.find_calls.append(request)
+                return "We use medium-roasted Arabica beans."
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What beans do you use?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [],
+                "nextQuestion": "We use medium-roasted Arabica beans. What would you like to order?",
+                "translatedQuestion": "보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?",
+                "turnClassification": "ASSISTANCE_REQUEST",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(request)
+
+        user_prompt = calls[0][1]
+        self.assertEqual(len(store.find_calls), 1)
+        self.assertIn("Retrieved assistance context:", user_prompt)
+        self.assertIn("We use medium-roasted Arabica beans.", user_prompt)
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(store.save_calls[0][2], "retrieved")
+
+    def test_next_question_stores_generated_assistance_answer_when_rag_has_no_match(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                return None
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Do you have decaf?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "Yes, we have decaf coffee. What would you like to order?",
+            "translatedQuestion": "네, 디카페인 커피가 있어요. 무엇을 주문하시겠어요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(len(store.save_calls), 1)
+        self.assertEqual(store.save_calls[0][2], "generated")
+
+    def test_next_question_classifies_information_request_as_assistance_and_uses_retrieved_context(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.find_calls = []
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                self.find_calls.append(request)
+                return "We have iced Americano, latte, and tea."
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
         request = NextQuestionRequest.model_validate({
             "originalQuestion": "What would you like to order?",
             "userUtterance": "Can I see the menu?",
@@ -276,21 +395,178 @@ class ConversationServiceTest(unittest.TestCase):
                 {"slotName": "size", "filled": False},
             ],
         })
-        self.service.chat = lambda *args, **kwargs: json.dumps({
-            "filledSlots": [],
-            "nextQuestion": "Here are the menu options. What would you like to order?",
-            "translatedQuestion": "메뉴 옵션은 이렇습니다. 어떤 음료를 주문하고 싶으신가요?",
-            "turnClassification": "ASSISTANCE_REQUEST",
-        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [],
+                "nextQuestion": "The drink options are iced Americano, latte, and tea. What would you like to order?",
+                "translatedQuestion": "음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?",
+                "turnClassification": "ASSISTANCE_REQUEST",
+            })
+
+        self.service.chat = capture_chat
 
         result = self.service.generate_next_question(request)
 
         self.assertEqual(result.filledSlots, [])
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(len(store.find_calls), 1)
+        self.assertIn("We have iced Americano, latte, and tea.", calls[0][1])
+        self.assertEqual(store.save_calls[0][2], "retrieved")
         self.assertEqual(
             result.nextQuestion,
-            "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
+            "The drink options are iced Americano, latte, and tea. What would you like to order?",
         )
+
+    def test_next_question_treats_menu_need_as_assistance_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        menu_requests = [
+            "I need a menu",
+            "Can I get a menu",
+            "Menu please",
+        ]
+
+        for user_utterance in menu_requests:
+            with self.subTest(user_utterance=user_utterance):
+                class FakeAssistanceKnowledgeStore:
+                    def __init__(self):
+                        self.find_calls = []
+                        self.save_calls = []
+
+                    def find_reusable_answer(self, request):
+                        self.find_calls.append(request)
+                        return "We have iced Americano, latte, and tea."
+
+                    def save_interaction(self, request, response, *, answer_source):
+                        self.save_calls.append((request, response, answer_source))
+
+                store = FakeAssistanceKnowledgeStore()
+                self.service.assistance_knowledge_store = store
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": user_utterance,
+                    "scenarioTitle": "카페에서 주문하기",
+                    "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                    "slots": [
+                        {"slotName": "drink", "filled": False},
+                        {"slotName": "size", "filled": False},
+                    ],
+                })
+                calls = []
+
+                def capture_chat(*args, **kwargs):
+                    calls.append(args)
+                    return json.dumps({
+                        "filledSlots": [],
+                        "nextQuestion": "The drink options are iced Americano, latte, and tea. What would you like to order?",
+                        "translatedQuestion": "음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?",
+                        "turnClassification": "ASSISTANCE_REQUEST",
+                    })
+
+                self.service.chat = capture_chat
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+                self.assertEqual(len(store.find_calls), 1)
+                self.assertIn("We have iced Americano, latte, and tea.", calls[0][1])
+                self.assertEqual(
+                    result.nextQuestion,
+                    "The drink options are iced Americano, latte, and tea. What would you like to order?",
+                )
+
+    def test_next_question_uses_retrieved_context_for_recommendation_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                return "The iced Americano is a good pick if you want something refreshing."
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What do you recommend?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [],
+                "nextQuestion": "I recommend iced Americano. Would you like to order that?",
+                "translatedQuestion": "아이스 아메리카노를 추천해요. 그걸로 주문하시겠어요?",
+                "turnClassification": "ASSISTANCE_REQUEST",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertIn("The iced Americano is a good pick", calls[0][1])
+        self.assertEqual(store.save_calls[0][2], "retrieved")
+        self.assertEqual(result.nextQuestion, "I recommend iced Americano. Would you like to order that?")
+
+    def test_next_question_generates_role_play_answer_when_rag_has_no_match(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                return None
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "Can I see the menu?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "filled": False},
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            return json.dumps({
+                "filledSlots": [],
+                "nextQuestion": "We have Americano, latte, and tea. What would you like to order?",
+                "translatedQuestion": "아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?",
+                "turnClassification": "ASSISTANCE_REQUEST",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertIn("Retrieved assistance context:\nNone", calls[0][1])
+        self.assertEqual(store.save_calls[0][2], "generated")
+        self.assertEqual(result.nextQuestion, "We have Americano, latte, and tea. What would you like to order?")
 
     def test_next_question_classifies_option_completion_before_slot_answer(self):
         from app.models.conversation import NextQuestionRequest
@@ -349,12 +625,39 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
         self.assertIn("Incomplete order fragments without a concrete object must return filledSlots=[]", prompt)
         self.assertIn("I want, I need, I'd like, I would like, Can I get", prompt)
-        self.assertIn("Generic objects such as drink, something, menu, item, or thing are not concrete slot values", prompt)
+        self.assertIn("generic order objects such as drink, something, item, or thing", prompt)
+        self.assertIn("A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST", prompt)
         self.assertIn("qwertyuiop asdfghjkl zxcvbnm", prompt)
         self.assertIn("My shoes are swimming in the moon today", prompt)
         self.assertIn("I don't know", prompt)
         self.assertIn("I do not want to order anything", prompt)
-        self.assertIn("Do not include lists, explanations, or multiple follow-up questions", prompt)
+        self.assertIn("Do not include long explanations or multiple follow-up questions", prompt)
+
+    def test_next_question_prompt_uses_sectioned_template(self):
+        prompt = self.service._next_question_system_prompt()
+
+        expected_sections = [
+            "Role",
+            "Output Schema",
+            "Decision Policy",
+            "Slot Policy",
+            "Context Policy",
+            "Response Policy",
+            "Few-shot Examples",
+        ]
+
+        for section in expected_sections:
+            with self.subTest(section=section):
+                self.assertIn(f"{section}:", prompt)
+
+    def test_next_question_prompt_grounds_assistance_few_shots_in_retrieved_context(self):
+        prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("Retrieved assistance context=We have iced Americano, latte, and tea", prompt)
+        self.assertIn("The drink options are iced Americano, latte, and tea.", prompt)
+        self.assertIn("What beans do you use?", prompt)
+        self.assertIn("We usually use medium-roasted Arabica beans.", prompt)
+        self.assertNotIn("Available options=drink", prompt)
 
     def test_next_question_prompt_contains_few_shot_calibration_for_valid_no_slot_and_option_completion(self):
         prompt = self.service._next_question_system_prompt()
@@ -366,11 +669,18 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("ASSISTANCE_REQUEST", prompt)
         self.assertIn("INVALID_RESPONSE", prompt)
         self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
+        self.assertIn("If retrieved assistance context is provided", prompt)
+        self.assertIn("generate a plausible role-play answer", prompt)
+        self.assertIn("For recommendation requests, name one concrete plausible option", prompt)
+        self.assertIn("For menu or option requests, name two to four concrete plausible choices", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
         self.assertIn("Can you recommend something?", prompt)
-        self.assertIn("I recommend an iced latte. Would you like to order that?", prompt)
+        self.assertIn("I recommend an iced latte. What would you like to order?", prompt)
         self.assertIn("Can I see the menu?", prompt)
-        self.assertIn("The menu includes iced Americano, latte, cappuccino, and tea.", prompt)
+        self.assertIn("I need a menu", prompt)
+        self.assertIn("We have Americano, latte, and tea. What would you like to order?", prompt)
+        self.assertIn("The drink options are iced Americano, latte, and tea.", prompt)
+        self.assertIn("Retrieved assistance context=None", prompt)
         self.assertIn("That's all.", prompt)
         self.assertIn('"filledSlots":[{"slotName":"customOptions"}]', prompt)
 
@@ -1503,6 +1813,39 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
         self.assertIsNone(result.turnFeedbacks[0].betterExpression)
 
+    def test_feedback_summary_does_not_sound_corrective_when_all_turns_are_good(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "turns": [
+                {
+                    "turnId": 311,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I would like a small iced Americano, please.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 90,
+            "feedbackSummary": "주문이 명확하게 전달되었습니다. 더 자연스럽게 표현해보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 311,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertIn("자연스럽고 명확하게", result.feedbackSummary)
+        self.assertNotIn("더 자연스럽게", result.feedbackSummary)
+
     def test_feedback_fallback_normalizes_known_refusal_format_after_failed_repair(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -1617,6 +1960,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Never return a one-sentence feedbackSummary", prompt)
         self.assertIn("Use 3 sentences only when multiple turns share a recurring grammar or expression pattern", prompt)
         self.assertIn("Keep feedbackSummary under 120 Korean characters", prompt)
+        self.assertIn("When every turn has feedbackRequired=false", prompt)
+        self.assertIn("must not imply that the user needs correction", prompt)
+        self.assertIn("Verify all-good sessions do not receive correction-like summary wording", prompt)
         self.assertIn("Do not repeat detailed per-turn explanations", prompt)
         self.assertIn("betterExpression must start with the English improved sentence", prompt)
         self.assertNotIn("음료를 주문할 때는 I'd like", prompt)

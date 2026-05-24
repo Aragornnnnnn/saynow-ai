@@ -93,3 +93,22 @@
 - 2026-05-24 공항, 호텔, 식당 smoke next-question은 슬롯을 채우는 답변이므로 `SLOT_ANSWER`로 보정했다. `Window seat, please.`, `Non-smoking room, please.`, `Table for two, please.`는 모두 `filledSlots`가 채워지고 하트 차감 대상이 아니다.
 - 2026-05-24 사용자가 `INFORMATION_REQUEST`와 `RECOMMENDATION_REQUEST`는 모두 추가 정보 요청이고, `OPTION_COMPLETION`은 질문에 대한 자연스러운 답변이라 별도 상태가 부자연스럽다고 지적했다. 이에 따라 `turnClassification`은 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화한다.
 - 2026-05-24 사용자는 AI 응답 텍스트만 볼 수 있으므로 메뉴 요청에서 `Here are the menu options`처럼 비어 있는 안내만 주면 안 된다. 메뉴 정보 요청에는 실제 메뉴 항목을 `nextQuestion`에 포함해야 하며, 모델이 구체 옵션을 빠뜨리면 로컬 보정으로 `iced Americano`, `latte`, `cappuccino`, `tea`를 노출한다.
+- 2026-05-24 LLM workflow 개선은 RAG나 Agent Loop가 아니라 structured context 우선으로 진행한다. 꼬리 질문은 단일 모델 workflow를 유지하되 `availableOptions`를 request에 추가해 메뉴, 추천, 선택지 응답이 백엔드가 제공한 옵션 안에서만 나오도록 한다.
+- 2026-05-24 `NextQuestionRequest.availableOptions`를 optional로 추가했다. 모델이 메뉴나 추천 요청에서 제공되지 않은 옵션을 만들면 AI 서버가 제공된 옵션으로 보정하고, 옵션이 없으면 구체 선택지를 지어내지 않는 응답으로 바꾼다. `unittest discover`, `compileall`, `git diff --check`는 모두 통과했다.
+- 2026-05-24 `I need a menu`는 현재 `_must_not_fill_slots`의 generic object blocker가 LLM 호출 전에 막아 `INVALID_RESPONSE`가 된다. `prompt-engineering-patterns` 원칙에 따라 실패 금지 목록을 더 늘리는 대신, `menu`를 broad blocker에서 제거하고 메뉴 요청을 `ASSISTANCE_REQUEST` 대표 예시와 structured output으로 유도한다.
+- 2026-05-24 Prompt 7은 `menu`를 generic object blocker에서 제거하고, `I need a menu`, `Can I get a menu`, `Menu please`를 information request로 인식하도록 했다. `drink`, `something`, `item`, `thing` 같은 generic order object는 계속 슬롯을 채우지 않는다.
+- 2026-05-24 Prompt 7 검증은 focused menu request 테스트 4개와 전체 unittest 55개, compileall, diff check로 확인했다.
+- 2026-05-24 Prompt 8은 `prompt-engineering-patterns`의 system prompt design, structured output, few-shot 원칙을 적용해 next-question system prompt를 섹션화한다. hardcoded 메뉴 few-shot은 `availableOptions`가 입력에 있을 때만 해당 옵션을 쓰는 예시로 바꿔 예시 오염을 줄인다.
+- 2026-05-24 Prompt 8 검증은 focused prompt tests 4개와 전체 unittest 57개, compileall, diff check로 확인했다.
+- 2026-05-24 이후 프롬프트 실험 로그의 결과 표는 실제 OpenAI `gpt-4o-mini` live 호출 결과만 기록한다. mocked LLM unittest는 프롬프트 구조와 deterministic 보정 회귀 검증으로만 기록하고, 결과 표 대체값으로 사용하지 않는다.
+- 2026-05-24 Prompt 8 live 검증은 `prod-saynow` SSM에서 OpenAI 키와 모델 값을 값 출력 없이 주입하고, `NQ-01`-`NQ-10`, `MENU-01`-`MENU-03`, `FB-01`-`FB-10`을 실제 `gpt-4o-mini`로 호출해 `/private/tmp/saynow_prompt8_gpt4o_mini_live_results.json`에 저장했다.
+- 2026-05-24 workflow 방향을 `availableOptions` 기반 structured context에서 `ASSISTANCE_REQUEST` 전용 RAG workflow로 변경했다. 백엔드 DB에 `availableOptions`나 `scenarioKnowledge`를 미리 저장하지 않고, AI 서버가 내부 벡터 DB에서 유사 질문과 답변을 찾은 뒤 없으면 `gpt-4o-mini`가 역할극 답변을 생성한다.
+- 2026-05-24 MVP RAG 검색 범위는 인터넷이 아니라 SayNow 내부 벡터 DB다. 생성된 도움 요청 답변은 `generated`, `candidate`, `approved` 같은 품질 상태와 함께 저장하고, 반복되는 질문을 재사용 지식으로 승격하는 방향으로 문서화했다.
+- 2026-05-24 Supabase pgvector 작업은 사용자가 진행했다. AI 서버 구현은 백엔드-AI API 구조를 유지하고, `ASSISTANCE_REQUEST`에서만 내부 RAG 검색을 시도하며, 검색 실패나 저장 실패가 대화 응답을 깨지 않도록 한다.
+- 2026-05-24 Prompt 9는 `availableOptions` 요청 필드를 제거하고 `ASSISTANCE_REQUEST` 전용 RAG workflow를 구현했다. OpenAI embedding은 `text-embedding-3-small`, RAG 기본 테이블은 `ai_rag.assistance_knowledge`로 둔다.
+- 2026-05-24 Supabase develop DB 접속은 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 함께 사용해야 했다. BE JDBC URL의 `prepareThreshold` 같은 JDBC 전용 파라미터는 `psycopg` 연결 전에 제거하도록 했다.
+- 2026-05-24 live 검증에서 Supabase 인증과 접속은 성공했지만 `ai_rag.assistance_knowledge` 테이블이 없었다. 공유 DB DDL 자동 적용은 승인 정책상 진행하지 않았고, 적용용 SQL을 `docs/supabase/2026-05-24-assistance-rag-pgvector.sql`에 추가했다.
+- 2026-05-24 Prompt 9 live 결과는 실제 `gpt-4o-mini`로 `NQ-01`-`NQ-10`, `RAG-01`-`RAG-03`, `FB-01`-`FB-10`을 측정해 `/private/tmp/saynow_prompt9_gpt4o_mini_live_results.json`에 저장했다. RAG 테이블이 없어 검색과 저장은 미검증이지만, no-match fallback은 메뉴, 추천, 원두, 디카페인 질문을 `ASSISTANCE_REQUEST`로 처리했다.
+- 2026-05-24 사용자가 Supabase develop DB에 `ai_rag.assistance_knowledge`를 만든 뒤 Prompt 9 live를 재측정했다. `dbCountBefore=0`, `dbCountAfter=6`으로 도움 요청 6건이 저장됐고 모든 row에 embedding이 채워졌다.
+- 2026-05-24 retrieval smoke는 `Can I see the menu?` row를 `candidate`로 승격한 뒤 같은 질문을 재호출했다. 새 row가 `answer_source=retrieved`, `quality_status=candidate`로 저장되어 pgvector 검색 재사용 경로가 동작함을 확인했다.
+- 2026-05-24 반복 도움 요청은 같은 `scenario_title` 안에서 정규화된 `user_utterance`가 2회 이상 generated로 저장되면 자동으로 `candidate`로 승격한다. live smoke에서 임시 반복 질문 2건이 모두 `candidate`가 되는 것을 확인했고, 테스트 row는 삭제했다.

@@ -15,6 +15,7 @@ from app.models.conversation import (
     NextQuestionResponse,
     NextQuestionTurnClassification,
 )
+from app.services.assistance_knowledge_store import build_assistance_knowledge_store
 
 
 logger = get_logger("conversation")
@@ -22,6 +23,7 @@ MAX_FEEDBACK_SUMMARY_CHARS = 120
 DIRECT_WANT_NEAR_MISS_ISSUE = (
     "direct want + concrete service item response must be treated as a near-miss with feedbackRequired=true."
 )
+assistance_knowledge_store = build_assistance_knowledge_store()
 
 
 class ConversationGenerationError(Exception):
@@ -41,9 +43,10 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if _must_not_fill_slots(request.userUtterance):
         return _retry_question_for_slot(unfilled_slot_names[0])
 
+    retrieved_assistance_answer = _find_reusable_assistance_answer(request)
     raw = _call_chat(
         _next_question_system_prompt(),
-        _next_question_user_prompt(request, unfilled_slot_names),
+        _next_question_user_prompt(request, unfilled_slot_names, retrieved_assistance_answer),
         max_tokens=512,
         temperature=0,
     )
@@ -70,12 +73,15 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         next_question,
         translated_question,
     )
-    return NextQuestionResponse(
+    response = NextQuestionResponse(
         nextQuestion=next_question,
         translatedQuestion=translated_question,
         filledSlots=filled_slots,
         turnClassification=turn_classification,
     )
+    if turn_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
+        _save_assistance_interaction(request, response, retrieved_assistance_answer)
+    return response
 
 
 def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedbackResponse:
@@ -94,6 +100,7 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     response = _verify_and_repair_feedback(request, response)
     _enforce_feedback_consistency(request, response)
     _enforce_turn_feedback_contract(request, response)
+    _enforce_all_good_feedback_summary(response)
     return response
 
 
@@ -163,53 +170,89 @@ def _simple_better_expression_for_question(original_question: str) -> str:
 
 
 def _next_question_system_prompt() -> str:
-    return (
-        "You generate follow-up questions for an English speaking practice scenario. "
-        "Return ONLY valid JSON matching this schema exactly: "
-        '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}. '
-        "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer. "
-        "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question. "
-        "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value. "
-        "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic. "
-        "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses. "
-        "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance. "
-        "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot. "
-        "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences. "
-        "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information. "
-        "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information. "
-        "Treat these as incomplete request fragments across domains. "
-        "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order. "
-        "Generic objects such as drink, something, menu, item, or thing are not concrete slot values and must not fill an order, item, option, or service slot. "
-        "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything. "
-        "Never include slots that were already filled before this request. "
-        "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null. "
-        "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance. "
-        "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation. "
-        "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, options, available choices, rules, or details, include concrete useful information inside nextQuestion before asking the next short question. "
-        "Do not answer information requests with empty phrases such as Here are the options or Here is the menu unless you also include the actual options. "
-        "Do not include lists, explanations, or multiple follow-up questions. "
-        "Use only the provided slot names. "
-        "Few-shot calibration examples: "
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. Would you like to order that?","translatedQuestion":"아이스 라떼를 추천해요. 그걸로 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?","translatedQuestion":"메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}. '
-        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}. '
-        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
-    )
+    return "\n\n".join([
+        (
+            "Role:\n"
+            "You generate follow-up questions for an English speaking practice scenario."
+        ),
+        (
+            "Output Schema:\n"
+            "Return ONLY valid JSON matching this schema exactly: "
+            '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
+        ),
+        (
+            "Decision Policy:\n"
+            "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer.\n"
+            "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question.\n"
+            "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value.\n"
+            "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic.\n"
+            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses."
+        ),
+        (
+            "Slot Policy:\n"
+            "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance.\n"
+            "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot.\n"
+            "Never include slots that were already filled before this request.\n"
+            "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences."
+        ),
+        (
+            "Invalid And Generic Input Policy:\n"
+            "Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[] and ask again for the same missing information.\n"
+            "Incomplete order fragments without a concrete object must return filledSlots=[] and ask again for the same missing information.\n"
+            "Treat these as incomplete request fragments across domains.\n"
+            "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order.\n"
+            "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value.\n"
+            "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please.\n"
+            "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything."
+        ),
+        (
+            "Context Policy:\n"
+            "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, recommendation, options, rules, ingredients, policy, or details, answer the request briefly before asking the next short scenario question.\n"
+            "If retrieved assistance context is provided, use it as the factual basis for the assistance answer.\n"
+            "If no retrieved assistance context is provided, generate a plausible role-play answer that fits the scenario, then return to the current scenario question.\n"
+            "For recommendation requests, name one concrete plausible option. For menu or option requests, name two to four concrete plausible choices.\n"
+            "Do not answer assistance requests with empty phrases such as Here are the options or Here is the menu unless you also include useful concrete information."
+        ),
+        (
+            "Response Policy:\n"
+            "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null.\n"
+            "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance.\n"
+            "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation.\n"
+            "Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
+            "Use only the provided slot names."
+        ),
+        (
+            "Few-shot Examples:\n"
+            "Few-shot calibration examples use the same schema as the required output.\n"
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
+        ),
+    ])
 
 
-def _next_question_user_prompt(request: NextQuestionRequest, unfilled_slot_names: list[str]) -> str:
+def _next_question_user_prompt(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    retrieved_assistance_answer: str | None = None,
+) -> str:
     slot_lines = "\n".join(
         f"- {slot.slotName}: {'filled' if slot.filled else 'unfilled'}"
         for slot in request.slots
     )
     unfilled_lines = "\n".join(f"- {slot_name}" for slot_name in unfilled_slot_names)
+    retrieved_assistance_context = retrieved_assistance_answer or "None"
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
         f"Previous AI question: {request.originalQuestion}\n"
         f"User utterance: {request.userUtterance}\n\n"
         f"Current slot state:\n{slot_lines}\n\n"
-        f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}"
+        f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
+        f"Retrieved assistance context:\n{retrieved_assistance_context}"
     )
 
 
@@ -268,6 +311,7 @@ def _feedback_system_prompt() -> str:
         "Keep feedbackSummary under 120 Korean characters. "
         "Sentence 1 must summarize whether the scenario goal was achieved and how well the user was understood. "
         "Sentence 2 must give the single most important next practice focus. "
+        "When every turn has feedbackRequired=false, feedbackSummary must not imply that the user needs correction; tell the user to maintain the clear expression instead. "
         "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
         "Do not list multiple strengths and weaknesses. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
@@ -350,6 +394,7 @@ def _feedback_system_prompt() -> str:
         "Verify nativeUnderstanding does not quote or copy English words for concrete orderable responses. "
         "Verify nativeUnderstanding, nativeLanguageInterpretation, betterExpression, and feedbackSummary do not repeat each other's responsibilities. "
         "Verify feedbackSummary is exactly 2 short Korean sentences by default, under 120 Korean characters, and at most 3 sentences. "
+        "Verify all-good sessions do not receive correction-like summary wording. "
         "If any check fails, revise before returning the JSON."
     )
 
@@ -368,6 +413,9 @@ def _must_not_fill_slots(user_utterance: str) -> bool:
     }
     if compact in exact_blocked:
         return True
+
+    if _is_information_request(user_utterance) or _is_recommendation_request(user_utterance):
+        return False
 
     if _is_incomplete_utterance_fragment(user_utterance):
         return True
@@ -494,6 +542,34 @@ def _verify_and_repair_feedback(
         return response
 
     return _repair_feedback(request, response, issues)
+
+
+def _enforce_all_good_feedback_summary(response: ConversationFeedbackResponse) -> None:
+    if not response.turnFeedbacks:
+        return
+    if any(turn_feedback.feedbackRequired for turn_feedback in response.turnFeedbacks):
+        return
+    if not _summary_sounds_corrective(response.feedbackSummary):
+        return
+
+    response.feedbackSummary = (
+        "전체적으로 질문에 자연스럽고 명확하게 답변했습니다. "
+        "다음에도 지금처럼 공손하고 구체적으로 표현해 보세요."
+    )
+
+
+def _summary_sounds_corrective(summary: str) -> bool:
+    corrective_markers = [
+        "더 자연스럽",
+        "다듬",
+        "어색",
+        "부족",
+        "주의",
+        "고쳐",
+        "수정",
+        "개선",
+    ]
+    return any(marker in summary for marker in corrective_markers)
 
 
 def _good_response_policy_issues(
@@ -817,7 +893,7 @@ def _incomplete_order_fragment_analogy(user_utterance: str) -> str | None:
 
 
 def _generic_order_object_analogy(compact_utterance: str) -> str | None:
-    object_pattern = r"(?P<object>drink|drinks|something|anything|menu|item|thing|one)"
+    object_pattern = r"(?P<object>drink|drinks|something|anything|item|thing|one)"
     patterns = [
         (rf"i want(?: to order)? (?:a |an |the )?{object_pattern}", "want"),
         (rf"i need (?:a |an |the )?{object_pattern}", "need"),
@@ -837,7 +913,6 @@ def _generic_object_analogy_phrase(object_word: str, intent: str) -> str:
         "drinks": "음료",
         "something": "뭔가",
         "anything": "아무거나",
-        "menu": "메뉴",
         "item": "상품",
         "thing": "것",
         "one": "하나",
@@ -948,6 +1023,11 @@ def _is_recommendation_request(user_utterance: str) -> bool:
 
 def _is_information_request(user_utterance: str) -> bool:
     compact = _normalize_utterance(user_utterance).replace("'", "")
+    menu_request_patterns = [
+        r"(?:i need|i want|id like|i would like) (?:to see )?(?:a |the )?menu",
+        r"(?:can i get|could i get|may i have) (?:a |the )?menu",
+        r"menu please",
+    ]
     return any([
         "can i see" in compact,
         "could i see" in compact,
@@ -962,7 +1042,7 @@ def _is_information_request(user_utterance: str) -> bool:
         "available choices" in compact,
         "do you have a menu" in compact,
         "do you have any options" in compact,
-    ])
+    ]) or any(re.fullmatch(pattern, compact) for pattern in menu_request_patterns)
 
 
 def _ensure_visible_information_response(
@@ -970,49 +1050,59 @@ def _ensure_visible_information_response(
     next_question: str,
     translated_question: str,
 ) -> tuple[str, str]:
-    if not _is_menu_information_request(request):
-        return next_question, translated_question
-    if _has_visible_menu_options(next_question):
-        return next_question, translated_question
+    return next_question, translated_question
 
-    return (
-        "The menu includes iced Americano, latte, cappuccino, and tea. What would you like to order?",
-        "메뉴에는 아이스 아메리카노, 라떼, 카푸치노, 차가 있어요. 무엇을 주문하시겠어요?",
+
+def _find_reusable_assistance_answer(request: NextQuestionRequest) -> str | None:
+    if not _should_attempt_assistance_rag(request.userUtterance):
+        return None
+    return assistance_knowledge_store.find_reusable_answer(request)
+
+
+def _save_assistance_interaction(
+    request: NextQuestionRequest,
+    response: NextQuestionResponse,
+    retrieved_assistance_answer: str | None,
+) -> None:
+    answer_source = "retrieved" if retrieved_assistance_answer else "generated"
+    assistance_knowledge_store.save_interaction(
+        request,
+        response,
+        answer_source=answer_source,
     )
 
 
-def _is_menu_information_request(request: NextQuestionRequest) -> bool:
-    if not _is_information_request(request.userUtterance):
+def _should_attempt_assistance_rag(user_utterance: str) -> bool:
+    if _is_information_request(user_utterance) or _is_recommendation_request(user_utterance):
+        return True
+
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    order_request_prefixes = (
+        "can i get ",
+        "could i get ",
+        "may i have ",
+        "i want ",
+        "id like ",
+        "i would like ",
+    )
+    if compact.startswith(order_request_prefixes):
         return False
 
-    compact_utterance = _normalize_utterance(request.userUtterance).replace("'", "")
-    compact_context = _normalize_utterance(
-        " ".join([
-            request.originalQuestion,
-            request.scenarioTitle,
-            request.scenarioGoal,
-            " ".join(slot.slotName for slot in request.slots),
-        ])
-    ).replace("'", "")
-    menu_markers = ["menu", "drink", "coffee", "cafe", "beverage", "order"]
-    return any(marker in compact_utterance or marker in compact_context for marker in menu_markers)
-
-
-def _has_visible_menu_options(next_question: str) -> bool:
-    compact = _normalize_utterance(next_question).replace("'", "")
-    menu_items = [
-        "americano",
-        "latte",
-        "cappuccino",
-        "tea",
-        "coffee",
-        "espresso",
-        "mocha",
-        "ade",
-        "smoothie",
-        "juice",
-    ]
-    return sum(1 for item in menu_items if item in compact) >= 2
+    question_prefixes = (
+        "what ",
+        "which ",
+        "where ",
+        "when ",
+        "how ",
+        "do you ",
+        "does ",
+        "is ",
+        "are ",
+        "can you ",
+        "could you ",
+        "tell me ",
+    )
+    return user_utterance.strip().endswith("?") or compact.startswith(question_prefixes)
 
 
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
