@@ -100,3 +100,5 @@
 - 2026-05-24 Prompt 7 검증은 focused menu request 테스트 4개와 전체 unittest 55개, compileall, diff check로 확인했다.
 - 2026-05-24 Prompt 8은 `prompt-engineering-patterns`의 system prompt design, structured output, few-shot 원칙을 적용해 next-question system prompt를 섹션화한다. hardcoded 메뉴 few-shot은 `availableOptions`가 입력에 있을 때만 해당 옵션을 쓰는 예시로 바꿔 예시 오염을 줄인다.
 - 2026-05-24 Prompt 8 검증은 focused prompt tests 4개와 전체 unittest 57개, compileall, diff check로 확인했다.
+- 2026-05-24 이후 프롬프트 실험 로그의 결과 표는 실제 OpenAI `gpt-4o-mini` live 호출 결과만 기록한다. mocked LLM unittest는 프롬프트 구조와 deterministic 보정 회귀 검증으로만 기록하고, 결과 표 대체값으로 사용하지 않는다.
+- 2026-05-24 Prompt 8 live 검증은 `prod-saynow` SSM에서 OpenAI 키와 모델 값을 값 출력 없이 주입하고, `NQ-01`-`NQ-10`, `MENU-01`-`MENU-03`, `FB-01`-`FB-10`을 실제 `gpt-4o-mini`로 호출해 `/private/tmp/saynow_prompt8_gpt4o_mini_live_results.json`에 저장했다.

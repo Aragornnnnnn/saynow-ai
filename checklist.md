@@ -80,3 +80,4 @@
 - [x] 메뉴와 추천 few-shot을 `availableOptions` 기반 예시로 바꾼다.
 - [x] Prompt 8 결과를 Obsidian 프롬프트 실험 로그에 기록한다.
 - [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.
+- [x] Prompt 8 결과를 실제 OpenAI `gpt-4o-mini` live 호출로 재측정하고, 이후 프롬프트 실험 결과 표는 live 호출만 사용하도록 문서 기준을 정정한다.
