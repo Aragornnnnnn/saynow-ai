@@ -35,7 +35,7 @@ class NextQuestionTurnClassification(StrEnum):
     INVALID_RESPONSE = "INVALID_RESPONSE"
 
 
-class ScenarioResult(StrEnum):
+class SessionResult(StrEnum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
 
@@ -74,7 +74,7 @@ class FeedbackTurnRequest(BaseModel):
 class ConversationFeedbackRequest(BaseModel):
     scenarioTitle: str
     scenarioGoal: str
-    scenarioResult: ScenarioResult
+    sessionResult: SessionResult
     turns: list[FeedbackTurnRequest]
 
     @field_validator("scenarioTitle", "scenarioGoal")

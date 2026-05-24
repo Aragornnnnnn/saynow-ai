@@ -690,7 +690,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -733,7 +733,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -781,14 +781,14 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(events[2][1]["turnId"], 102)
         self.assertEqual(events[3][1], {"turnCount": 2})
 
-    def test_feedback_request_accepts_only_backend_scenario_result(self):
+    def test_feedback_request_accepts_only_backend_session_result(self):
         from pydantic import ValidationError
-        from app.models.conversation import ConversationFeedbackRequest, ScenarioResult
+        from app.models.conversation import ConversationFeedbackRequest, SessionResult
 
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -798,13 +798,13 @@ class ConversationServiceTest(unittest.TestCase):
             ],
         })
 
-        self.assertEqual(request.scenarioResult, ScenarioResult.SUCCESS)
+        self.assertEqual(request.sessionResult, SessionResult.SUCCESS)
 
         with self.assertRaises(ValidationError):
             ConversationFeedbackRequest.model_validate({
                 "scenarioTitle": "카페에서 주문하기",
                 "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-                "scenarioResult": "CLEARED",
+                "sessionResult": "CLEARED",
                 "turns": [
                     {
                         "turnId": 101,
@@ -814,7 +814,7 @@ class ConversationServiceTest(unittest.TestCase):
                 ],
             })
 
-    def test_feedback_prompts_include_backend_scenario_result(self):
+    def test_feedback_prompts_include_backend_session_result(self):
         from app.models.conversation import (
             ConversationFeedbackRequest,
             ConversationFeedbackSummaryResponse,
@@ -823,7 +823,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "FAILURE",
+            "sessionResult": "FAILURE",
             "turns": [
                 {
                     "turnId": 101,
@@ -840,9 +840,9 @@ class ConversationServiceTest(unittest.TestCase):
         full_prompt = self.service._feedback_user_prompt(request)
         turn_prompt = self.service._turn_feedback_user_prompt(request, request.turns[0], summary)
 
-        self.assertIn("Scenario result: FAILURE", full_prompt)
-        self.assertIn("Backend has already confirmed this scenario result.", full_prompt)
-        self.assertIn("Scenario result: FAILURE", turn_prompt)
+        self.assertIn("Session result: FAILURE", full_prompt)
+        self.assertIn("Backend has already confirmed this session result.", full_prompt)
+        self.assertIn("Session result: FAILURE", turn_prompt)
 
     def test_feedback_summary_caps_score_when_backend_result_is_failure(self):
         from app.models.conversation import ConversationFeedbackRequest
@@ -850,7 +850,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "FAILURE",
+            "sessionResult": "FAILURE",
             "turns": [
                 {
                     "turnId": 101,
@@ -875,7 +875,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -895,7 +895,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -930,7 +930,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -981,7 +981,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-                    "scenarioResult": "SUCCESS",
+                    "sessionResult": "SUCCESS",
                     "turns": [
                         {
                             "turnId": 101,
@@ -1019,7 +1019,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1073,7 +1073,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 옵션 말하기",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
-                    "scenarioResult": "SUCCESS",
+                    "sessionResult": "SUCCESS",
                     "turns": [
                         {
                             "turnId": 101,
@@ -1126,7 +1126,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 옵션 말하기",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
-                    "scenarioResult": "SUCCESS",
+                    "sessionResult": "SUCCESS",
                     "turns": [
                         {
                             "turnId": 101,
@@ -1164,7 +1164,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1200,7 +1200,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 109,
@@ -1245,7 +1245,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 109,
@@ -1302,7 +1302,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1366,7 +1366,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1422,7 +1422,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1488,7 +1488,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -1555,7 +1555,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 104,
@@ -1620,7 +1620,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 105,
@@ -1685,7 +1685,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "커스텀 음료 만들기",
             "scenarioGoal": "원하는 음료와 옵션을 말할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 106,
@@ -1765,7 +1765,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": scenario_title,
                     "scenarioGoal": scenario_goal,
-                    "scenarioResult": "SUCCESS",
+                    "sessionResult": "SUCCESS",
                     "turns": [
                         {
                             "turnId": turn_id,
@@ -1817,7 +1817,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 301,
@@ -1886,7 +1886,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 301,
@@ -1937,7 +1937,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 301,
@@ -1983,7 +1983,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 311,
@@ -2017,7 +2017,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 302,
@@ -2063,7 +2063,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
@@ -2218,7 +2218,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
-            "scenarioResult": "SUCCESS",
+            "sessionResult": "SUCCESS",
             "turns": [
                 {
                     "turnId": 101,
