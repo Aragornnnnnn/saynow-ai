@@ -20,6 +20,90 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.chat = self.original_chat
         self.service.assistance_knowledge_store = self.original_assistance_knowledge_store
 
+    def test_next_question_request_requires_ai_role(self):
+        from pydantic import ValidationError
+
+        from app.models.conversation import NextQuestionRequest
+
+        with self.assertRaises(ValidationError):
+            NextQuestionRequest.model_validate({
+                "originalQuestion": "Oh, you look worried. What's going on?",
+                "userUtterance": "My baggage issue delayed me.",
+                "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+                "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
+                "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                "slots": [
+                    {"slotName": "gate_location", "filled": False},
+                ],
+            })
+
+    def test_feedback_request_requires_ai_role(self):
+        from pydantic import ValidationError
+
+        from app.models.conversation import ConversationFeedbackRequest
+
+        with self.assertRaises(ValidationError):
+            ConversationFeedbackRequest.model_validate({
+                "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+                "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
+                "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                "sessionResult": "SUCCESS",
+                "turns": [
+                    {
+                        "turnId": 101,
+                        "originalQuestion": "Oh, you look worried. What's going on?",
+                        "userUtterance": "My baggage issue delayed me.",
+                    }
+                ],
+            })
+
+    def test_next_question_prompt_includes_ai_role_context(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Oh, you look worried. What's going on?",
+            "userUtterance": "My baggage issue delayed me.",
+            "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 안내 직원",
+            "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "slots": [
+                {"slotName": "gate_location", "filled": False},
+            ],
+        })
+
+        prompt = self.service._next_question_user_prompt(request, ["gate_location"])
+
+        self.assertIn("AI role: 공항 안내 직원", prompt)
+
+    def test_feedback_prompts_include_ai_role_context(self):
+        from app.models.conversation import ConversationFeedbackRequest, ConversationFeedbackSummaryResponse
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 안내 직원",
+            "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "sessionResult": "SUCCESS",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "Oh, you look worried. What's going on?",
+                    "userUtterance": "My baggage issue delayed me.",
+                }
+            ],
+        })
+        summary = ConversationFeedbackSummaryResponse(
+            comprehensionScore=85,
+            feedbackSummary="상황을 잘 설명했어요. 다음에도 차분히 요청해 보세요.",
+        )
+
+        feedback_prompt = self.service._feedback_user_prompt(request)
+        turn_prompt = self.service._turn_feedback_user_prompt(request, request.turns[0], summary)
+
+        self.assertIn("AI role: 공항 안내 직원", feedback_prompt)
+        self.assertIn("AI role: 공항 안내 직원", turn_prompt)
+
     def test_next_question_returns_only_newly_filled_unfilled_slots(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -28,6 +112,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "I want an iced americano.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": True},
@@ -59,6 +144,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Small iced americano, please.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": True},
@@ -100,6 +186,7 @@ class ConversationServiceTest(unittest.TestCase):
                     "userUtterance": utterance,
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
                         {"slotName": "drink", "filled": False},
@@ -143,6 +230,7 @@ class ConversationServiceTest(unittest.TestCase):
                     "userUtterance": utterance,
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
                         {"slotName": "drink", "filled": False},
@@ -187,6 +275,7 @@ class ConversationServiceTest(unittest.TestCase):
                     "userUtterance": utterance,
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
                         {"slotName": "drink", "filled": False},
@@ -221,6 +310,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "I want coffee.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -254,6 +344,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "What do you recommend?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -280,6 +371,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Can I see the menu?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -313,6 +405,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "What beans do you use?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -360,6 +453,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Do you have decaf?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -400,6 +494,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Can I see the menu?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -461,6 +556,7 @@ class ConversationServiceTest(unittest.TestCase):
                     "userUtterance": user_utterance,
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
                         {"slotName": "drink", "filled": False},
@@ -512,6 +608,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "What do you recommend?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -557,6 +654,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Can I see the menu?",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -590,6 +688,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "That's all.",
             "scenarioTitle": "커스텀 음료 제작하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 커스텀 음료 옵션을 자연스럽게 말할 수 있다.",
             "slots": [
                 {"slotName": "baseDrink", "filled": True},
@@ -617,6 +716,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "Window seat, please.",
             "scenarioTitle": "공항 체크인",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "좌석 선호도를 자연스럽게 말할 수 있다.",
             "slots": [
                 {"slotName": "seatPreference", "filled": False},
@@ -708,6 +808,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "I want iced americano.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -724,6 +825,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -768,6 +870,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -823,6 +926,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -867,6 +971,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -885,6 +990,7 @@ class ConversationServiceTest(unittest.TestCase):
             ConversationFeedbackRequest.model_validate({
                 "scenarioTitle": "카페에서 주문하기",
                 "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+                "aiRole": "상대방 역할",
                 "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                 "sessionResult": "CLEARED",
                 "turns": [
@@ -900,6 +1006,7 @@ class ConversationServiceTest(unittest.TestCase):
             ConversationFeedbackRequest.model_validate({
                 "scenarioTitle": "카페에서 주문하기",
                 "scenarioSituation": "   ",
+                "aiRole": "상대방 역할",
                 "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                 "sessionResult": "SUCCESS",
                 "turns": [
@@ -920,6 +1027,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "FAILURE",
             "turns": [
@@ -950,6 +1058,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "FAILURE",
             "turns": [
@@ -976,6 +1085,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -997,6 +1107,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1033,6 +1144,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1085,6 +1197,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 주문하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "sessionResult": "SUCCESS",
                     "turns": [
@@ -1124,6 +1237,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1179,6 +1293,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 옵션 말하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
                     "sessionResult": "SUCCESS",
                     "turns": [
@@ -1233,6 +1348,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": "카페에서 옵션 말하기",
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
                     "sessionResult": "SUCCESS",
                     "turns": [
@@ -1272,6 +1388,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1309,6 +1426,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1355,6 +1473,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1413,6 +1532,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1478,6 +1598,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1535,6 +1656,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1602,6 +1724,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1670,6 +1793,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1736,6 +1860,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1802,6 +1927,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "커스텀 음료 만들기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료와 옵션을 말할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -1883,6 +2009,7 @@ class ConversationServiceTest(unittest.TestCase):
                 request = ConversationFeedbackRequest.model_validate({
                     "scenarioTitle": scenario_title,
                     "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                    "aiRole": "상대방 역할",
                     "scenarioGoal": scenario_goal,
                     "sessionResult": "SUCCESS",
                     "turns": [
@@ -1936,6 +2063,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2006,6 +2134,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2058,6 +2187,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2105,6 +2235,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2140,6 +2271,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2187,6 +2319,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2361,6 +2494,7 @@ class ConversationServiceTest(unittest.TestCase):
         request = ConversationFeedbackRequest.model_validate({
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -2403,6 +2537,7 @@ class ConversationServiceTest(unittest.TestCase):
             "userUtterance": "I want iced americano.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},

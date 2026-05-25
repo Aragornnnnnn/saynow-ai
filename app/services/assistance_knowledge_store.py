@@ -184,6 +184,7 @@ def _embedding_text_for_request(request: Any) -> str:
     return "\n".join([
         f"Scenario title: {request.scenarioTitle}",
         f"Scenario situation: {request.scenarioSituation}",
+        f"AI role: {request.aiRole}",
         f"Scenario goal: {request.scenarioGoal}",
         f"Previous AI question: {request.originalQuestion}",
         f"User utterance: {request.userUtterance}",

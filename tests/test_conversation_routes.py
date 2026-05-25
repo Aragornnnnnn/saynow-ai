@@ -74,6 +74,7 @@ class ConversationRoutesTest(unittest.TestCase):
             "userUtterance": "I want iced americano.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -92,6 +93,7 @@ class ConversationRoutesTest(unittest.TestCase):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -112,6 +114,7 @@ class ConversationRoutesTest(unittest.TestCase):
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -140,6 +143,7 @@ class ConversationRoutesTest(unittest.TestCase):
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -160,9 +164,31 @@ class ConversationRoutesTest(unittest.TestCase):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {
+            "code": "INVALID_REQUEST",
+            "message": "잘못된 요청입니다.",
+        })
+
+    def test_missing_ai_role_returns_documented_error_shape(self):
+        response = self.client.post("/api/v1/conversation/feedback", json={
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
         })
 
         self.assertEqual(response.status_code, 400)

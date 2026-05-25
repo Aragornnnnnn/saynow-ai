@@ -99,3 +99,8 @@
 - [x] 관련 단위 테스트와 전체 검증 실행 후 커밋한다.
 - [x] `humanizer` 기준으로 피드백 한국어의 공식형 표현을 줄이는 프롬프트 회귀 테스트 추가.
 - [x] 동기 피드백, SSE summary, SSE turn feedback, repair 프롬프트에 `Natural Korean Style Policy` 반영.
+- [x] `next-question`, `feedback`, `feedback/stream` 요청 계약에 `aiRole` 필수 필드 추가.
+- [x] `aiRole`이 다음 질문, 동기 피드백, SSE 턴 피드백 프롬프트에 들어가도록 회귀 테스트 추가.
+- [x] 모델, 프롬프트, API 문서에 `aiRole` 반영.
+- [x] 관련 단위 테스트와 전체 검증 실행.
+- [ ] 커밋 후 `develop`으로 push한다.

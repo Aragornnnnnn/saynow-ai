@@ -95,6 +95,7 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
         from app.services.assistance_knowledge_store import PgvectorAssistanceKnowledgeStore
 
         execute_calls = []
+        embedded_texts = []
 
         class FakeCursor:
             def __enter__(self):
@@ -124,7 +125,12 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
         )
         original_embed_text = store_module.embed_text
         original_psycopg = store_module._psycopg
-        store_module.embed_text = lambda text, config: [0.1, 0.2, 0.3]
+
+        def capture_embed_text(text, config):
+            embedded_texts.append(text)
+            return [0.1, 0.2, 0.3]
+
+        store_module.embed_text = capture_embed_text
         store_module._psycopg = lambda: fake_psycopg
 
         try:
@@ -137,6 +143,7 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
             request = SimpleNamespace(
                 scenarioTitle="카페에서 주문하기",
                 scenarioSituation="사용자는 카페 직원과 대화하며 테이크아웃 음료를 주문해야 한다.",
+                aiRole="카페 직원",
                 scenarioGoal="원하는 음료를 자연스럽게 주문할 수 있다.",
                 originalQuestion="What would you like to order?",
                 userUtterance="  Can   I see the MENU?  ",
@@ -152,6 +159,7 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
             store_module._psycopg = original_psycopg
 
         self.assertEqual(len(execute_calls), 2)
+        self.assertIn("AI role: 카페 직원", embedded_texts[0])
         self.assertEqual(
             execute_calls[1][1],
             ("카페에서 주문하기", "can i see the menu", "카페에서 주문하기", "can i see the menu", 2),
