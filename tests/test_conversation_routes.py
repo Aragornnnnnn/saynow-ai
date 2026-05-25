@@ -73,6 +73,7 @@ class ConversationRoutesTest(unittest.TestCase):
             "originalQuestion": "What would you like to order?",
             "userUtterance": "I want iced americano.",
             "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "filled": False},
@@ -90,6 +91,7 @@ class ConversationRoutesTest(unittest.TestCase):
     def test_feedback_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -109,6 +111,7 @@ class ConversationRoutesTest(unittest.TestCase):
     def test_feedback_stream_route_returns_sse_events_in_order(self):
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -136,6 +139,7 @@ class ConversationRoutesTest(unittest.TestCase):
 
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [
@@ -155,6 +159,7 @@ class ConversationRoutesTest(unittest.TestCase):
     def test_invalid_request_returns_documented_error_shape(self):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
             "turns": [],

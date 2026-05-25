@@ -183,6 +183,7 @@ def build_assistance_knowledge_store(config=settings):
 def _embedding_text_for_request(request: Any) -> str:
     return "\n".join([
         f"Scenario title: {request.scenarioTitle}",
+        f"Scenario situation: {request.scenarioSituation}",
         f"Scenario goal: {request.scenarioGoal}",
         f"Previous AI question: {request.originalQuestion}",
         f"User utterance: {request.userUtterance}",

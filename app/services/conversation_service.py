@@ -161,6 +161,7 @@ def generate_turn_feedback(
 
     single_turn_request = ConversationFeedbackRequest(
         scenarioTitle=request.scenarioTitle,
+        scenarioSituation=request.scenarioSituation,
         scenarioGoal=request.scenarioGoal,
         sessionResult=request.sessionResult,
         turns=[turn],
@@ -321,6 +322,7 @@ def _next_question_user_prompt(
     retrieved_assistance_context = retrieved_assistance_answer or "None"
     return (
         f"Scenario title: {request.scenarioTitle}\n"
+        f"Scenario situation: {request.scenarioSituation}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
         f"Previous AI question: {request.originalQuestion}\n"
         f"User utterance: {request.userUtterance}\n\n"
@@ -341,6 +343,7 @@ def _feedback_system_prompt() -> str:
         "Classify each turn before writing feedback fields. "
         "Domain-neutral policy: The same core rules must work for cafe, airport, hotel, restaurant, and other service scenarios. "
         "Use scenarioTitle, scenarioGoal, originalQuestion, and userUtterance to infer the active domain, but keep the classification labels domain-neutral. "
+        "Use scenarioSituation as the concrete role-play context when judging whether the answer fits the situation. "
         "Classification Policy: "
         "Good response means the utterance directly answers the AI question, satisfies the scenario intent, and is natural enough for a native listener. "
         "Near-miss response means the intended answer is clear but grammar, word choice, word order, politeness, or completeness needs a small correction. "
@@ -417,6 +420,7 @@ def _feedback_system_prompt() -> str:
         "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
         "nativeLanguageInterpretation must be based only on the same turn's userUtterance. "
         "Do not borrow content from prompt examples, previous turns, other test inputs, scenarioTitle, or scenarioGoal. "
+        "Do not borrow content from scenarioSituation when writing nativeLanguageInterpretation. "
         "nativeUnderstanding and nativeLanguageInterpretation must describe the same meaning. "
         "Write nativeLanguageInterpretation in Korean using this pattern: '한국어로 비유하자면, ...처럼 들려요.' "
         "Use single quotation marks around the Korean analogy phrase in nativeLanguageInterpretation. "
@@ -522,6 +526,7 @@ def _turn_feedback_user_prompt(
 ) -> str:
     return (
         f"Scenario title: {request.scenarioTitle}\n"
+        f"Scenario situation: {request.scenarioSituation}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
         f"Session result: {request.sessionResult.value}\n"
         f"Backend has already confirmed this session result.\n"
@@ -1562,6 +1567,7 @@ def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
     )
     return (
         f"Scenario title: {request.scenarioTitle}\n"
+        f"Scenario situation: {request.scenarioSituation}\n"
         f"Scenario goal: {request.scenarioGoal}\n\n"
         f"Session result: {request.sessionResult.value}\n"
         f"Backend has already confirmed this session result.\n\n"

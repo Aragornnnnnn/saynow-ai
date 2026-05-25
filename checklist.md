@@ -93,3 +93,7 @@
 - [x] 피드백 요청에 백엔드 확정 `sessionResult` 계약 추가.
 - [x] 기본 피드백과 SSE 피드백 프롬프트가 같은 `sessionResult`를 사용하도록 보강.
 - [x] 관련 단위 테스트와 compileall, diff check를 실행하고 커밋한다.
+- [x] `next-question`, `feedback`, `feedback/stream` 요청 계약에 `scenarioSituation` 필수 필드 추가.
+- [x] 기본 피드백과 SSE 피드백 프롬프트가 같은 `scenarioSituation`을 사용하도록 테스트 먼저 추가.
+- [x] 모델, 프롬프트, API 문서에 `scenarioSituation` 반영.
+- [x] 관련 단위 테스트와 전체 검증 실행 후 커밋한다.

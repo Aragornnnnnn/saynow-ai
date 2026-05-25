@@ -136,6 +136,7 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
             store = PgvectorAssistanceKnowledgeStore(settings)
             request = SimpleNamespace(
                 scenarioTitle="카페에서 주문하기",
+                scenarioSituation="사용자는 카페 직원과 대화하며 테이크아웃 음료를 주문해야 한다.",
                 scenarioGoal="원하는 음료를 자연스럽게 주문할 수 있다.",
                 originalQuestion="What would you like to order?",
                 userUtterance="  Can   I see the MENU?  ",

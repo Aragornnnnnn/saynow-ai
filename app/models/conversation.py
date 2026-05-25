@@ -44,10 +44,11 @@ class NextQuestionRequest(BaseModel):
     originalQuestion: str
     userUtterance: str
     scenarioTitle: str
+    scenarioSituation: str
     scenarioGoal: str
     slots: list[SlotStatusRequest]
 
-    @field_validator("originalQuestion", "userUtterance", "scenarioTitle", "scenarioGoal")
+    @field_validator("originalQuestion", "userUtterance", "scenarioTitle", "scenarioSituation", "scenarioGoal")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
@@ -73,11 +74,12 @@ class FeedbackTurnRequest(BaseModel):
 
 class ConversationFeedbackRequest(BaseModel):
     scenarioTitle: str
+    scenarioSituation: str
     scenarioGoal: str
     sessionResult: SessionResult
     turns: list[FeedbackTurnRequest]
 
-    @field_validator("scenarioTitle", "scenarioGoal")
+    @field_validator("scenarioTitle", "scenarioSituation", "scenarioGoal")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
