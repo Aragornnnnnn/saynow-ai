@@ -2272,6 +2272,24 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("natural cafe order", prompt)
         self.assertNotIn("Concrete drink values include", prompt)
 
+    def test_feedback_prompts_discourage_formulaic_korean_feedback(self):
+        prompts = [
+            self.service._feedback_system_prompt(),
+            self.service._feedback_summary_system_prompt(),
+            self.service._turn_feedback_system_prompt(),
+            self.service._feedback_repair_system_prompt(),
+        ]
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt[:80]):
+                self.assertIn("Natural Korean Style Policy", prompt)
+                self.assertIn("Avoid formulaic Korean feedback phrases", prompt)
+                self.assertIn("전체적으로", prompt)
+                self.assertIn("명확하게 전달", prompt)
+                self.assertIn("이렇게 말하면", prompt)
+                self.assertIn("더 자연스럽습니다", prompt)
+                self.assertIn("nativeLanguageInterpretation fixed pattern is an exception", prompt)
+
     def test_feedback_repair_prompt_shares_core_classification_policy(self):
         prompt = self.service._feedback_repair_system_prompt()
 

@@ -335,7 +335,7 @@ def _next_question_user_prompt(
 def _feedback_system_prompt() -> str:
     return (
         "You generate final feedback for an English speaking practice scenario. "
-        "Use this structured policy in order: Output Contract, Domain-neutral policy, Classification Policy, Scoring Policy, Field Policy, Self-check before output. "
+        "Use this structured policy in order: Output Contract, Domain-neutral policy, Classification Policy, Scoring Policy, Field Policy, Natural Korean Style Policy, Self-check before output. "
         "Output Contract: "
         "Return ONLY valid JSON matching this schema exactly: "
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
@@ -394,7 +394,8 @@ def _feedback_system_prompt() -> str:
         "When every turn has feedbackRequired=false, feedbackSummary must not imply that the user needs correction; tell the user to maintain the clear expression instead. "
         "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
         "Do not list multiple strengths and weaknesses. "
-        "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
+        + _natural_korean_style_policy()
+        + "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired is true, nativeUnderstanding must explain what the foreign listener understood from the user's utterance. "
         "When feedbackRequired is true, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must all be non-null and non-empty. "
         "Even for nonsense or off-topic utterances, betterExpression must provide a simple in-scenario English answer. "
@@ -492,7 +493,8 @@ def _feedback_summary_system_prompt() -> str:
         "If sessionResult is FAILURE, the summary must say the scenario goal was not achieved and comprehensionScore must be 59 or below. "
         "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
         "feedbackSummary must include one focus point for the user's next practice. "
-        "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
+        + _natural_korean_style_policy()
+        + "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
         "Nonsense, off-topic, refusal, or vague non-answer utterances must score 0-39. "
         "Do not evaluate capitalization, punctuation, or spelling because the input is based on spoken utterances. "
         "Apply the same stable score bands as the full feedback API: 0-39 off-topic or unclear, 40-59 vague gist, 60-74 understandable but clearly awkward, 75-84 clear with a useful small correction, 85-100 good and directly understandable."
@@ -513,9 +515,21 @@ def _turn_feedback_system_prompt() -> str:
         "nativeLanguageInterpretation must describe the same meaning as nativeUnderstanding and must use only this turn's userUtterance. "
         "For nonsensical or off-topic utterances, preserve the strange literal meaning instead of forcing it into the scenario context. "
         "betterExpression must start with an English improved expression followed by a short Korean reason. "
-        "For awkward but relevant answers, improve the user's utterance by exactly one practical step, not a perfect rewrite. "
+        + _natural_korean_style_policy()
+        + "For awkward but relevant answers, improve the user's utterance by exactly one practical step, not a perfect rewrite. "
         "For answers that do not answer the question, give a simple English example that fits the scenario. "
         "Do not include backslash characters or double quotation marks inside response strings."
+    )
+
+
+def _natural_korean_style_policy() -> str:
+    return (
+        "Natural Korean Style Policy: "
+        "Write user-facing Korean in short, conversational Korean. "
+        "Avoid formulaic Korean feedback phrases such as 전체적으로, 명확하게 전달, 이렇게 말하면 ...할 수 있어요, and 더 자연스럽습니다 unless a fixed field contract requires them. "
+        "Prefer concrete wording such as 뜻은 통했어요, 음료 이름이 빠졌어요, or 이 표현이 더 공손하게 들려요. "
+        "Vary sentence openings and verbs so feedbackSummary and betterExpression do not sound templated. "
+        "The nativeLanguageInterpretation fixed pattern is an exception and must still follow 한국어로 비유하자면, '...'처럼 들려요. "
     )
 
 
@@ -965,7 +979,7 @@ def _feedback_quality_review_user_prompt(
 def _feedback_repair_system_prompt() -> str:
     return (
         "You repair final feedback JSON for an English speaking practice scenario. "
-        "Use this structured policy in order: Output Contract, Domain-neutral policy, Classification Policy, Field Policy, Self-check before output. "
+        "Use this structured policy in order: Output Contract, Domain-neutral policy, Classification Policy, Field Policy, Natural Korean Style Policy, Self-check before output. "
         "Output Contract: "
         "Return ONLY valid JSON matching this schema exactly: "
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
@@ -985,7 +999,8 @@ def _feedback_repair_system_prompt() -> str:
         "feedbackSummary must be concise: 2 short Korean sentences by default, never one sentence, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
         "Never return a one-sentence feedbackSummary. "
         "Do not repeat detailed per-turn explanations, nativeUnderstanding, nativeLanguageInterpretation, or betterExpression content in feedbackSummary. "
-        "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
+        + _natural_korean_style_policy()
+        + "When feedbackRequired=false, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must be null. "
         "When feedbackRequired=true, nativeUnderstanding, nativeLanguageInterpretation, and betterExpression must all be non-null and non-empty. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
         "For incomplete order fragments with a missing object, nativeUnderstanding may instead end with 이해할 수 없었어요. "

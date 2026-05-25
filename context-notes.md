@@ -119,3 +119,5 @@
 - 2026-05-26 백엔드와 프론트의 시나리오 상황 필드명은 `scenarioSituation`으로 맞춘다. AI 서버도 별도 매핑을 만들지 않고 `next-question`, `feedback`, `feedback/stream` 요청 최상위 필수 문자열로 받는다.
 - `scenarioSituation`은 응답 스키마를 바꾸지 않는다. LLM 프롬프트 컨텍스트에 `scenarioTitle`, `scenarioGoal`, `sessionResult`와 함께 넣어 꼬리 질문, 동기 피드백, SSE summary, SSE turn feedback 경로가 같은 시나리오 상황을 사용하게 한다.
 - 2026-05-26 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 `humanizer` 기준 정적 검토에서 `전체적으로`, `명확하게 전달`, `이렇게 말하면 ...할 수 있어요`, `더 자연스럽습니다` 같은 피드백 공식형 문구가 AI 작문 신호로 잡혔다. 고정 계약인 `nativeLanguageInterpretation` 형식은 유지하되, feedbackSummary와 betterExpression의 한국어 이유는 짧고 구체적인 대화체를 우선하도록 프롬프트 정책을 추가했다.
+- 2026-05-26 프롬프트 개선 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 74개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다. 로컬에 실제 LLM API 키가 없어 live 모델 호출은 실행하지 않았다.
