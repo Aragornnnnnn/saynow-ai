@@ -108,7 +108,7 @@
 - [x] SSE summary에도 동기 feedback의 all-good 총평 보정을 적용.
 - [x] 질문형 발화가 슬롯 설명상 확인 요청 자체를 수행하는 경우를 회귀 테스트로 고정.
 - [x] `boarding_possibility`처럼 확인 요청형 슬롯은 assistance request로 오분류되어도 슬롯을 채우도록 보정.
-- [ ] 관련 단위 테스트와 배포 서버 품질 재검증 실행.
+- [x] 관련 단위 테스트와 배포 서버 품질 재검증 실행.
 - [x] `slots[].description`을 `next-question` 슬롯 계약에 필수 필드로 추가.
 - [x] `feedback`, `feedback/stream` 요청 계약에 `slots`와 `slots[].description` 필수 필드 추가.
 - [x] 다음 질문, 동기 피드백, SSE summary/turn feedback 프롬프트가 슬롯 설명을 사용하도록 반영.
