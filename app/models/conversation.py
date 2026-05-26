@@ -1,7 +1,7 @@
 # 2차 MVP 대화 API 요청과 응답 데이터 구조를 정의한다.
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _validate_not_blank(value: str) -> str:
@@ -140,24 +140,17 @@ class ConversationFeedbackResponse(BaseModel):
 
 
 class GuideChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     question: str
     scenarioTitle: str
     scenarioSituation: str
     aiRole: str
     scenarioGoal: str
-    originalQuestion: str | None = None
-    userUtterance: str | None = None
 
     @field_validator("question", "scenarioTitle", "scenarioSituation", "aiRole", "scenarioGoal")
     @classmethod
     def required_text_fields_must_not_be_blank(cls, value: str) -> str:
-        return _validate_not_blank(value)
-
-    @field_validator("originalQuestion", "userUtterance")
-    @classmethod
-    def optional_text_fields_must_not_be_blank(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
         return _validate_not_blank(value)
 
 

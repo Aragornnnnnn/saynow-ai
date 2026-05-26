@@ -420,15 +420,11 @@ def _guide_system_prompt() -> str:
 
 
 def _guide_user_prompt(request: GuideChatRequest) -> str:
-    original_question = request.originalQuestion or "None"
-    user_utterance = request.userUtterance or "None"
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario situation: {request.scenarioSituation}\n"
         f"AI role: {request.aiRole}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
-        f"Current AI question: {original_question}\n"
-        f"Recent user utterance: {user_utterance}\n"
         f"Guide question: {request.question}"
     )
 

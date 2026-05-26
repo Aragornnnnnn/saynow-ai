@@ -25,8 +25,7 @@ Request fields.
 
 - `question`: 사용자의 영어 학습 질문.
 - `scenarioTitle`, `scenarioSituation`, `aiRole`, `scenarioGoal`: 현재 시나리오 컨텍스트.
-- `originalQuestion`: 현재 또는 직전 AI 질문. 선택 필드.
-- `userUtterance`: 사용자가 질문하게 된 직전 발화. 선택 필드.
+- 사용자가 궁금한 표현, 문장, 단어는 `question` 안에 직접 포함한다.
 
 Response fields.
 

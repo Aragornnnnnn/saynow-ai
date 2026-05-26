@@ -137,3 +137,4 @@
 - 2026-05-26 방어 로직은 가이드 모드 전용이 아니라 모든 LLM 경계에 적용한다. `next-question`은 차단 입력을 기존 계약 안에서 `INVALID_RESPONSE`로 처리하고, 가이드는 영어 학습 질문만 답하며, 피드백은 사용자 발화를 실행할 지시가 아니라 평가 대상 데이터로만 취급한다.
 - 2026-05-26 사용자가 선택한 차단 응답 방식은 새 `blocked` 필드를 추가하지 않는 A안이다. 운영 추적은 로그와 내부 reason으로 남길 수 있지만 클라이언트 계약은 자연스러운 재질문이나 안내 답변으로 유지한다.
 - 2026-05-26 가이드 모드와 공통 방어 로직 검증은 focused RED 후 GREEN, 전체 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 90개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 가이드 API의 `originalQuestion`, `userUtterance`는 제거한다. 사용자가 직전 발화가 아닌 예전 발화나 특정 표현을 물어볼 수 있으므로, 궁금한 표현은 `question` 안에 직접 담게 하고 `GuideChatRequest`는 extra field를 400으로 거부한다.

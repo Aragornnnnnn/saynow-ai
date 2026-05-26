@@ -110,6 +110,7 @@
 - [x] `/api/v1/conversation/guide` 요청/응답 모델과 라우트를 추가한다.
 - [x] README에 가이드 모드 API 계약을 반영한다.
 - [x] 관련 단위 테스트, compileall, diff check를 실행하고 커밋한다.
+- [x] 가이드 API에서 직전 질문/발화 필드를 제거하고 extra field를 거부하도록 계약을 단순화한다.
 - [x] 기획 심의 기술 꼬리 질문 범위를 현재 AI 서버 구현과 Obsidian 문서 기준으로 정리한다.
 - [x] 프롬프트 품질 관리, 모델 선택, DB/인프라, 서버 분리, 할루시네이션 대응 Q&A를 Obsidian 노트로 작성한다.
 - [x] 생성한 Obsidian 노트 경로와 주요 내용을 검증한다.
