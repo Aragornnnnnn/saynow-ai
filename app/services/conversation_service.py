@@ -111,10 +111,23 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
 
 def generate_feedback_stream_events(request: ConversationFeedbackRequest):
     summary = generate_feedback_summary(request)
+    turn_feedbacks = [
+        generate_turn_feedback(request, turn, summary)
+        for turn in request.turns
+    ]
+    response = ConversationFeedbackResponse(
+        comprehensionScore=summary.comprehensionScore,
+        feedbackSummary=summary.feedbackSummary,
+        turnFeedbacks=turn_feedbacks,
+    )
+    _enforce_all_good_feedback_summary(response)
+    summary = ConversationFeedbackSummaryResponse(
+        comprehensionScore=response.comprehensionScore,
+        feedbackSummary=response.feedbackSummary,
+    )
     yield "summary", summary.model_dump()
 
-    for turn in request.turns:
-        turn_feedback = generate_turn_feedback(request, turn, summary)
+    for turn_feedback in response.turnFeedbacks:
         yield "turnFeedback", turn_feedback.model_dump()
 
     yield "done", {"turnCount": len(request.turns)}
@@ -778,6 +791,8 @@ def _enforce_all_good_feedback_summary(response: ConversationFeedbackResponse) -
 def _summary_sounds_corrective(summary: str) -> bool:
     corrective_markers = [
         "더 자연스럽",
+        "더 공손",
+        "다음에는 더",
         "다듬",
         "어색",
         "부족",

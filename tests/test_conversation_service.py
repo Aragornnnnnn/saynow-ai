@@ -1015,6 +1015,69 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(events[2][1]["turnId"], 102)
         self.assertEqual(events[3][1], {"turnCount": 2})
 
+    def test_feedback_stream_rewrites_corrective_summary_when_every_turn_is_good(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 안내 직원",
+            "scenarioGoal": "직원에게 환승편 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "sessionResult": "SUCCESS",
+            "slots": [
+                {
+                    "slotName": "gate_location",
+                    "description": "사용자가 Gate B 또는 환승편 탑승 게이트 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                    "filled": True,
+                },
+                {
+                    "slotName": "boarding_possibility",
+                    "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+                    "filled": True,
+                },
+                {
+                    "slotName": "time_pressure",
+                    "description": "사용자가 비행기 출발 시간이 임박했거나 시간이 부족한 긴급 상황임을 설명했는지 여부",
+                    "filled": True,
+                },
+            ],
+            "turns": [
+                {
+                    "turnId": 301,
+                    "originalQuestion": "Oh, you look worried. What's going on?",
+                    "userUtterance": "My baggage issue delayed me. I need to find Gate B, my flight departs in 10 minutes, and can I still board?",
+                },
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 85,
+                "feedbackSummary": (
+                    "게이트 B 위치와 탑승 가능 여부를 잘 물어봤고, 시간 압박도 잘 설명했어요. "
+                    "다음에는 더 공손하게 질문해보면 좋을 것 같아요."
+                ),
+            },
+            {
+                "turnId": 301,
+                "feedbackRequired": False,
+                "nativeUnderstanding": None,
+                "nativeLanguageInterpretation": None,
+                "betterExpression": None,
+            },
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        events = list(self.service.generate_feedback_stream_events(request))
+
+        self.assertEqual([event for event, _ in events], ["summary", "turnFeedback", "done"])
+        self.assertNotIn("다음에는 더 공손하게", events[0][1]["feedbackSummary"])
+        self.assertIn("지금처럼", events[0][1]["feedbackSummary"])
+        self.assertFalse(events[1][1]["feedbackRequired"])
+
     def test_feedback_stream_generation_uses_scenario_situation_in_summary_and_turn_prompts(self):
         from app.models.conversation import ConversationFeedbackRequest
 
