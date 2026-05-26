@@ -8,6 +8,8 @@ from app.core.logger import get_logger
 from app.models.conversation import (
     ConversationFeedbackRequest,
     ConversationFeedbackResponse,
+    GuideChatRequest,
+    GuideChatResponse,
     NextQuestionRequest,
     NextQuestionResponse,
 )
@@ -15,6 +17,7 @@ from app.services.conversation_service import (
     ConversationGenerationError,
     generate_feedback,
     generate_feedback_stream_events,
+    generate_guide_answer,
     generate_next_question,
 )
 
@@ -104,6 +107,29 @@ async def feedback_stream(request: ConversationFeedbackRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post(
+    "/guide",
+    response_model=GuideChatResponse,
+    summary="영어 학습 가이드 답변 생성",
+)
+async def guide(request: GuideChatRequest):
+    logger.info(
+        "POST /api/v1/conversation/guide | scenario: %s",
+        request.scenarioTitle,
+    )
+    try:
+        return generate_guide_answer(request)
+    except ConversationGenerationError as exc:
+        logger.error("가이드 답변 생성 실패 | error: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": "AI_GENERATION_FAILED",
+                "message": "가이드 답변 생성에 실패했습니다.",
+            },
+        )
 
 
 def _format_sse_event(event: str, data: dict) -> str:

@@ -137,3 +137,34 @@ class ConversationFeedbackResponse(BaseModel):
     @classmethod
     def feedback_summary_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
+
+
+class GuideChatRequest(BaseModel):
+    question: str
+    scenarioTitle: str
+    scenarioSituation: str
+    aiRole: str
+    scenarioGoal: str
+    originalQuestion: str | None = None
+    userUtterance: str | None = None
+
+    @field_validator("question", "scenarioTitle", "scenarioSituation", "aiRole", "scenarioGoal")
+    @classmethod
+    def required_text_fields_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
+
+    @field_validator("originalQuestion", "userUtterance")
+    @classmethod
+    def optional_text_fields_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_not_blank(value)
+
+
+class GuideChatResponse(BaseModel):
+    answer: str
+
+    @field_validator("answer")
+    @classmethod
+    def answer_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
