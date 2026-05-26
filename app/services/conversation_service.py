@@ -17,6 +17,7 @@ from app.models.conversation import (
     NextQuestionResponse,
     NextQuestionTurnClassification,
     SessionResult,
+    SlotStatusRequest,
     TurnFeedbackResponse,
 )
 from app.services.assistance_knowledge_store import build_assistance_knowledge_store
@@ -165,6 +166,7 @@ def generate_turn_feedback(
         aiRole=request.aiRole,
         scenarioGoal=request.scenarioGoal,
         sessionResult=request.sessionResult,
+        slots=request.slots,
         turns=[turn],
     )
     response = ConversationFeedbackResponse(
@@ -319,10 +321,14 @@ def _next_question_user_prompt(
     retrieved_assistance_answer: str | None = None,
 ) -> str:
     slot_lines = "\n".join(
-        f"- {slot.slotName}: {'filled' if slot.filled else 'unfilled'}"
+        _format_slot_line(slot)
         for slot in request.slots
     )
-    unfilled_lines = "\n".join(f"- {slot_name}" for slot_name in unfilled_slot_names)
+    description_by_slot = {slot.slotName: slot.description for slot in request.slots}
+    unfilled_lines = "\n".join(
+        f"- {slot_name}: {description_by_slot.get(slot_name, '')}"
+        for slot_name in unfilled_slot_names
+    )
     retrieved_assistance_context = retrieved_assistance_answer or "None"
     return (
         f"Scenario title: {request.scenarioTitle}\n"
@@ -335,6 +341,11 @@ def _next_question_user_prompt(
         f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
         f"Retrieved assistance context:\n{retrieved_assistance_context}"
     )
+
+
+def _format_slot_line(slot: SlotStatusRequest) -> str:
+    state = "filled" if slot.filled else "unfilled"
+    return f"- {slot.slotName}: {state} - {slot.description}"
 
 
 def _feedback_system_prompt() -> str:
@@ -350,6 +361,7 @@ def _feedback_system_prompt() -> str:
         "Use scenarioTitle, scenarioGoal, originalQuestion, and userUtterance to infer the active domain, but keep the classification labels domain-neutral. "
         "Use scenarioSituation as the concrete role-play context when judging whether the answer fits the situation. "
         "Use aiRole as the role the AI played when judging whether the user addressed the right counterpart. "
+        "Use each slot description as the meaning-level completion criterion, not as a required exact phrase. "
         "Classification Policy: "
         "Good response means the utterance directly answers the AI question, satisfies the scenario intent, and is natural enough for a native listener. "
         "Near-miss response means the intended answer is clear but grammar, word choice, word order, politeness, or completeness needs a small correction. "
@@ -499,6 +511,7 @@ def _feedback_summary_system_prompt() -> str:
         "If sessionResult is FAILURE, the summary must say the scenario goal was not achieved and comprehensionScore must be 59 or below. "
         "feedbackSummary is Korean and summarizes overall comprehension, whether the scenario goal was effectively handled, strengths, and one improvement direction. "
         "Use aiRole with scenarioSituation when judging whether the user addressed the expected role-play counterpart. "
+        "Use slot descriptions as the scenario completion criteria when judging the summary. "
         "feedbackSummary must include one focus point for the user's next practice. "
         + _natural_korean_style_policy()
         + "If the scenario goal is not achieved, comprehensionScore must be 59 or below. "
@@ -516,6 +529,7 @@ def _turn_feedback_system_prompt() -> str:
         "Preserve the exact turnId from the request. "
         "Only set feedbackRequired=false when the answer directly answers the AI question, satisfies the scenario intent for that turn, is understandable without extra inference, and has no meaning-blocking grammar or word-choice issue. "
         "Use aiRole with scenarioSituation when judging whether this turn fits the expected role-play counterpart. "
+        "Use slot descriptions as meaning-level criteria, not exact phrases, when judging whether the turn helped complete the scenario. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
         "nativeUnderstanding must be based only on this turn's userUtterance and must not include grammar explanations, improvement directions, evaluations, or quotes. "
@@ -546,11 +560,13 @@ def _turn_feedback_user_prompt(
     turn: FeedbackTurnRequest,
     summary: ConversationFeedbackSummaryResponse,
 ) -> str:
+    slot_lines = "\n".join(_format_slot_line(slot) for slot in request.slots)
     return (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario situation: {request.scenarioSituation}\n"
         f"AI role: {request.aiRole}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
+        f"Slot state and completion criteria:\n{slot_lines}\n"
         f"Session result: {request.sessionResult.value}\n"
         f"Backend has already confirmed this session result.\n"
         f"Overall comprehension score: {summary.comprehensionScore}\n"
@@ -1583,6 +1599,7 @@ def _native_language_interpretation_override(user_utterance: str) -> str | None:
 
 
 def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
+    slot_lines = "\n".join(_format_slot_line(slot) for slot in request.slots)
     turn_lines = "\n".join(
         f"- turnId: {turn.turnId}\n"
         f"  AI question: {turn.originalQuestion}\n"
@@ -1594,6 +1611,7 @@ def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
         f"Scenario situation: {request.scenarioSituation}\n"
         f"AI role: {request.aiRole}\n"
         f"Scenario goal: {request.scenarioGoal}\n\n"
+        f"Slot state and completion criteria:\n{slot_lines}\n\n"
         f"Session result: {request.sessionResult.value}\n"
         f"Backend has already confirmed this session result.\n\n"
         f"Turns:\n{turn_lines}"

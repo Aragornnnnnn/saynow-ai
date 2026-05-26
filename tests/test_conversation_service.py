@@ -33,7 +33,7 @@ class ConversationServiceTest(unittest.TestCase):
                 "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
                 "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
                 "slots": [
-                    {"slotName": "gate_location", "filled": False},
+                    {"slotName": "gate_location", "description": "테스트 슬롯 채움 기준", "filled": False},
                 ],
             })
 
@@ -48,11 +48,77 @@ class ConversationServiceTest(unittest.TestCase):
                 "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
                 "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
                 "sessionResult": "SUCCESS",
+                "slots": [
+                    {"slotName": "gate_location", "description": "테스트 슬롯 채움 기준", "filled": False},
+                ],
                 "turns": [
                     {
                         "turnId": 101,
                         "originalQuestion": "Oh, you look worried. What's going on?",
                         "userUtterance": "My baggage issue delayed me.",
+                    }
+                ],
+            })
+
+    def test_next_question_request_requires_slot_description(self):
+        from pydantic import ValidationError
+
+        from app.models.conversation import NextQuestionRequest
+
+        with self.assertRaises(ValidationError):
+            NextQuestionRequest.model_validate({
+                "originalQuestion": "Oh, you look worried. What's going on?",
+                "userUtterance": "I need to know if I can still board.",
+                "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+                "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+                "aiRole": "공항 안내 직원",
+                "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                "slots": [
+                    {"slotName": "boarding_possibility", "filled": False},
+                ],
+            })
+
+    def test_feedback_request_requires_slots(self):
+        from pydantic import ValidationError
+
+        from app.models.conversation import ConversationFeedbackRequest
+
+        with self.assertRaises(ValidationError):
+            ConversationFeedbackRequest.model_validate({
+                "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+                "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+                "aiRole": "공항 안내 직원",
+                "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                "sessionResult": "SUCCESS",
+                "turns": [
+                    {
+                        "turnId": 101,
+                        "originalQuestion": "Oh, you look worried. What's going on?",
+                        "userUtterance": "I need to know if I can still board.",
+                    }
+                ],
+            })
+
+    def test_feedback_request_requires_slot_description(self):
+        from pydantic import ValidationError
+
+        from app.models.conversation import ConversationFeedbackRequest
+
+        with self.assertRaises(ValidationError):
+            ConversationFeedbackRequest.model_validate({
+                "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+                "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+                "aiRole": "공항 안내 직원",
+                "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                "sessionResult": "SUCCESS",
+                "slots": [
+                    {"slotName": "boarding_possibility", "filled": False},
+                ],
+                "turns": [
+                    {
+                        "turnId": 101,
+                        "originalQuestion": "Oh, you look worried. What's going on?",
+                        "userUtterance": "I need to know if I can still board.",
                     }
                 ],
             })
@@ -68,13 +134,21 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "공항 안내 직원",
             "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
             "slots": [
-                {"slotName": "gate_location", "filled": False},
+                {
+                    "slotName": "gate_location",
+                    "description": "사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                    "filled": False,
+                },
             ],
         })
 
         prompt = self.service._next_question_user_prompt(request, ["gate_location"])
 
         self.assertIn("AI role: 공항 안내 직원", prompt)
+        self.assertIn(
+            "gate_location: unfilled - 사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+            prompt,
+        )
 
     def test_feedback_prompts_include_ai_role_context(self):
         from app.models.conversation import ConversationFeedbackRequest, ConversationFeedbackSummaryResponse
@@ -85,6 +159,13 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "공항 안내 직원",
             "scenarioGoal": "직원에게 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {
+                    "slotName": "boarding_possibility",
+                    "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+                    "filled": False,
+                },
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -103,6 +184,14 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertIn("AI role: 공항 안내 직원", feedback_prompt)
         self.assertIn("AI role: 공항 안내 직원", turn_prompt)
+        self.assertIn(
+            "boarding_possibility: unfilled - 사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+            feedback_prompt,
+        )
+        self.assertIn(
+            "boarding_possibility: unfilled - 사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+            turn_prompt,
+        )
 
     def test_next_question_returns_only_newly_filled_unfilled_slots(self):
         from app.models.conversation import NextQuestionRequest
@@ -115,9 +204,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": True},
-                {"slotName": "size", "filled": False},
-                {"slotName": "temperature", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "temperature", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -147,9 +236,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": True},
-                {"slotName": "size", "filled": False},
-                {"slotName": "temperature", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "temperature", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -189,8 +278,8 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
-                        {"slotName": "drink", "filled": False},
-                        {"slotName": "size", "filled": False},
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                        {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
                     ],
                 })
                 self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -233,8 +322,8 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
-                        {"slotName": "drink", "filled": False},
-                        {"slotName": "size", "filled": False},
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                        {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
                     ],
                 })
                 calls = []
@@ -278,8 +367,8 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
-                        {"slotName": "drink", "filled": False},
-                        {"slotName": "size", "filled": False},
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                        {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
                     ],
                 })
                 calls = []
@@ -313,8 +402,8 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
-                {"slotName": "size", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         calls = []
@@ -347,8 +436,8 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
-                {"slotName": "size", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -374,7 +463,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
             "availableOptions": [
                 {"slotName": "drink", "options": ["iced Americano", "latte", "tea"]},
@@ -408,7 +497,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         calls = []
@@ -456,7 +545,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -497,8 +586,8 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
-                {"slotName": "size", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         calls = []
@@ -559,8 +648,8 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "slots": [
-                        {"slotName": "drink", "filled": False},
-                        {"slotName": "size", "filled": False},
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                        {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
                     ],
                 })
                 calls = []
@@ -611,7 +700,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         calls = []
@@ -657,7 +746,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         calls = []
@@ -691,9 +780,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 커스텀 음료 옵션을 자연스럽게 말할 수 있다.",
             "slots": [
-                {"slotName": "baseDrink", "filled": True},
-                {"slotName": "size", "filled": True},
-                {"slotName": "customOptions", "filled": False},
+                {"slotName": "baseDrink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": True},
+                {"slotName": "customOptions", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -719,7 +808,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "좌석 선호도를 자연스럽게 말할 수 있다.",
             "slots": [
-                {"slotName": "seatPreference", "filled": False},
+                {"slotName": "seatPreference", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -811,7 +900,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
 
@@ -828,6 +917,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -873,6 +965,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -929,6 +1024,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -974,6 +1072,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -993,6 +1094,9 @@ class ConversationServiceTest(unittest.TestCase):
                 "aiRole": "상대방 역할",
                 "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                 "sessionResult": "CLEARED",
+                "slots": [
+                    {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                ],
                 "turns": [
                     {
                         "turnId": 101,
@@ -1009,6 +1113,9 @@ class ConversationServiceTest(unittest.TestCase):
                 "aiRole": "상대방 역할",
                 "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                 "sessionResult": "SUCCESS",
+                "slots": [
+                    {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                ],
                 "turns": [
                     {
                         "turnId": 101,
@@ -1030,6 +1137,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "FAILURE",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1061,6 +1171,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "FAILURE",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1088,6 +1201,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1110,6 +1226,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1147,6 +1266,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1200,6 +1322,9 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
                     "sessionResult": "SUCCESS",
+                    "slots": [
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                    ],
                     "turns": [
                         {
                             "turnId": 101,
@@ -1240,6 +1365,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1296,6 +1424,9 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
                     "sessionResult": "SUCCESS",
+                    "slots": [
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                    ],
                     "turns": [
                         {
                             "turnId": 101,
@@ -1351,6 +1482,9 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": "음료 옵션을 자연스럽게 말할 수 있다.",
                     "sessionResult": "SUCCESS",
+                    "slots": [
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                    ],
                     "turns": [
                         {
                             "turnId": 101,
@@ -1391,6 +1525,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1429,6 +1566,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 109,
@@ -1476,6 +1616,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 109,
@@ -1535,6 +1678,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1601,6 +1747,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1659,6 +1808,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1727,6 +1879,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -1796,6 +1951,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 104,
@@ -1863,6 +2021,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 105,
@@ -1930,6 +2091,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료와 옵션을 말할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 106,
@@ -2012,6 +2176,9 @@ class ConversationServiceTest(unittest.TestCase):
                     "aiRole": "상대방 역할",
                     "scenarioGoal": scenario_goal,
                     "sessionResult": "SUCCESS",
+                    "slots": [
+                        {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                    ],
                     "turns": [
                         {
                             "turnId": turn_id,
@@ -2066,6 +2233,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 301,
@@ -2137,6 +2307,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 301,
@@ -2190,6 +2363,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 301,
@@ -2238,6 +2414,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 311,
@@ -2274,6 +2453,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 302,
@@ -2322,6 +2504,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -2497,6 +2682,9 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -2540,7 +2728,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
 

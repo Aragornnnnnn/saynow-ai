@@ -181,11 +181,17 @@ def build_assistance_knowledge_store(config=settings):
 
 
 def _embedding_text_for_request(request: Any) -> str:
+    slot_lines = [
+        f"- {slot.slotName}: {slot.description}"
+        for slot in getattr(request, "slots", [])
+    ]
     return "\n".join([
         f"Scenario title: {request.scenarioTitle}",
         f"Scenario situation: {request.scenarioSituation}",
         f"AI role: {request.aiRole}",
         f"Scenario goal: {request.scenarioGoal}",
+        "Slot descriptions:",
+        *slot_lines,
         f"Previous AI question: {request.originalQuestion}",
         f"User utterance: {request.userUtterance}",
     ])

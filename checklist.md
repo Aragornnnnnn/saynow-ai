@@ -104,3 +104,9 @@
 - [x] 모델, 프롬프트, API 문서에 `aiRole` 반영.
 - [x] 관련 단위 테스트와 전체 검증 실행.
 - [x] 커밋 후 `develop`으로 push한다.
+- [x] `slots[].description`을 `next-question` 슬롯 계약에 필수 필드로 추가.
+- [x] `feedback`, `feedback/stream` 요청 계약에 `slots`와 `slots[].description` 필수 필드 추가.
+- [x] 다음 질문, 동기 피드백, SSE summary/turn feedback 프롬프트가 슬롯 설명을 사용하도록 반영.
+- [x] API 문서와 관련 테스트 payload를 새 슬롯 계약에 맞게 갱신.
+- [x] 관련 단위 테스트와 전체 검증 실행.
+- [x] 커밋 후 `develop`으로 push한다.

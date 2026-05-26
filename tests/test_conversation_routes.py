@@ -77,7 +77,7 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "filled": False},
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
             ],
         })
 
@@ -96,6 +96,9 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -117,6 +120,9 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -146,6 +152,9 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,
@@ -167,6 +176,9 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [],
         })
 
@@ -182,6 +194,9 @@ class ConversationRoutesTest(unittest.TestCase):
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
             "turns": [
                 {
                     "turnId": 101,

@@ -12,11 +12,12 @@ def _validate_not_blank(value: str) -> str:
 
 class SlotStatusRequest(BaseModel):
     slotName: str
+    description: str
     filled: bool
 
-    @field_validator("slotName")
+    @field_validator("slotName", "description")
     @classmethod
-    def slot_name_must_not_be_blank(cls, value: str) -> str:
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
@@ -79,6 +80,7 @@ class ConversationFeedbackRequest(BaseModel):
     aiRole: str
     scenarioGoal: str
     sessionResult: SessionResult
+    slots: list[SlotStatusRequest]
     turns: list[FeedbackTurnRequest]
 
     @field_validator("scenarioTitle", "scenarioSituation", "aiRole", "scenarioGoal")

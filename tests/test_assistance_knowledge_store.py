@@ -145,6 +145,12 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
                 scenarioSituation="사용자는 카페 직원과 대화하며 테이크아웃 음료를 주문해야 한다.",
                 aiRole="카페 직원",
                 scenarioGoal="원하는 음료를 자연스럽게 주문할 수 있다.",
+                slots=[
+                    SimpleNamespace(
+                        slotName="drink",
+                        description="사용자가 주문하려는 음료 이름이나 종류를 구체적으로 말했는지 여부",
+                    ),
+                ],
                 originalQuestion="What would you like to order?",
                 userUtterance="  Can   I see the MENU?  ",
             )
@@ -160,6 +166,7 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
 
         self.assertEqual(len(execute_calls), 2)
         self.assertIn("AI role: 카페 직원", embedded_texts[0])
+        self.assertIn("drink: 사용자가 주문하려는 음료 이름이나 종류를 구체적으로 말했는지 여부", embedded_texts[0])
         self.assertEqual(
             execute_calls[1][1],
             ("카페에서 주문하기", "can i see the menu", "카페에서 주문하기", "can i see the menu", 2),
