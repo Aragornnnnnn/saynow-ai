@@ -257,6 +257,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.translatedQuestion)
         self.assertEqual(result.turnClassification, "ANSWER")
 
+    def test_next_question_fills_confirmation_request_slot_from_user_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Do you know if you can still board the flight?",
+            "userUtterance": "Can I still board the flight if I hurry?",
+            "scenarioTitle": "공항에서 환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 안내 직원",
+            "scenarioGoal": "직원에게 환승편 게이트 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "slots": [
+                {
+                    "slotName": "gate_location",
+                    "description": "사용자가 Gate B 또는 환승편 탑승 게이트 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                    "filled": True,
+                },
+                {
+                    "slotName": "boarding_possibility",
+                    "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+                    "filled": False,
+                },
+                {
+                    "slotName": "time_pressure",
+                    "description": "사용자가 비행기 출발 시간이 임박했거나 시간이 부족한 긴급 상황임을 설명했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "How much time do you have before the flight departs?",
+            "translatedQuestion": "비행기 출발까지 얼마나 시간이 남았나요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["boarding_possibility"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertEqual(result.nextQuestion, "How much time do you have before the flight departs?")
+
     def test_next_question_blocks_non_answer_utterances_even_when_model_returns_slots(self):
         from app.models.conversation import NextQuestionRequest
 

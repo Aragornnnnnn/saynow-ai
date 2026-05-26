@@ -57,6 +57,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     )
     data = _parse_json_object(raw)
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
+    filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(data, request, filled_slots)
     remaining_slots = [slot_name for slot_name in unfilled_slot_names if slot_name not in {slot.slotName for slot in filled_slots}]
 
@@ -285,6 +286,7 @@ def _next_question_system_prompt() -> str:
             "Slot Policy:\n"
             "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance.\n"
             "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot.\n"
+            "If a slot description defines the user's task as asking, checking, or confirming something with the AI role, a direct user question can satisfy that slot.\n"
             "Never include slots that were already filled before this request.\n"
             "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences."
         ),
@@ -1688,6 +1690,55 @@ def _normalize_newly_filled_slots(data: dict[str, Any], unfilled_slot_names: lis
         normalized.append(FilledSlotResponse(slotName=slot_name))
 
     return normalized
+
+
+def _add_description_defined_request_slots(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    filled_slots: list[FilledSlotResponse],
+) -> list[FilledSlotResponse]:
+    filled_slot_names = {slot.slotName for slot in filled_slots}
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    additions: list[FilledSlotResponse] = []
+    for slot_name in unfilled_slot_names:
+        if slot_name in filled_slot_names:
+            continue
+
+        slot = slots_by_name.get(slot_name)
+        if slot is None:
+            continue
+
+        if _user_question_satisfies_confirmation_slot(slot, request.userUtterance):
+            additions.append(FilledSlotResponse(slotName=slot_name))
+
+    return [*filled_slots, *additions]
+
+
+def _user_question_satisfies_confirmation_slot(slot: SlotStatusRequest, user_utterance: str) -> bool:
+    compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
+    compact_slot_name = _normalize_utterance(slot.slotName)
+    compact_description = re.sub(r"\s+", "", slot.description)
+
+    if "확인요청" not in compact_description:
+        return False
+
+    boarding_slot = (
+        "boarding" in compact_slot_name
+        and "possibility" in compact_slot_name
+    ) or ("탑승" in compact_description and "수있는지" in compact_description)
+    if not boarding_slot:
+        return False
+
+    asks_boarding_possibility = (
+        "board" in compact_utterance
+        or "boarding" in compact_utterance
+        or "still board" in compact_utterance
+    )
+    asks_as_question = any(
+        marker in compact_utterance
+        for marker in ["can i", "could i", "may i", "am i able", "is it possible"]
+    )
+    return asks_boarding_possibility and asks_as_question
 
 
 def _optional_non_blank_string(value: Any) -> str | None:
