@@ -104,6 +104,16 @@
 - [x] 모델, 프롬프트, API 문서에 `aiRole` 반영.
 - [x] 관련 단위 테스트와 전체 검증 실행.
 - [x] 커밋 후 `develop`으로 push한다.
+- [x] 가이드 모드와 공통 방어 로직 설계를 문서화한다.
+- [x] 프롬프트 인젝션 방어와 영어 학습 질문 허용 범위에 대한 실패 테스트를 먼저 추가한다.
+- [x] 공통 safety guard를 추가하고 `next-question`, `feedback`, `feedback/stream`, `guide` 경계에 적용한다.
+- [x] `/api/v1/conversation/guide` 요청/응답 모델과 라우트를 추가한다.
+- [x] README에 가이드 모드 API 계약을 반영한다.
+- [x] 관련 단위 테스트, compileall, diff check를 실행하고 커밋한다.
+- [x] 가이드 API에서 직전 질문/발화 필드를 제거하고 extra field를 거부하도록 계약을 단순화한다.
+- [x] 기획 심의 기술 꼬리 질문 범위를 현재 AI 서버 구현과 Obsidian 문서 기준으로 정리한다.
+- [x] 프롬프트 품질 관리, 모델 선택, DB/인프라, 서버 분리, 할루시네이션 대응 Q&A를 Obsidian 노트로 작성한다.
+- [x] 생성한 Obsidian 노트 경로와 주요 내용을 검증한다.
 - [x] SSE 피드백에서 모든 턴이 good인데 summary만 교정성 문구를 내는 케이스를 회귀 테스트로 고정.
 - [x] SSE summary에도 동기 feedback의 all-good 총평 보정을 적용.
 - [x] 질문형 발화가 슬롯 설명상 확인 요청 자체를 수행하는 경우를 회귀 테스트로 고정.

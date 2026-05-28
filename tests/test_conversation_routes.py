@@ -15,6 +15,7 @@ class ConversationRoutesTest(unittest.TestCase):
         from app.models.conversation import (
             ConversationFeedbackResponse,
             FilledSlotResponse,
+            GuideChatResponse,
             NextQuestionResponse,
             NextQuestionTurnClassification,
             TurnFeedbackResponse,
@@ -25,6 +26,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.original_next_question = conversation.generate_next_question
         self.original_feedback = conversation.generate_feedback
         self.original_feedback_stream_events = getattr(conversation, "generate_feedback_stream_events", None)
+        self.original_guide_answer = getattr(conversation, "generate_guide_answer", None)
 
         conversation.generate_next_question = lambda request: NextQuestionResponse(
             nextQuestion="What size would you like?",
@@ -59,6 +61,9 @@ class ConversationRoutesTest(unittest.TestCase):
             }),
             ("done", {"turnCount": 1}),
         ])
+        conversation.generate_guide_answer = lambda request: GuideChatResponse(
+            answer="would는 더 공손하고 부드러운 요청을 만들 때 자주 써요."
+        )
 
     def tearDown(self):
         self.conversation_route.generate_next_question = self.original_next_question
@@ -67,6 +72,10 @@ class ConversationRoutesTest(unittest.TestCase):
             delattr(self.conversation_route, "generate_feedback_stream_events")
         else:
             self.conversation_route.generate_feedback_stream_events = self.original_feedback_stream_events
+        if self.original_guide_answer is None:
+            delattr(self.conversation_route, "generate_guide_answer")
+        else:
+            self.conversation_route.generate_guide_answer = self.original_guide_answer
 
     def test_next_question_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/next-question", json={
@@ -168,6 +177,37 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: error", body)
         self.assertIn('"code":"AI_GENERATION_FAILED"', body)
+
+    def test_guide_route_returns_documented_shape(self):
+        response = self.client.post("/api/v1/conversation/guide", json={
+            "question": "I would like coffee에서 would는 왜 쓰나요?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페에서 영어로 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "answer": "would는 더 공손하고 부드러운 요청을 만들 때 자주 써요.",
+        })
+
+    def test_guide_route_rejects_turn_context_fields(self):
+        response = self.client.post("/api/v1/conversation/guide", json={
+            "question": "I would like coffee에서 would는 왜 쓰나요?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페에서 영어로 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "I would like coffee.",
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {
+            "code": "INVALID_REQUEST",
+            "message": "잘못된 요청입니다.",
+        })
 
     def test_invalid_request_returns_documented_error_shape(self):
         response = self.client.post("/api/v1/conversation/feedback", json={
