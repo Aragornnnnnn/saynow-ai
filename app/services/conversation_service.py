@@ -1,6 +1,7 @@
 # 2차 MVP 대화 API의 LLM 호출과 응답 정규화를 담당한다.
 import json
 import re
+import time
 from typing import Any
 
 from pydantic import ValidationError
@@ -36,6 +37,9 @@ MAX_FEEDBACK_SUMMARY_CHARS = 120
 DIRECT_WANT_NEAR_MISS_ISSUE = (
     "direct want + concrete service item response must be treated as a near-miss with feedbackRequired=true."
 )
+PROBLEM_UTTERANCE_FEEDBACK_ISSUE = (
+    "problem utterance must be treated as feedbackRequired=true."
+)
 assistance_knowledge_store = build_assistance_knowledge_store()
 
 
@@ -61,17 +65,33 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if _must_not_fill_slots(request.userUtterance):
         return _retry_question_for_slot(unfilled_slot_names[0])
 
+    stage_started_at = time.perf_counter()
     retrieved_assistance_answer = _find_reusable_assistance_answer(request)
+    _log_next_question_stage_duration("rag_lookup", stage_started_at)
+    stage_started_at = time.perf_counter()
     raw = _call_chat(
         _next_question_system_prompt(),
         _next_question_user_prompt(request, unfilled_slot_names, retrieved_assistance_answer),
         max_tokens=512,
         temperature=0,
     )
+    _log_next_question_stage_duration("llm_chat", stage_started_at)
     data = _parse_json_object(raw)
+    raw_classification = _parse_next_question_turn_classification(data.get("turnClassification"))
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
-    filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
-    turn_classification = _resolve_next_question_turn_classification(data, request, filled_slots)
+    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
+        filled_slots = []
+    else:
+        filled_slots = _filter_filled_slots_with_user_evidence(request, filled_slots)
+        filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
+    turn_classification = _resolve_next_question_turn_classification(
+        data,
+        request,
+        filled_slots,
+        raw_classification,
+    )
+    if turn_classification != NextQuestionTurnClassification.ANSWER:
+        filled_slots = []
     remaining_slots = [slot_name for slot_name in unfilled_slot_names if slot_name not in {slot.slotName for slot in filled_slots}]
 
     if not remaining_slots:
@@ -85,6 +105,8 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     next_question = _optional_non_blank_string(data.get("nextQuestion"))
     translated_question = _optional_non_blank_string(data.get("translatedQuestion"))
     if next_question is None or translated_question is None:
+        if turn_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
+            return _retry_question_for_slot(remaining_slots[0])
         raise ConversationGenerationError("next question is required while unfilled slots remain")
 
     next_question, translated_question = _ensure_visible_information_response(
@@ -99,7 +121,9 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         turnClassification=turn_classification,
     )
     if turn_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
+        stage_started_at = time.perf_counter()
         _save_assistance_interaction(request, response, retrieved_assistance_answer)
+        _log_next_question_stage_duration("rag_save", stage_started_at)
     return response
 
 
@@ -321,7 +345,9 @@ def _next_question_system_prompt() -> str:
             "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot.\n"
             "If a slot description defines the user's task as asking, checking, or confirming something with the AI role, a direct user question can satisfy that slot.\n"
             "Never include slots that were already filled before this request.\n"
-            "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences."
+            "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences.\n"
+            "Do not ask the user for information that the AI role should know, such as gate location or service policy details.\n"
+            "Do not ask again for a slot that is already marked filled in Current slot state."
         ),
         (
             "Invalid And Generic Input Policy:\n"
@@ -922,6 +948,8 @@ def _deterministic_feedback_issues(
         issue_prefix = f"turnId {turn_feedback.turnId}: "
 
         if not turn_feedback.feedbackRequired:
+            if turn is not None and _turn_requires_problem_feedback(turn):
+                issues.append(issue_prefix + PROBLEM_UTTERANCE_FEEDBACK_ISSUE)
             if turn is not None and _is_direct_want_concrete_order_near_miss(turn.userUtterance):
                 issues.append(issue_prefix + DIRECT_WANT_NEAR_MISS_ISSUE)
             if any([
@@ -1266,6 +1294,7 @@ def _apply_feedback_safety_fallbacks(
         for issue in issues
     )
     force_direct_want_near_miss = any(DIRECT_WANT_NEAR_MISS_ISSUE in issue for issue in issues)
+    force_problem_utterance = any(PROBLEM_UTTERANCE_FEEDBACK_ISSUE in issue for issue in issues)
     marked_good = False
     marked_direct_want_near_miss = False
 
@@ -1278,6 +1307,11 @@ def _apply_feedback_safety_fallbacks(
             _apply_direct_want_concrete_order_feedback(turn.userUtterance, turn_feedback)
             response.comprehensionScore = min(max(response.comprehensionScore, 75), 84)
             marked_direct_want_near_miss = True
+            continue
+
+        if force_problem_utterance and _turn_requires_problem_feedback(turn):
+            _apply_problem_utterance_feedback(turn, turn_feedback)
+            response.comprehensionScore = min(response.comprehensionScore, 84)
             continue
 
         if force_good_response and (
@@ -1328,6 +1362,61 @@ def _apply_feedback_safety_fallbacks(
             "시나리오 목표는 대체로 달성했어요. "
             "다음에는 더 자연스럽고 공손한 주문 표현을 연습해 보세요."
         )
+
+
+def _turn_requires_problem_feedback(turn: FeedbackTurnRequest) -> bool:
+    if _is_known_problem_utterance(turn.userUtterance):
+        return True
+    if _has_wrong_connecting_flight_word_choice(turn.userUtterance):
+        return True
+    return False
+
+
+def _has_wrong_connecting_flight_word_choice(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return "order my connecting flight" in compact
+
+
+def _apply_problem_utterance_feedback(
+    turn: FeedbackTurnRequest,
+    turn_feedback: TurnFeedbackResponse,
+) -> None:
+    turn_feedback.feedbackRequired = True
+    turn_feedback.nativeUnderstanding = (
+        _native_understanding_override(turn.userUtterance)
+        or "외국인은 사용자가 질문과 다른 내용을 말했다고 이해했어요."
+    )
+    turn_feedback.nativeLanguageInterpretation = (
+        _native_language_interpretation_override(turn.userUtterance)
+        or "한국어로 비유하자면, '질문과 다른 말을 하는 것'처럼 들려요."
+    )
+    turn_feedback.betterExpression = _problem_better_expression_for_turn(turn)
+
+
+def _problem_better_expression_for_turn(turn: FeedbackTurnRequest) -> str:
+    if _has_wrong_connecting_flight_word_choice(turn.userUtterance):
+        return (
+            "Can I still board my connecting flight? "
+            "이렇게 말하면 환승편 탑승 가능 여부를 정확히 물을 수 있어요."
+        )
+
+    compact_question = _normalize_utterance(turn.originalQuestion).replace("'", "")
+    if any(marker in compact_question for marker in ["email", "phone", "contact"]):
+        return (
+            "My phone number is 123-4567. "
+            "이렇게 말하면 후속 안내를 받을 연락처를 직접 제공할 수 있어요."
+        )
+    if "gate" in compact_question and any(marker in compact_question for marker in ["where", "located", "location"]):
+        return (
+            "Could you please tell me where Gate B is? "
+            "이렇게 말하면 게이트 위치를 공손하게 물을 수 있어요."
+        )
+    if "board" in compact_question or "connecting flight" in compact_question:
+        return (
+            "Can I still board my connecting flight? "
+            "이렇게 말하면 환승편 탑승 가능 여부를 정확히 물을 수 있어요."
+        )
+    return _simple_better_expression_for_question(turn.originalQuestion)
 
 
 def _is_likely_good_response(user_utterance: str) -> bool:
@@ -1429,6 +1518,11 @@ def _should_attempt_assistance_rag(user_utterance: str) -> bool:
     return user_utterance.strip().endswith("?") or compact.startswith(question_prefixes)
 
 
+def _log_next_question_stage_duration(stage: str, started_at: float) -> None:
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    logger.info("꼬리 질문 단계 소요 시간 | stage=%s duration_ms=%.2f", stage, duration_ms)
+
+
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
     compact_question = _normalize_utterance(original_question).replace("'", "")
     compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
@@ -1512,7 +1606,12 @@ def _resolve_next_question_turn_classification(
     data: dict[str, Any],
     request: NextQuestionRequest,
     filled_slots: list[FilledSlotResponse],
+    raw_classification: NextQuestionTurnClassification | None = None,
 ) -> NextQuestionTurnClassification:
+    if _should_force_invalid_next_question(request):
+        return NextQuestionTurnClassification.INVALID_RESPONSE
+    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
+        return NextQuestionTurnClassification.INVALID_RESPONSE
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
     if filled_slots and _fills_option_or_customization_slot(filled_slots):
@@ -1521,35 +1620,37 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.ANSWER
     if _is_clear_preference_or_option_answer(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
+    if raw_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
+        return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_recommendation_request(request.userUtterance):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_information_request(request.userUtterance):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
-
-    raw_classification = data.get("turnClassification")
-    if isinstance(raw_classification, str):
-        legacy_classification_map = {
-            "SLOT_ANSWER": NextQuestionTurnClassification.ANSWER,
-            "OPTION_COMPLETION": NextQuestionTurnClassification.ANSWER,
-            "RECOMMENDATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
-            "INFORMATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
-        }
-        legacy_classification = legacy_classification_map.get(raw_classification.strip())
-        if legacy_classification is not None:
-            return legacy_classification
-
-        try:
-            classification = NextQuestionTurnClassification(raw_classification.strip())
-        except ValueError:
-            classification = None
-        if classification in {
-            NextQuestionTurnClassification.ANSWER,
-            NextQuestionTurnClassification.ASSISTANCE_REQUEST,
-            NextQuestionTurnClassification.INVALID_RESPONSE,
-        }:
-            return classification
+    if raw_classification == NextQuestionTurnClassification.ANSWER:
+        return NextQuestionTurnClassification.ANSWER
 
     return NextQuestionTurnClassification.INVALID_RESPONSE
+
+
+def _parse_next_question_turn_classification(value: Any) -> NextQuestionTurnClassification | None:
+    if not isinstance(value, str):
+        return None
+
+    raw_classification = value.strip()
+    legacy_classification_map = {
+        "SLOT_ANSWER": NextQuestionTurnClassification.ANSWER,
+        "OPTION_COMPLETION": NextQuestionTurnClassification.ANSWER,
+        "RECOMMENDATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
+        "INFORMATION_REQUEST": NextQuestionTurnClassification.ASSISTANCE_REQUEST,
+    }
+    legacy_classification = legacy_classification_map.get(raw_classification)
+    if legacy_classification is not None:
+        return legacy_classification
+
+    try:
+        return NextQuestionTurnClassification(raw_classification)
+    except ValueError:
+        return None
 
 
 def _fills_option_or_customization_slot(filled_slots: list[FilledSlotResponse]) -> bool:
@@ -1676,6 +1777,16 @@ def _native_understanding_override(user_utterance: str) -> str | None:
 
     overrides = {
         "i dont know": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
+        "ok i will i will": "외국인은 사용자가 나중에 하겠다고만 말한다고 이해했어요.",
+        "i wanna know your email": "외국인은 사용자가 직원의 이메일을 알고 싶다고 이해했어요.",
+        "why i like you": "외국인은 사용자가 상대방을 좋아한다고 말한다고 이해했어요.",
+        "i like strawberry": "외국인은 사용자가 딸기를 좋아한다고 이해했어요.",
+        "i am 20 years old": "외국인은 사용자가 스무 살이라고 말한다고 이해했어요.",
+        "galaxy laptop": "외국인은 사용자가 갤럭시 노트북을 말한다고 이해했어요.",
+        "i am a terrorist": "외국인은 사용자가 자신을 테러리스트라고 말한다고 이해했어요.",
+        "what are you crazy i dont know i am customer": "외국인은 사용자가 화를 내며 자신은 고객이라고 말한다고 이해했어요.",
+        "yes i already told you": "외국인은 사용자가 이미 말했다고 불만을 표현한다고 이해했어요.",
+        "yes i wonder if i can order my connecting flight": "외국인은 사용자가 환승편을 주문할 수 있는지 궁금해한다고 이해했어요.",
         "i want ice one": "외국인은 사용자가 얼음 한 개를 원한다고 이해했어요.",
         "less ice do please": "외국인은 사용자가 얼음을 적게 넣어 달라고 이해했어요.",
         "this drink is hot but i order ice one": "외국인은 사용자가 이 음료는 뜨겁지만 얼음 한 개를 주문했다고 이해했어요.",
@@ -1694,6 +1805,16 @@ def _native_language_interpretation_override(user_utterance: str) -> str | None:
 
     overrides = {
         "i dont know": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
+        "ok i will i will": "한국어로 비유하자면, '알겠어요 나중에 할게요'처럼 들려요.",
+        "i wanna know your email": "한국어로 비유하자면, '당신 이메일을 알고 싶어요'처럼 들려요.",
+        "why i like you": "한국어로 비유하자면, '왜 내가 당신을 좋아하지'처럼 들려요.",
+        "i like strawberry": "한국어로 비유하자면, '나는 딸기를 좋아해요'처럼 들려요.",
+        "i am 20 years old": "한국어로 비유하자면, '나는 스무 살이에요'처럼 들려요.",
+        "galaxy laptop": "한국어로 비유하자면, '갤럭시 노트북'처럼 들려요.",
+        "i am a terrorist": "한국어로 비유하자면, '나는 테러리스트예요'처럼 들려요.",
+        "what are you crazy i dont know i am customer": "한국어로 비유하자면, '미쳤어요? 나는 고객이라 모른다고요'처럼 들려요.",
+        "yes i already told you": "한국어로 비유하자면, '네, 이미 말했잖아요'처럼 들려요.",
+        "yes i wonder if i can order my connecting flight": "한국어로 비유하자면, '환승편을 주문할 수 있는지 궁금해요'처럼 들려요.",
         "i want ice one": "한국어로 비유하자면, '얼음 하나 원해요'처럼 들려요.",
         "less ice do please": "한국어로 비유하자면, '얼음 적게 해주세요'처럼 들려요.",
         "this drink is hot but i order ice one": "한국어로 비유하자면, '이 음료는 뜨겁지만 얼음 한 개를 주문했어요'처럼 들려요.",
@@ -1781,6 +1902,192 @@ def _normalize_newly_filled_slots(data: dict[str, Any], unfilled_slot_names: lis
     return normalized
 
 
+def _filter_filled_slots_with_user_evidence(
+    request: NextQuestionRequest,
+    filled_slots: list[FilledSlotResponse],
+) -> list[FilledSlotResponse]:
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    filtered: list[FilledSlotResponse] = []
+    for filled_slot in filled_slots:
+        slot = slots_by_name.get(filled_slot.slotName)
+        if slot is None:
+            continue
+        if _slot_has_user_evidence(slot, request):
+            filtered.append(filled_slot)
+    return filtered
+
+
+def _slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+    slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
+    if slot_name == "contact_info":
+        return _utterance_contains_contact_info(request.userUtterance)
+    if slot_name == "gate_location":
+        return _utterance_asks_gate_location(request.userUtterance)
+    if slot_name == "boarding_possibility":
+        return _utterance_asks_boarding_possibility(request.userUtterance)
+    if slot_name == "time_pressure":
+        return _utterance_expresses_time_pressure(request.userUtterance)
+    if slot_name == "baggage_issue":
+        return _utterance_describes_baggage_issue(request.userUtterance)
+    if slot_name == "requested_help":
+        return _utterance_requests_baggage_help(request.userUtterance)
+    return True
+
+
+def _utterance_contains_contact_info(user_utterance: str) -> bool:
+    email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    phone_pattern = r"(?<!\d)(?:\+?\d[\d\s().-]{4,}\d)(?!\d)"
+    return bool(re.search(email_pattern, user_utterance) or re.search(phone_pattern, user_utterance))
+
+
+def _utterance_asks_gate_location(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    has_gate_target = "gate" in compact
+    asks_location = any(
+        marker in compact
+        for marker in [
+            "where",
+            "located",
+            "location",
+            "direction",
+            "directions",
+            "find",
+            "tell me",
+            "how do i get",
+            "how can i get",
+        ]
+    )
+    return has_gate_target and asks_location
+
+
+def _utterance_asks_boarding_possibility(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    if "order my connecting flight" in compact:
+        return False
+    has_boarding_target = any(marker in compact for marker in ["board", "boarding", "catch my flight", "catch the flight"])
+    has_flight_context = "flight" in compact or "plane" in compact
+    asks_possibility = any(
+        marker in compact
+        for marker in [
+            "can i",
+            "could i",
+            "may i",
+            "am i able",
+            "is it possible",
+            "wonder if",
+            "still",
+        ]
+    )
+    return has_boarding_target and has_flight_context and asks_possibility
+
+
+def _utterance_expresses_time_pressure(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    direct_pressure_markers = [
+        "in a rush",
+        "in a hurry",
+        "urgent",
+        "late",
+        "no time",
+        "not much time",
+        "dont have much time",
+        "do not have much time",
+        "running out of time",
+        "leaves soon",
+        "depart soon",
+        "departs soon",
+        "about to leave",
+    ]
+    if any(marker in compact for marker in direct_pressure_markers):
+        return True
+    return ("transfer" in compact or "connecting flight" in compact) and any(
+        marker in compact for marker in ["time", "hurry", "late", "soon"]
+    )
+
+
+def _utterance_describes_baggage_issue(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    has_baggage = any(marker in compact for marker in ["luggage", "baggage", "bag", "suitcase", "carry on", "carryon"])
+    has_issue = any(marker in compact for marker in ["broken", "damaged", "lost", "missing", "delayed", "issue", "problem"])
+    return has_baggage and has_issue
+
+
+def _utterance_requests_baggage_help(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return any(
+        marker in compact
+        for marker in [
+            "compensate",
+            "compensation",
+            "refund",
+            "repair",
+            "replace",
+            "claim",
+            "report",
+            "help",
+            "assist",
+        ]
+    )
+
+
+def _should_force_invalid_next_question(request: NextQuestionRequest) -> bool:
+    if _is_known_problem_utterance(request.userUtterance):
+        return True
+    if _contact_info_question_has_non_contact_answer(request):
+        return True
+    return False
+
+
+def _contact_info_question_has_non_contact_answer(request: NextQuestionRequest) -> bool:
+    unfilled_slot_names = {slot.slotName for slot in request.slots if not slot.filled}
+    if "contact_info" not in unfilled_slot_names:
+        return False
+    question = _normalize_utterance(request.originalQuestion).replace("'", "")
+    asks_contact = any(marker in question for marker in ["contact", "email", "phone number"])
+    if not asks_contact:
+        return False
+    if _utterance_contains_contact_info(request.userUtterance):
+        return False
+    return not _is_relevant_contact_info_assistance_request(request.userUtterance)
+
+
+def _is_relevant_contact_info_assistance_request(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    if not compact.startswith("why"):
+        return False
+    return any(
+        marker in compact
+        for marker in [
+            "need to provide",
+            "need provide",
+            "provide that",
+            "provide it",
+            "need that",
+            "need my contact",
+            "need my email",
+            "need my phone",
+        ]
+    )
+
+
+def _is_known_problem_utterance(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    exact_or_phrase_markers = [
+        "hi nice day",
+        "ok i will i will",
+        "i wanna know your email",
+        "why i like you",
+        "i like strawberry",
+        "i am 20 years old",
+        "galaxy laptop",
+        "i am a terrorist",
+        "what are you crazy",
+        "i am customer",
+        "yes i already told you",
+    ]
+    return any(marker in compact for marker in exact_or_phrase_markers)
+
+
 def _add_description_defined_request_slots(
     request: NextQuestionRequest,
     unfilled_slot_names: list[str],
@@ -1797,10 +2104,24 @@ def _add_description_defined_request_slots(
         if slot is None:
             continue
 
-        if _user_question_satisfies_confirmation_slot(slot, request.userUtterance):
+        if _description_defined_slot_has_user_evidence(slot, request):
             additions.append(FilledSlotResponse(slotName=slot_name))
 
     return [*filled_slots, *additions]
+
+
+def _description_defined_slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+    slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
+    if slot_name in {
+        "gate_location",
+        "boarding_possibility",
+        "time_pressure",
+        "baggage_issue",
+        "requested_help",
+        "contact_info",
+    }:
+        return _slot_has_user_evidence(slot, request)
+    return _user_question_satisfies_confirmation_slot(slot, request.userUtterance)
 
 
 def _user_question_satisfies_confirmation_slot(slot: SlotStatusRequest, user_utterance: str) -> bool:

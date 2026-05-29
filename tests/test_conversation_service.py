@@ -471,6 +471,213 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.translatedQuestion, "어떤 음료를 주문하고 싶으신가요?")
                 self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
 
+    def test_next_question_discards_slots_when_model_classifies_invalid_response(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+            "userUtterance": "I like strawberry",
+            "scenarioTitle": "수하물 문제 해결하기",
+            "scenarioSituation": "수하물이 파손되어 항공사 직원에게 후속 안내를 받아야 하는 상황입니다.",
+            "aiRole": "항공사 수하물 서비스 직원",
+            "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "contact_info",
+                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "contact_info"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
+        self.assertEqual(result.nextQuestion, "Could you tell me your contact info?")
+
+    def test_next_question_blocks_session_160_contact_info_non_answers(self):
+        from app.models.conversation import NextQuestionRequest
+
+        invalid_utterances = [
+            "OK I will I will",
+            "I wanna know your email",
+            "Why I like you",
+            "I like strawberry",
+            "I am 20 years old",
+            "Galaxy laptop",
+            "I am a terrorist",
+        ]
+
+        for utterance in invalid_utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "수하물 문제 해결하기",
+                    "scenarioSituation": "수하물이 파손되어 항공사 직원에게 후속 안내를 받아야 하는 상황입니다.",
+                    "aiRole": "항공사 수하물 서비스 직원",
+                    "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
+                    "slots": [
+                        {
+                            "slotName": "contact_info",
+                            "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                            "filled": False,
+                        },
+                    ],
+                })
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "filledSlots": [{"slotName": "contact_info"}],
+                    "nextQuestion": None,
+                    "translatedQuestion": None,
+                    "turnClassification": "ANSWER",
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
+
+    def test_next_question_allows_contact_info_only_with_phone_or_email_evidence(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+            "userUtterance": "OK my phone number is 123-4567",
+            "scenarioTitle": "수하물 문제 해결하기",
+            "scenarioSituation": "수하물이 파손되어 항공사 직원에게 후속 안내를 받아야 하는 상황입니다.",
+            "aiRole": "항공사 수하물 서비스 직원",
+            "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "contact_info",
+                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "contact_info"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["contact_info"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertIsNone(result.nextQuestion)
+
+    def test_next_question_assistance_request_never_fills_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+            "userUtterance": "Why do I need to provide that",
+            "scenarioTitle": "수하물 문제 해결하기",
+            "scenarioSituation": "수하물이 파손되어 항공사 직원에게 후속 안내를 받아야 하는 상황입니다.",
+            "aiRole": "항공사 수하물 서비스 직원",
+            "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "contact_info",
+                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "contact_info"}],
+            "nextQuestion": "We need your contact information to update your claim. Could you provide your email or phone number?",
+            "translatedQuestion": "청구 상태를 안내드리기 위해 연락처가 필요해요. 이메일이나 전화번호를 알려주시겠어요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertIn("contact information", result.nextQuestion)
+
+    def test_next_question_fills_gate_location_from_user_location_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Oh, you look worried. What's going on?",
+            "userUtterance": "Could you tell me where the gate is",
+            "scenarioTitle": "환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "직원에게 Gate B 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "slots": [
+                {
+                    "slotName": "gate_location",
+                    "description": "사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                    "filled": False,
+                },
+                {
+                    "slotName": "boarding_possibility",
+                    "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "nextQuestion": "Gate B is down the hall to your left. Are you in a hurry to catch your connecting flight?",
+            "translatedQuestion": "Gate B는 복도를 따라 왼쪽에 있어요. 환승편을 타기 위해 급하신가요?",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["gate_location"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+
+    def test_next_question_blocks_session_159_rude_or_repeated_non_answers(self):
+        from app.models.conversation import NextQuestionRequest
+
+        invalid_utterances = [
+            "What are you crazy I don't know I am customer",
+            "Yes I already told you",
+        ]
+
+        for utterance in invalid_utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "Could you please tell me where Gate B is located?",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "환승편 놓칠 위기 설명하기",
+                    "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+                    "aiRole": "공항 환승 안내 직원",
+                    "scenarioGoal": "직원에게 Gate B 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+                    "slots": [
+                        {
+                            "slotName": "gate_location",
+                            "description": "사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                            "filled": False,
+                        },
+                    ],
+                })
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "filledSlots": [{"slotName": "gate_location"}],
+                    "nextQuestion": None,
+                    "translatedQuestion": None,
+                    "turnClassification": "ANSWER",
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
+
     def test_next_question_blocks_incomplete_order_fragments_for_drink_slot(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1009,6 +1216,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("My shoes are swimming in the moon today", prompt)
         self.assertIn("I don't know", prompt)
         self.assertIn("I do not want to order anything", prompt)
+        self.assertIn("Do not ask the user for information that the AI role should know", prompt)
+        self.assertIn("Do not ask again for a slot that is already marked filled", prompt)
         self.assertIn("Do not include long explanations or multiple follow-up questions", prompt)
 
     def test_next_question_prompt_uses_sectioned_template(self):
@@ -1492,6 +1701,97 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.comprehensionScore, 39)
         self.assertTrue(result.turnFeedbacks[0].feedbackRequired)
         self.assertTrue(result.turnFeedbacks[0].betterExpression.startswith("I'd like a coffee, please."))
+
+    def test_feedback_marks_real_session_problem_utterances_required_even_when_model_marks_good(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "환승편 놓칠 위기 설명하기",
+            "scenarioSituation": "짐 문제로 시간이 지체되어 Gate B에서 출발하는 환승편을 놓칠 수 있는 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "직원에게 Gate B 위치와 탑승 가능 여부를 빠르게 물어볼 수 있다.",
+            "sessionResult": "SUCCESS",
+            "slots": [
+                {
+                    "slotName": "gate_location",
+                    "description": "사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
+                    "filled": True,
+                },
+                {
+                    "slotName": "boarding_possibility",
+                    "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
+                    "filled": True,
+                },
+                {
+                    "slotName": "contact_info",
+                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                    "filled": False,
+                },
+            ],
+            "turns": [
+                {
+                    "turnId": 201,
+                    "originalQuestion": "Could you please tell me where Gate B is located?",
+                    "userUtterance": "What are you crazy I don't know I am customer",
+                },
+                {
+                    "turnId": 202,
+                    "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+                    "userUtterance": "I like strawberry",
+                },
+                {
+                    "turnId": 203,
+                    "originalQuestion": "Could you please provide your email address or phone number for us to contact you?",
+                    "userUtterance": "Galaxy laptop",
+                },
+                {
+                    "turnId": 204,
+                    "originalQuestion": "Do you need to know if you can still board your connecting flight?",
+                    "userUtterance": "Yes I wonder if I can order my connecting flight",
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 70,
+            "feedbackSummary": "질문에 대체로 답했어요. 다음에도 핵심 정보를 말해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 201,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                },
+                {
+                    "turnId": 202,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                },
+                {
+                    "turnId": 203,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                },
+                {
+                    "turnId": 204,
+                    "feedbackRequired": False,
+                    "nativeUnderstanding": None,
+                    "nativeLanguageInterpretation": None,
+                    "betterExpression": None,
+                },
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual([feedback.turnId for feedback in result.turnFeedbacks], [201, 202, 203, 204])
+        self.assertTrue(all(feedback.feedbackRequired for feedback in result.turnFeedbacks))
+        self.assertTrue(all(feedback.betterExpression for feedback in result.turnFeedbacks))
+        self.assertIn("board my connecting flight", result.turnFeedbacks[3].betterExpression)
 
     def test_feedback_normalizes_i_dont_know_native_language_interpretation(self):
         from app.models.conversation import ConversationFeedbackRequest
