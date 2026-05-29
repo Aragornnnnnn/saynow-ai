@@ -1,5 +1,20 @@
 # 작업 체크리스트
 
+## 동문서답 턴 분류 개선
+
+- [x] `origin/develop` 기준 `feat/invalid-response-policy` 브랜치에서 작업한다.
+- [x] 세션 159, 160의 문제 발화를 `next-question` 회귀 테스트로 고정한다.
+- [x] 모델이 `INVALID_RESPONSE`를 반환하면 `filledSlots`를 무효화한다.
+- [x] `ASSISTANCE_REQUEST`에서는 슬롯을 채우지 않도록 보정한다.
+- [x] MVP 슬롯별 최소 증거 검증을 추가한다.
+- [x] 역할 반전과 이미 채워진 슬롯 재질문 방지 테스트를 추가한다.
+- [x] 세션 159, 160의 문제 발화를 `feedback` 회귀 테스트로 고정한다.
+- [x] 문제 발화가 피드백에서 미화되지 않도록 보강한다.
+- [x] RAG lookup, LLM chat, RAG save 단계별 소요 시간 로그를 추가한다.
+- [x] Obsidian에 문제 해결 과정과 BE 후속 작업을 기록한다.
+- [x] 단위 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋한다.
+
 - [x] `main` 기준 `develop` 브랜치 생성.
 - [x] 2차 MVP AI 서버 API 계약과 1차 MVP 제거 범위 확인.
 - [x] `next-question`, `feedback` 새 계약 테스트를 먼저 추가하고 실패 확인.

@@ -138,3 +138,11 @@
 - 2026-05-26 사용자가 선택한 차단 응답 방식은 새 `blocked` 필드를 추가하지 않는 A안이다. 운영 추적은 로그와 내부 reason으로 남길 수 있지만 클라이언트 계약은 자연스러운 재질문이나 안내 답변으로 유지한다.
 - 2026-05-26 가이드 모드와 공통 방어 로직 검증은 focused RED 후 GREEN, 전체 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 90개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
 - 2026-05-26 가이드 API의 `originalQuestion`, `userUtterance`는 제거한다. 사용자가 직전 발화가 아닌 예전 발화나 특정 표현을 물어볼 수 있으므로, 궁금한 표현은 `question` 안에 직접 담게 하고 `GuideChatRequest`는 extra field를 400으로 거부한다.
+- 2026-05-30 동문서답 턴 분류 개선은 `saynow-ai`만 수정한다. `saynow-be` 코드는 건드리지 않고, BE에서 필요한 계약과 하트 정책 후속 작업은 Obsidian 문서 최하단에 정리한다.
+- 2026-05-30 대표 재현 사례는 사용자가 제공한 세션 159와 160이다. 세션 159는 환승편 시나리오에서 역할 반전, 반복 질문, 무례한 발화 미화가 핵심이고, 세션 160은 연락처 요청에 대한 동문서답이 `INVALID_RESPONSE`로 고정되지 않는 문제가 핵심이다.
+- 2026-05-30 `next-question`의 안전한 정책은 `INVALID_RESPONSE`와 `ASSISTANCE_REQUEST`가 슬롯을 채우지 않는 것이다. `ANSWER`만 슬롯을 채울 수 있으며, MVP 주요 슬롯은 최소 증거 검증으로 모델의 과도한 슬롯 채움을 방어한다.
+- 2026-05-30 지연 문제는 이번 변경에서 성능 최적화가 아니라 계측으로 다룬다. AI 서버 내부의 RAG lookup, LLM chat, RAG save 소요 시간을 로그로 남겨 후속 병목 분석 근거를 만든다.
+- 2026-05-30 `contact_info`는 이메일 또는 전화번호 패턴이 있어야 채우고, `gate_location`, `boarding_possibility`, `time_pressure`, `baggage_issue`, `requested_help`는 각 슬롯 의미에 맞는 최소 발화 증거가 있을 때만 채운다. 알 수 없는 슬롯은 기존 모델 판단을 유지하되, 최종 분류가 `ANSWER`가 아니면 모두 비운다.
+- 2026-05-30 모델이 `INVALID_RESPONSE`를 반환한 경우에는 사용자 발화가 실제로 슬롯 증거처럼 보여도 모델의 invalid 판단을 우선해 슬롯을 비운다. 반대로 모델이 `ASSISTANCE_REQUEST`로 오분류해도 사용자가 Gate 위치나 탑승 가능 여부를 명확히 물은 경우에는 슬롯 설명 기반 증거로 `ANSWER`를 복구한다.
+- 2026-05-30 피드백 미화 방지는 세션 159, 160의 실제 문제 발화를 deterministic issue로 잡고 repair 후 안전장치에서 `feedbackRequired=true`와 개선 표현을 채우는 방식으로 구현했다. `order my connecting flight`는 질문 의도는 비슷하지만 단어 선택이 잘못된 문제 발화로 보고 `board my connecting flight` 개선문을 준다.
+- 2026-05-30 신규 회귀 테스트와 기존 전체 테스트는 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 99개 통과로 확인했다.
