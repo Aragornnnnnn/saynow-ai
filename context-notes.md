@@ -1,5 +1,13 @@
 # 작업 맥락 기록
 
+- 2026-05-30 품질 개선 전에 관측성을 먼저 추가한다. 목표는 Sentry로 운영 오류를 수집하고, AI 서버 내부의 주요 LLM workflow 단계별 latency를 로그로 남겨 다음 병목 분석의 근거를 만드는 것이다.
+- Sentry DSN은 아직 전달되지 않았으므로 `SENTRY_DSN`이 비어 있으면 초기화하지 않는 no-op 구조가 필요하다. DSN이 들어오면 코드 변경 없이 초기화되어야 한다.
+- 오류 추적 로그는 사용자 발화 전문이나 프롬프트 전체를 남기지 않고, 실패 지점과 계약 위반 원인, stage, workflow, preview 수준의 짧은 정보만 남긴다. 민감 정보와 긴 프롬프트 유출을 피하는 방향으로 제한한다.
+- 현재 `next-question`에는 `rag_lookup`, `llm_chat`, `rag_save` 소요 시간 로그가 일부 있다. 이번 작업은 같은 패턴을 `feedback`, `feedback_summary`, `turn_feedback`, `guide`와 JSON 파싱, 후처리 단계까지 확장한다.
+- 2026-05-30 구현 결과, `SENTRY_DSN`이 없으면 Sentry 초기화는 no-op이고 DSN이 있으면 FastAPI, logging integration과 함께 초기화된다. 라우터의 `ConversationGenerationError`와 전역 500 handler는 Sentry capture 경계로 예외를 전달한다.
+- 2026-05-30 LLM 호출 실패, 모델 JSON 파싱 실패, 피드백과 가이드 응답 계약 검증 실패, 턴 ID 불일치 지점에 원인 로그를 추가했다. 긴 프롬프트 전체는 로그로 남기지 않고 JSON preview도 240자로 제한한다.
+- 2026-05-30 timing 로그는 `AI workflow 단계 소요 시간 | workflow=<name> stage=<name> duration_ms=<ms>` 형식이다. 대상 workflow는 `next_question`, `feedback`, `feedback_summary`, `turn_feedback`, `feedback_review`, `feedback_repair`, `guide`다.
+- 2026-05-30 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 110개 통과, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests` 통과, `git diff --check` 통과로 확인했다.
 - `main`은 1차 MVP 운영 코드이고, `develop`은 2차 MVP 개발 브랜치다.
 - 2차 MVP AI 서버는 백엔드가 호출하는 내부 API만 제공한다. 인증은 애플리케이션 코드가 아니라 AWS Security Group 경계에서 처리한다.
 - 1차 MVP의 오디오 업로드, Whisper STT, OpenAI TTS, `/api/v1/turn-evaluations`, `/api/v1/session-feedbacks`는 하위 호환 없이 제거해도 된다.

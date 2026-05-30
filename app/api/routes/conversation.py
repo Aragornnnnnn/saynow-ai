@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.logger import get_logger
+from app.core.observability import capture_exception
 from app.models.conversation import (
     ConversationFeedbackRequest,
     ConversationFeedbackResponse,
@@ -40,7 +41,8 @@ async def next_question(request: NextQuestionRequest):
     try:
         return generate_next_question(request)
     except ConversationGenerationError as exc:
-        logger.error("꼬리 질문 생성 실패 | error: %s", exc)
+        logger.exception("꼬리 질문 생성 실패 | error: %s", exc)
+        capture_exception(exc)
         return JSONResponse(
             status_code=500,
             content={
@@ -64,7 +66,8 @@ async def feedback(request: ConversationFeedbackRequest):
     try:
         return generate_feedback(request)
     except ConversationGenerationError as exc:
-        logger.error("피드백 생성 실패 | error: %s", exc)
+        logger.exception("피드백 생성 실패 | error: %s", exc)
+        capture_exception(exc)
         return JSONResponse(
             status_code=500,
             content={
@@ -90,7 +93,8 @@ async def feedback_stream(request: ConversationFeedbackRequest):
             for event, data in generate_feedback_stream_events(request):
                 yield _format_sse_event(event, data)
         except ConversationGenerationError as exc:
-            logger.error("피드백 스트리밍 생성 실패 | error: %s", exc)
+            logger.exception("피드백 스트리밍 생성 실패 | error: %s", exc)
+            capture_exception(exc)
             yield _format_sse_event(
                 "error",
                 {
@@ -122,7 +126,8 @@ async def guide(request: GuideChatRequest):
     try:
         return generate_guide_answer(request)
     except ConversationGenerationError as exc:
-        logger.error("가이드 답변 생성 실패 | error: %s", exc)
+        logger.exception("가이드 답변 생성 실패 | error: %s", exc)
+        capture_exception(exc)
         return JSONResponse(
             status_code=500,
             content={

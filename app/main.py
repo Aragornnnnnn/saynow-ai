@@ -6,9 +6,11 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import conversation
 from app.core.logger import get_logger
+from app.core.observability import capture_exception, init_sentry
 
 app = FastAPI(title="SayNow AI API", version="0.2.0")
 logger = get_logger("main")
+init_sentry()
 
 
 @app.exception_handler(RequestValidationError)
@@ -25,7 +27,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def internal_exception_handler(request: Request, exc: Exception):
-    logger.error("[500] 서버 내부 오류 — 예상치 못한 예외 발생 | path: %s | error: %s", request.url.path, exc)
+    logger.error(
+        "[500] 서버 내부 오류 — 예상치 못한 예외 발생 | path: %s | error: %s",
+        request.url.path,
+        exc,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    capture_exception(exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 app.add_middleware(

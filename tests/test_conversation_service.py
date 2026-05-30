@@ -3276,6 +3276,123 @@ class ConversationServiceTest(unittest.TestCase):
         with self.assertRaises(self.service.ConversationGenerationError):
             self.service.generate_next_question(request)
 
+    def test_next_question_logs_stage_durations(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "I want iced americano.",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "drink"}],
+            "nextQuestion": "What size would you like?",
+            "translatedQuestion": "어떤 사이즈로 드릴까요?",
+            "turnClassification": "ANSWER",
+        })
+
+        with self.assertLogs("conversation", level="INFO") as logs:
+            self.service.generate_next_question(request)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("workflow=next_question stage=rag_lookup", messages)
+        self.assertIn("workflow=next_question stage=llm_chat", messages)
+        self.assertIn("workflow=next_question stage=parse_validate", messages)
+        self.assertIn("workflow=next_question stage=postprocess", messages)
+
+    def test_feedback_logs_stage_durations(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "SUCCESS",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+            ],
+            "turns": [
+                {
+                    "turnId": 101,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I want iced americano.",
+                }
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 82,
+            "feedbackSummary": "시나리오 목표는 대체로 달성했어요. 다음에는 조금 더 공손하게 말해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 101,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 아이스 아메리카노를 원한다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '아이스 아메리카노 원해요'처럼 들려요.",
+                    "betterExpression": "I'd like an iced Americano, please.",
+                }
+            ],
+        })
+
+        with self.assertLogs("conversation", level="INFO") as logs:
+            self.service.generate_feedback(request)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("workflow=feedback stage=llm_chat", messages)
+        self.assertIn("workflow=feedback stage=parse_validate", messages)
+        self.assertIn("workflow=feedback stage=postprocess", messages)
+
+    def test_guide_logs_stage_durations(self):
+        from app.models.conversation import GuideChatRequest
+
+        request = GuideChatRequest.model_validate({
+            "question": "I would like coffee에서 would는 왜 쓰나요?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페에서 영어로 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "answer": "would는 더 공손하고 부드러운 요청을 만들 때 자주 써요."
+        })
+
+        with self.assertLogs("conversation", level="INFO") as logs:
+            self.service.generate_guide_answer(request)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("workflow=guide stage=llm_chat", messages)
+        self.assertIn("workflow=guide stage=parse_validate", messages)
+
+    def test_invalid_model_json_logs_failure_context(self):
+        with self.assertLogs("conversation", level="ERROR") as logs:
+            with self.assertRaises(self.service.ConversationGenerationError):
+                self.service._parse_json_object("{invalid json")
+
+        messages = "\n".join(logs.output)
+        self.assertIn("모델 JSON 파싱 실패", messages)
+        self.assertIn("preview=", messages)
+
+    def test_model_call_failure_logs_failure_context(self):
+        def fail_chat(*args, **kwargs):
+            raise RuntimeError("model unavailable")
+
+        self.service.chat = fail_chat
+
+        with self.assertLogs("conversation", level="ERROR") as logs:
+            with self.assertRaises(self.service.ConversationGenerationError):
+                self.service._call_chat("system", "user", max_tokens=128, temperature=0)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("LLM 호출 실패", messages)
+        self.assertIn("max_tokens=128", messages)
+
 
 if __name__ == "__main__":
     unittest.main()

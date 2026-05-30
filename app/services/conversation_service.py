@@ -48,6 +48,7 @@ class ConversationGenerationError(Exception):
 
 
 def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
+    workflow = "next_question"
     unfilled_slot_names = [slot.slotName for slot in request.slots if not slot.filled]
     if not unfilled_slot_names:
         return NextQuestionResponse(
@@ -67,18 +68,22 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
 
     stage_started_at = time.perf_counter()
     retrieved_assistance_answer = _find_reusable_assistance_answer(request)
-    _log_next_question_stage_duration("rag_lookup", stage_started_at)
+    _log_workflow_stage_duration(workflow, "rag_lookup", stage_started_at)
     stage_started_at = time.perf_counter()
     raw = _call_chat(
         _next_question_system_prompt(),
         _next_question_user_prompt(request, unfilled_slot_names, retrieved_assistance_answer),
         max_tokens=512,
         temperature=0,
+        workflow=workflow,
     )
-    _log_next_question_stage_duration("llm_chat", stage_started_at)
-    data = _parse_json_object(raw)
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     raw_classification = _parse_next_question_turn_classification(data.get("turnClassification"))
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
+    stage_started_at = time.perf_counter()
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         filled_slots = []
     else:
@@ -93,6 +98,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if turn_classification != NextQuestionTurnClassification.ANSWER:
         filled_slots = []
     remaining_slots = [slot_name for slot_name in unfilled_slot_names if slot_name not in {slot.slotName for slot in filled_slots}]
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
 
     if not remaining_slots:
         return NextQuestionResponse(
@@ -123,27 +129,35 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if turn_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
         stage_started_at = time.perf_counter()
         _save_assistance_interaction(request, response, retrieved_assistance_answer)
-        _log_next_question_stage_duration("rag_save", stage_started_at)
+        _log_workflow_stage_duration(workflow, "rag_save", stage_started_at)
     return response
 
 
 def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedbackResponse:
+    workflow = "feedback"
+    stage_started_at = time.perf_counter()
     raw = _call_chat(
         _feedback_system_prompt(),
         _feedback_user_prompt(request),
         max_tokens=1024,
         temperature=0,
+        workflow=workflow,
     )
-    data = _parse_json_object(raw)
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     _fill_missing_required_feedback_fields_before_validation(data, request)
     response = _validate_feedback_response(data, request)
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
+    stage_started_at = time.perf_counter()
     _enforce_feedback_consistency(request, response)
     _enforce_turn_feedback_contract(request, response)
     response = _verify_and_repair_feedback(request, response)
     _enforce_feedback_consistency(request, response)
     _enforce_turn_feedback_contract(request, response)
     _enforce_all_good_feedback_summary(response)
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
 
 
@@ -153,17 +167,25 @@ def generate_guide_answer(request: GuideChatRequest) -> GuideChatResponse:
         logger.info("안전 정책으로 가이드 질문 차단 | reason: %s", safety_decision.reason)
         return GuideChatResponse(answer=guide_blocked_answer(safety_decision.reason))
 
+    workflow = "guide"
+    stage_started_at = time.perf_counter()
     raw = _call_chat(
         _guide_system_prompt(),
         _guide_user_prompt(request),
         max_tokens=512,
         temperature=0,
+        workflow=workflow,
     )
-    data = _parse_json_object(raw)
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     try:
-        return GuideChatResponse.model_validate(data)
+        response = GuideChatResponse.model_validate(data)
     except ValidationError as exc:
+        logger.error("가이드 응답 계약 검증 실패 | error=%s", exc)
         raise ConversationGenerationError("guide response does not match contract") from exc
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
+    return response
 
 
 def generate_feedback_stream_events(request: ConversationFeedbackRequest):
@@ -191,22 +213,31 @@ def generate_feedback_stream_events(request: ConversationFeedbackRequest):
 
 
 def generate_feedback_summary(request: ConversationFeedbackRequest) -> ConversationFeedbackSummaryResponse:
+    workflow = "feedback_summary"
+    stage_started_at = time.perf_counter()
     raw = _call_chat(
         _feedback_summary_system_prompt(),
         _feedback_user_prompt(request),
         max_tokens=512,
         temperature=0,
+        workflow=workflow,
     )
-    data = _parse_json_object(raw)
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     try:
         summary = ConversationFeedbackSummaryResponse.model_validate(data)
     except ValidationError as exc:
+        logger.error("피드백 요약 응답 계약 검증 실패 | error=%s", exc)
         raise ConversationGenerationError("feedback summary response does not match contract") from exc
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
+    stage_started_at = time.perf_counter()
     _cap_score_for_backend_session_result(request, summary)
     _align_summary_with_backend_session_result(request, summary)
     if all(_must_not_fill_slots(turn.userUtterance) for turn in request.turns):
         summary.comprehensionScore = min(summary.comprehensionScore, 39)
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
 
     return summary
 
@@ -216,20 +247,33 @@ def generate_turn_feedback(
     turn: FeedbackTurnRequest,
     summary: ConversationFeedbackSummaryResponse,
 ) -> TurnFeedbackResponse:
+    workflow = "turn_feedback"
+    stage_started_at = time.perf_counter()
     raw = _call_chat(
         _turn_feedback_system_prompt(),
         _turn_feedback_user_prompt(request, turn, summary),
         max_tokens=512,
         temperature=0,
+        workflow=workflow,
     )
-    data = _parse_json_object(raw)
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     try:
         turn_feedback = TurnFeedbackResponse.model_validate(data)
     except ValidationError as exc:
+        logger.error("턴 피드백 응답 계약 검증 실패 | turn_id=%s error=%s", turn.turnId, exc)
         raise ConversationGenerationError("turn feedback response does not match contract") from exc
     if turn_feedback.turnId != turn.turnId:
+        logger.error(
+            "턴 피드백 ID 불일치 | request_turn_id=%s response_turn_id=%s",
+            turn.turnId,
+            turn_feedback.turnId,
+        )
         raise ConversationGenerationError("turn feedback id does not match request turn id")
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
+    stage_started_at = time.perf_counter()
     single_turn_request = ConversationFeedbackRequest(
         scenarioTitle=request.scenarioTitle,
         scenarioSituation=request.scenarioSituation,
@@ -249,6 +293,7 @@ def generate_turn_feedback(
     response = _verify_and_repair_feedback(single_turn_request, response)
     _enforce_feedback_consistency(single_turn_request, response)
     _enforce_turn_feedback_contract(single_turn_request, response)
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response.turnFeedbacks[0]
 
 
@@ -259,11 +304,17 @@ def _validate_feedback_response(
     try:
         response = ConversationFeedbackResponse.model_validate(data)
     except ValidationError as exc:
+        logger.error("피드백 응답 계약 검증 실패 | error=%s", exc)
         raise ConversationGenerationError("feedback response does not match contract") from exc
 
     request_turn_ids = [turn.turnId for turn in request.turns]
     response_turn_ids = [turn.turnId for turn in response.turnFeedbacks]
     if response_turn_ids != request_turn_ids:
+        logger.error(
+            "피드백 턴 ID 불일치 | request_turn_ids=%s response_turn_ids=%s",
+            request_turn_ids,
+            response_turn_ids,
+        )
         raise ConversationGenerationError("turn feedback ids do not match request turn ids")
 
     return response
@@ -1063,16 +1114,28 @@ def _review_feedback_quality(
     request: ConversationFeedbackRequest,
     response: ConversationFeedbackResponse,
 ) -> dict[str, Any]:
-    data = _parse_json_object(_call_chat(
+    workflow = "feedback_review"
+    stage_started_at = time.perf_counter()
+    raw = _call_chat(
         _feedback_quality_review_system_prompt(),
         _feedback_quality_review_user_prompt(request, response),
         max_tokens=512,
         temperature=0,
-    ))
+        workflow=workflow,
+    )
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     passed = data.get("pass")
     issues = data.get("issues")
     if not isinstance(passed, bool) or not isinstance(issues, list) or not all(isinstance(issue, str) for issue in issues):
+        logger.error(
+            "피드백 quality review 응답 계약 검증 실패 | pass_type=%s issues_type=%s",
+            type(passed).__name__,
+            type(issues).__name__,
+        )
         raise ConversationGenerationError("feedback quality review response does not match contract")
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
     return {"pass": passed, "issues": issues}
 
 
@@ -1081,19 +1144,28 @@ def _repair_feedback(
     response: ConversationFeedbackResponse,
     issues: list[str],
 ) -> ConversationFeedbackResponse:
-    data = _parse_json_object(_call_chat(
+    workflow = "feedback_repair"
+    stage_started_at = time.perf_counter()
+    raw = _call_chat(
         _feedback_repair_system_prompt(),
         _feedback_repair_user_prompt(request, response, issues),
         max_tokens=1024,
         temperature=0,
-    ))
+        workflow=workflow,
+    )
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+    stage_started_at = time.perf_counter()
+    data = _parse_json_object(raw, workflow=workflow)
     repaired = _validate_feedback_response(data, request)
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
+    stage_started_at = time.perf_counter()
     _enforce_feedback_consistency(request, repaired)
     _enforce_turn_feedback_contract(request, repaired)
     _apply_feedback_safety_fallbacks(request, repaired, issues)
     remaining_issues = _deterministic_feedback_issues(request, repaired)
     if remaining_issues:
         logger.warning("피드백 repair 후에도 계약 위반이 남음 | issues: %s", remaining_issues)
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return repaired
 
 
@@ -1518,9 +1590,14 @@ def _should_attempt_assistance_rag(user_utterance: str) -> bool:
     return user_utterance.strip().endswith("?") or compact.startswith(question_prefixes)
 
 
-def _log_next_question_stage_duration(stage: str, started_at: float) -> None:
+def _log_workflow_stage_duration(workflow: str, stage: str, started_at: float) -> None:
     duration_ms = (time.perf_counter() - started_at) * 1000
-    logger.info("꼬리 질문 단계 소요 시간 | stage=%s duration_ms=%.2f", stage, duration_ms)
+    logger.info(
+        "AI workflow 단계 소요 시간 | workflow=%s stage=%s duration_ms=%.2f",
+        workflow,
+        stage,
+        duration_ms,
+    )
 
 
 def _is_no_more_options_response(original_question: str, user_utterance: str) -> bool:
@@ -1845,23 +1922,57 @@ def _feedback_user_prompt(request: ConversationFeedbackRequest) -> str:
     )
 
 
-def _parse_json_object(raw: str) -> dict[str, Any]:
+def _parse_json_object(raw: str, *, workflow: str | None = None) -> dict[str, Any]:
     cleaned = _strip_code_fence(raw)
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        logger.error(
+            "모델 JSON 파싱 실패 | workflow=%s error=%s preview=%s",
+            workflow or "unknown",
+            exc,
+            _log_preview(cleaned),
+        )
         raise ConversationGenerationError("model returned invalid JSON") from exc
 
     if not isinstance(data, dict):
+        logger.error(
+            "모델 JSON 객체 검증 실패 | workflow=%s response_type=%s preview=%s",
+            workflow or "unknown",
+            type(data).__name__,
+            _log_preview(cleaned),
+        )
         raise ConversationGenerationError("model response must be a JSON object")
     return data
 
 
-def _call_chat(system: str, user: str, max_tokens: int, temperature: float) -> str:
+def _call_chat(
+    system: str,
+    user: str,
+    max_tokens: int,
+    temperature: float,
+    *,
+    workflow: str | None = None,
+) -> str:
     try:
         return chat(system, user, max_tokens=max_tokens, temperature=temperature)
     except Exception as exc:
+        logger.error(
+            "LLM 호출 실패 | workflow=%s max_tokens=%s temperature=%s error=%s",
+            workflow or "unknown",
+            max_tokens,
+            temperature,
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
         raise ConversationGenerationError("model call failed") from exc
+
+
+def _log_preview(value: str, limit: int = 240) -> str:
+    compact = value.replace("\n", " ").strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
 
 
 def _strip_code_fence(raw: str) -> str:

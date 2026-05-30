@@ -1,5 +1,18 @@
 # 작업 체크리스트
 
+## 관측성 로깅과 Sentry 추가
+
+- [x] 현재 로깅, 설정, LLM 호출 구조를 확인한다.
+- [x] Sentry DSN이 없으면 초기화하지 않는 설정 테스트를 추가한다.
+- [x] Sentry DSN이 있으면 초기화 옵션이 적용되는 테스트를 추가한다.
+- [x] API 생성 실패와 서버 내부 오류가 Sentry capture 경계로 전달되는 테스트를 추가한다.
+- [x] next-question, feedback, guide 주요 단계의 소요 시간 로그 테스트를 추가한다.
+- [x] Sentry 초기화와 예외 capture helper를 구현한다.
+- [x] 오류가 날만한 LLM 호출, JSON 파싱, 응답 계약 검증 지점에 원인 추적 로그를 추가한다.
+- [x] AI workflow 단계별 timing 로그를 확장한다.
+- [x] 관련 단위 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋한다.
+
 ## 동문서답 턴 분류 개선
 
 - [x] `origin/develop` 기준 `feat/invalid-response-policy` 브랜치에서 작업한다.

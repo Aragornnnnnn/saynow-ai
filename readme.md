@@ -168,6 +168,19 @@ data: {"turnCount":1}
 
 `betterExpression`은 사용자 발화에서 딱 한 단계만 개선합니다. 원래 의도, 단어 수준, 문장 형태를 최대한 유지하고, 관사 하나, 공손한 표현 하나, 어순 하나처럼 가장 작은 개선만 적용합니다.
 
+## Observability
+
+Sentry DSN이 없으면 Sentry 초기화는 비활성화됩니다. DSN이 전달되면 아래 환경변수로 운영 오류 수집을 켤 수 있습니다.
+
+```env
+SENTRY_DSN=
+SENTRY_ENVIRONMENT=develop
+SENTRY_TRACES_SAMPLE_RATE=0.0
+LOG_LEVEL=INFO
+```
+
+AI workflow는 주요 단계별 소요 시간을 `workflow`, `stage`, `duration_ms` 형태로 남깁니다. 현재 대상은 `next_question`, `feedback`, `feedback_summary`, `turn_feedback`, `feedback_review`, `feedback_repair`, `guide`입니다.
+
 ## Development
 
 ```bash

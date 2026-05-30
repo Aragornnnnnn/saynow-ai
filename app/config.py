@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     assistance_rag_match_count: int = 3
     assistance_rag_candidate_repeat_threshold: int = 2
     log_level: str = "INFO"
+    sentry_dsn: str | None = None
+    sentry_environment: str = "local"
+    sentry_traces_sample_rate: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

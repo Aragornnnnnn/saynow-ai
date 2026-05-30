@@ -27,6 +27,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.original_feedback = conversation.generate_feedback
         self.original_feedback_stream_events = getattr(conversation, "generate_feedback_stream_events", None)
         self.original_guide_answer = getattr(conversation, "generate_guide_answer", None)
+        self.original_capture_exception = conversation.capture_exception
 
         conversation.generate_next_question = lambda request: NextQuestionResponse(
             nextQuestion="What size would you like?",
@@ -76,6 +77,7 @@ class ConversationRoutesTest(unittest.TestCase):
             delattr(self.conversation_route, "generate_guide_answer")
         else:
             self.conversation_route.generate_guide_answer = self.original_guide_answer
+        self.conversation_route.capture_exception = self.original_capture_exception
 
     def test_next_question_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/next-question", json={
@@ -150,10 +152,13 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertIn('"turnId":101', body)
 
     def test_feedback_stream_route_returns_error_event_when_generation_fails(self):
+        captured = []
+
         def fail_stream(request):
             raise self.conversation_route.ConversationGenerationError("model unavailable")
 
         self.conversation_route.generate_feedback_stream_events = fail_stream
+        self.conversation_route.capture_exception = lambda exc: captured.append(exc)
 
         with self.client.stream("POST", "/api/v1/conversation/feedback/stream", json={
             "scenarioTitle": "카페에서 주문하기",
@@ -177,6 +182,34 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: error", body)
         self.assertIn('"code":"AI_GENERATION_FAILED"', body)
+        self.assertEqual(len(captured), 1)
+        self.assertIsInstance(captured[0], self.conversation_route.ConversationGenerationError)
+
+    def test_next_question_route_captures_generation_error(self):
+        captured = []
+
+        def fail_next_question(request):
+            raise self.conversation_route.ConversationGenerationError("model unavailable")
+
+        self.conversation_route.generate_next_question = fail_next_question
+        self.conversation_route.capture_exception = lambda exc: captured.append(exc)
+
+        response = self.client.post("/api/v1/conversation/next-question", json={
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "I want iced americano.",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+            ],
+        })
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["code"], "AI_GENERATION_FAILED")
+        self.assertEqual(len(captured), 1)
+        self.assertIsInstance(captured[0], self.conversation_route.ConversationGenerationError)
 
     def test_guide_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/guide", json={
