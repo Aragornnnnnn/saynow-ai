@@ -1,5 +1,6 @@
 # 작업 맥락 기록
 
+- 2026-05-30 develop 배포 후 live smoke에서 `Two week`는 `stay_duration`을 채웠지만 다음 질문이 `Can you tell me the exact dates of your stay?`로 다시 기간 상세를 물었다. 원인은 `_question_asks_duration()`이 `exact dates`, `dates of your stay` 같은 표현을 기간 질문으로 보지 못한 것이다. 회귀 테스트를 추가하고 기간 질문 marker를 보강해, 방금 채운 기간 슬롯을 다시 묻지 않고 남은 `accommodation` 질문으로 retarget하도록 수정했다.
 - 2026-05-30 `prompt-engineering-patterns` 기준 재점검 결과, 세션 207 보정은 동작하지만 프롬프트 품질 측면에서 4개 보강점이 남았다. few-shot 예시가 `candidateFilledSlots` 없는 JSON을 보여 schema와 충돌하고, 한국어 slot description은 `_normalize_utterance()`에서 사라져 hints 의존도가 높으며, name-only 목적 질문 보정은 예시 답변임을 더 명확히 해야 하고, feedback self-check에는 목적, 국가, 장소, 의도 hallucination 검증이 반복되지 않는다.
 - 2026-05-30 보강 구현은 next-question few-shot의 `candidateFilledSlots` 필드 일관화, 한국어 description을 보존하는 `_slot_intent_text()` 도입, name-only 목적 질문 betterExpression의 예시 답변 표시, feedback/repair self-check의 grounding 검증 추가로 정리했다. 검증은 관련 RED 후 GREEN, `tests.test_conversation_service` 102개, 전체 `unittest discover` 128개, `compileall`, `git diff --check`로 확인했다.
 - 2026-05-30 세션 207에서 `Two week`가 피드백상 2주 체류로 이해됐지만 `stay_duration` 슬롯은 다음 턴 `Three days`에서야 충족됐다. 원인은 짧은 기간 fragment가 semantic evidence 후보나 verifier에서 떨어질 수 있는 구조다.

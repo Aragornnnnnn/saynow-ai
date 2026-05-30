@@ -2521,6 +2521,10 @@ def _question_asks_duration(question: str) -> bool:
             "when do you return",
             "when will you return",
             "until when",
+            "exact dates",
+            "dates of your stay",
+            "what dates",
+            "which dates",
         ]
     )
 

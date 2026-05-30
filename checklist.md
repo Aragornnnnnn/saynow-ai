@@ -2,6 +2,7 @@
 
 ## prompt-engineering-patterns 기준 보강
 
+- [x] live smoke에서 드러난 `exact dates` 기간 상세 재질문을 회귀 테스트로 고정하고 수정한다.
 - [x] next-question few-shot 예시가 Output Schema와 같은 필드를 쓰는지 RED 테스트를 추가한다.
 - [x] 한국어 slot description만으로도 duration intent를 판정하는 RED 테스트를 추가한다.
 - [x] feedback self-check가 목적, 국가, 장소, 의도 hallucination을 다시 검증하는 RED 테스트를 추가한다.
