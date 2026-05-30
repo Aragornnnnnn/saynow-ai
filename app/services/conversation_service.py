@@ -124,6 +124,13 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             return _retry_question_for_slot(remaining_slots[0])
         raise ConversationGenerationError("next question is required while unfilled slots remain")
 
+    next_question, translated_question = _retarget_next_question_when_it_asks_newly_filled_slot(
+        request,
+        remaining_slots,
+        filled_slots,
+        next_question,
+        translated_question,
+    )
     next_question, translated_question = _ensure_visible_information_response(
         request,
         next_question,
@@ -851,6 +858,85 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
         filledSlots=[],
         turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
     )
+
+
+def _retarget_next_question_when_it_asks_newly_filled_slot(
+    request: NextQuestionRequest,
+    remaining_slot_names: list[str],
+    filled_slots: list[FilledSlotResponse],
+    next_question: str,
+    translated_question: str,
+) -> tuple[str, str]:
+    if not filled_slots or not remaining_slot_names:
+        return next_question, translated_question
+
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    newly_filled_slots = [
+        slots_by_name[filled_slot.slotName]
+        for filled_slot in filled_slots
+        if filled_slot.slotName in slots_by_name
+    ]
+    remaining_slots = [
+        slots_by_name[slot_name]
+        for slot_name in remaining_slot_names
+        if slot_name in slots_by_name
+    ]
+    if not newly_filled_slots or not remaining_slots:
+        return next_question, translated_question
+
+    asks_newly_filled_slot = any(
+        _question_targets_slot(next_question, slot)
+        for slot in newly_filled_slots
+    )
+    asks_remaining_slot = any(
+        _question_targets_slot(next_question, slot)
+        for slot in remaining_slots
+    )
+    if not asks_newly_filled_slot or asks_remaining_slot:
+        return next_question, translated_question
+
+    return _fallback_follow_up_question_for_slot(remaining_slots[0])
+
+
+def _question_targets_slot(question: str, slot: SlotStatusRequest) -> bool:
+    question_tokens = set(_normalize_utterance(question).split())
+    if not question_tokens:
+        return False
+
+    candidates = [slot.slotName.replace("_", " ")]
+    if slot.evidencePolicy is not None:
+        candidates.extend(slot.evidencePolicy.hints)
+
+    return any(
+        _candidate_terms_match_question(candidate, question_tokens)
+        for candidate in candidates
+    )
+
+
+def _candidate_terms_match_question(candidate: str, question_tokens: set[str]) -> bool:
+    stop_words = {"a", "an", "the", "my", "your", "you", "i", "me", "to", "do", "can", "could", "would"}
+    candidate_tokens = [
+        token
+        for token in _normalize_utterance(candidate).split()
+        if len(token) > 2 and token not in stop_words
+    ]
+    if not candidate_tokens:
+        return False
+    if len(candidate_tokens) == 1:
+        return candidate_tokens[0] in question_tokens
+    return all(token in question_tokens for token in candidate_tokens)
+
+
+def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str]:
+    if _slot_requires_request_act(slot):
+        return "What would you like me to help you with next?", "다음에 무엇을 도와드릴까요?"
+
+    slot_key = slot.slotName.lower()
+    if slot_key == "contact_info":
+        return "Could you provide your email address or phone number?", "이메일 주소나 전화번호를 알려주시겠어요?"
+
+    readable_slot = slot.slotName.replace("_", " ")
+    return f"Could you tell me your {readable_slot}?", f"{slot.slotName} 정보를 알려주시겠어요?"
 
 
 def _enforce_feedback_consistency(

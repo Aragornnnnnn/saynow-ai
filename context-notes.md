@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-05-30 22:20 KST develop 배포 후 dev AI `POST /api/v1/conversation/next-question`에 세션 202 payload를 직접 호출했다. `filledSlots`는 `missed_connection`, `baggage_delay_reason`만 반환해 `next_options_request` 과잉 채움은 해결됐지만, `nextQuestion`이 `Can you confirm that you missed your connecting flight?`로 방금 채운 슬롯을 다시 묻는 문제가 남아 있었다.
+- 원인은 모델 호출 프롬프트의 `Primary target slot`이 호출 전 미충족 슬롯 첫 번째인 `missed_connection`으로 고정되는 점이다. 모델이 같은 발화에서 해당 슬롯을 채워도 후속 질문은 여전히 그 슬롯을 겨냥할 수 있다.
+- 보정은 모델 응답의 다음 질문이 newly filled slot을 겨냥하고 remaining slot은 겨냥하지 않을 때만 적용한다. 이 경우 남은 슬롯의 description 기준 질문으로 retarget하며, `next_options_request` 같은 요청형 슬롯은 `What would you like me to help you with next?`로 이어간다.
+- 검증은 재질문 회귀 테스트 RED 후 GREEN, semantic evidence 관련 focused 테스트, 전체 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 123개, compileall, diff check로 확인했다.
 - 2026-05-30 22:08 KST BE dev 테스트에서 scenarioId 6, sessionId 202가 첫 발화 `I miss my connecting flight because baggage come out too late.`만으로 `next_options_request=true`가 되어 즉시 `SUCCESS`가 됐다.
 - 같은 발화의 피드백은 “다음 조치에 대해 더 구체적으로 물어보면 좋겠어요.”라고 나왔다. 피드백은 실제 발화 기준으로 자연스럽고, 불일치의 근본 원인은 next-question 슬롯 판정 쪽이다.
 - `missed_connection`과 `baggage_delay_reason`은 이 발화로 채워지는 것이 맞다. `next_options_request`는 사용자가 다음 조치, 대체편, 재예약을 직접 묻거나 요청해야 채워져야 한다.

@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## newly filled slot 재질문 방지
+
+- [x] dev 배포 후 세션 202 payload를 실제 AI API로 호출한다.
+- [x] `next_options_request` 과잉 채움은 해결됐지만, 다음 질문이 방금 채운 `missed_connection`을 다시 묻는 문제를 확인한다.
+- [x] 모델이 newly filled slot을 다시 묻는 케이스를 RED 테스트로 고정한다.
+- [x] 남은 슬롯을 겨냥하지 않고 newly filled slot만 다시 묻는 질문을 남은 슬롯 질문으로 보정한다.
+- [x] 관련 단위 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## request-like semantic evidence 과잉 채움 보정
 
 - [x] 세션 202의 `next_options_request` 과잉 채움 케이스를 회귀 테스트로 고정한다.
