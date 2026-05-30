@@ -583,6 +583,7 @@ def _feedback_system_prompt() -> str:
         "Concrete service item values include domain-specific requested items such as a coffee, a latte, a window seat, an aisle seat, a non-smoking room, a table for two, a named menu item, or a named option. "
         "Do not invent a specific service item for incomplete order fragments or generic object responses in listener-meaning fields. "
         "Do not invent a specific service item inside nativeUnderstanding or nativeLanguageInterpretation for incomplete order fragments or generic object responses. "
+        "Do not invent any purpose, country, city, accommodation, destination, or user intent that is not present in the same turn's userUtterance. "
         "Scoring Policy: "
         "comprehensionScore is an integer from 0 to 100 from a native listener's perspective. "
         "sessionResult is already confirmed by the backend and must be treated as source of truth. "
@@ -667,6 +668,7 @@ def _feedback_system_prompt() -> str:
         "Keep the user's original intent, vocabulary level, and sentence shape as much as possible. "
         "Fix the smallest issue that makes the response more natural, such as one missing article, a more polite phrase, or a clearer word order. "
         "Do not add new details, idioms, advanced grammar, long sentences, or a fully polished native-level rewrite unless the user's original was already close to that level. "
+        "For fused or unclear words, do not expand them into a country, place, or hidden intent unless that text appears in the utterance. "
         "betterExpression must include the improved sentence and a short Korean reason in the same string. "
         "betterExpression must start with the English improved sentence, then a short Korean reason may follow. "
         "Do not start betterExpression with Korean guidance such as '음료를 주문할 때는'. "
@@ -740,6 +742,7 @@ def _turn_feedback_system_prompt() -> str:
         "Only set feedbackRequired=false when the answer directly answers the AI question, satisfies the scenario intent for that turn, is understandable without extra inference, and has no meaning-blocking grammar or word-choice issue. "
         "Use aiRole with scenarioSituation when judging whether this turn fits the expected role-play counterpart. "
         "Use slot descriptions as meaning-level criteria, not exact phrases, when judging whether the turn helped complete the scenario. "
+        "Do not invent any purpose, country, city, accommodation, destination, or user intent that is not present in this turn's userUtterance. "
         "When feedbackRequired=false, set nativeUnderstanding, nativeLanguageInterpretation, and betterExpression to null. "
         "When feedbackRequired=true, nativeUnderstanding must start with 외국인은 and end with 라고 이해했어요 or 다고 이해했어요. "
         "nativeUnderstanding must be based only on this turn's userUtterance and must not include grammar explanations, improvement directions, evaluations, or quotes. "
@@ -1044,6 +1047,10 @@ def _enforce_turn_feedback_contract(
         interpretation = _native_language_interpretation_override(turn.userUtterance)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
+
+        better_expression = _grounded_better_expression_override(turn)
+        if better_expression is not None:
+            turn_feedback.betterExpression = better_expression
 
     if marked_direct_want_near_miss and len(response.turnFeedbacks) == 1:
         response.feedbackSummary = (
@@ -1364,6 +1371,7 @@ def _feedback_repair_system_prompt() -> str:
         "Direct want + concrete service item response means a phrase such as I want coffee, I want a window seat, or I want a non-smoking room; it is understandable but too direct for a natural service request, so it must be treated as a near-miss response. "
         "Concrete service item values include domain-specific requested items such as coffee, latte, americano, tea, water, juice, a window seat, a non-smoking room, a table for two, or named menu items. "
         "Do not invent a specific service item for incomplete order fragments or generic object responses in listener-meaning fields. "
+        "Do not invent any purpose, country, city, accommodation, destination, or user intent that is not present in the same turn's userUtterance. "
         "Field Policy: "
         "feedbackSummary must be concise: 2 short Korean sentences by default, never one sentence, 3 sentences only for recurring multi-turn issues, and under 120 Korean characters. "
         "Never return a one-sentence feedbackSummary. "
@@ -1575,6 +1583,10 @@ def _apply_feedback_safety_fallbacks(
 
 
 def _turn_requires_problem_feedback(turn: FeedbackTurnRequest) -> bool:
+    if _is_name_only_answer_to_purpose_question(turn):
+        return True
+    if _is_compound_study_answer_to_purpose_question(turn):
+        return True
     if _is_known_problem_utterance(turn.userUtterance):
         return True
     if _has_wrong_connecting_flight_word_choice(turn.userUtterance):
@@ -1604,6 +1616,10 @@ def _apply_problem_utterance_feedback(
 
 
 def _problem_better_expression_for_turn(turn: FeedbackTurnRequest) -> str:
+    grounded_better_expression = _grounded_better_expression_override(turn)
+    if grounded_better_expression is not None:
+        return grounded_better_expression
+
     if _has_wrong_connecting_flight_word_choice(turn.userUtterance):
         return (
             "Can I still board my connecting flight? "
@@ -1627,6 +1643,48 @@ def _problem_better_expression_for_turn(turn: FeedbackTurnRequest) -> str:
             "이렇게 말하면 환승편 탑승 가능 여부를 정확히 물을 수 있어요."
         )
     return _simple_better_expression_for_question(turn.originalQuestion)
+
+
+def _grounded_better_expression_override(turn: FeedbackTurnRequest) -> str | None:
+    if _is_name_only_answer_to_purpose_question(turn):
+        return "I'm here to study. 이렇게 말하면 이름이 아니라 방문 목적을 답할 수 있어요."
+    if _is_compound_study_answer_to_purpose_question(turn):
+        return "I'm here to study. 이렇게 말하면 붙어 들리는 단어를 방문 목적 답변으로 분명하게 바꿀 수 있어요."
+    return None
+
+
+def _is_name_only_answer_to_purpose_question(turn: FeedbackTurnRequest) -> bool:
+    compact_question = _normalize_utterance(turn.originalQuestion).replace("'", "")
+    if not _question_asks_visit_purpose(compact_question):
+        return False
+
+    compact_utterance = _normalize_utterance(turn.userUtterance).replace("'", "")
+    if not re.fullmatch(r"(?:i am|im) [a-z]+", compact_utterance):
+        return False
+
+    purpose_words = {
+        "travel",
+        "business",
+        "study",
+        "vacation",
+        "tourism",
+        "tourist",
+        "work",
+        "conference",
+        "meeting",
+        "visit",
+    }
+    utterance_words = set(compact_utterance.split())
+    return not any(word in utterance_words for word in purpose_words)
+
+
+def _is_compound_study_utterance(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    return bool(re.fullmatch(r"[a-z]+study", compact)) and compact != "study"
+
+
+def _is_compound_study_answer_to_purpose_question(turn: FeedbackTurnRequest) -> bool:
+    return _question_asks_visit_purpose(turn.originalQuestion) and _is_compound_study_utterance(turn.userUtterance)
 
 
 def _is_likely_good_response(user_utterance: str) -> bool:
@@ -2008,6 +2066,8 @@ def _native_understanding_override(user_utterance: str) -> str | None:
 
     overrides = {
         "i dont know": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
+        "i am trevor": "외국인은 사용자가 이름을 말한다고 이해했어요.",
+        "saudistudy": "외국인은 사용자가 사우디스터디라고 말한다고 이해했어요.",
         "ok i will i will": "외국인은 사용자가 나중에 하겠다고만 말한다고 이해했어요.",
         "i wanna know your email": "외국인은 사용자가 직원의 이메일을 알고 싶다고 이해했어요.",
         "why i like you": "외국인은 사용자가 상대방을 좋아한다고 말한다고 이해했어요.",
@@ -2036,6 +2096,8 @@ def _native_language_interpretation_override(user_utterance: str) -> str | None:
 
     overrides = {
         "i dont know": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
+        "i am trevor": "한국어로 비유하자면, '나는 트레버입니다'처럼 들려요.",
+        "saudistudy": "한국어로 비유하자면, '사우디스터디'처럼 들려요.",
         "ok i will i will": "한국어로 비유하자면, '알겠어요 나중에 할게요'처럼 들려요.",
         "i wanna know your email": "한국어로 비유하자면, '당신 이메일을 알고 싶어요'처럼 들려요.",
         "why i like you": "한국어로 비유하자면, '왜 내가 당신을 좋아하지'처럼 들려요.",

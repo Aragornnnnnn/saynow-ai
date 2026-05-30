@@ -9,10 +9,10 @@
 - [x] 이미 채워진 슬롯을 다시 묻는 질문을 남은 슬롯 질문으로 retarget하는 RED 테스트를 추가한다.
 - [x] 기존 filled 슬롯 재질문 방지 보정을 구현한다.
 - [x] retarget 회귀 테스트와 관련 테스트를 통과시키고 커밋한다.
-- [ ] `I am Trevor`, `SaudiStudy` 피드백 미화 방지 RED 테스트를 추가한다.
-- [ ] feedback prompt와 deterministic fallback을 grounding 기준으로 보강한다.
-- [ ] 피드백 회귀 테스트와 관련 테스트를 통과시키고 커밋한다.
-- [ ] 전체 테스트, compileall, diff check를 실행한다.
+- [x] `I am Trevor`, `SaudiStudy` 피드백 미화 방지 RED 테스트를 추가한다.
+- [x] feedback prompt와 deterministic fallback을 grounding 기준으로 보강한다.
+- [x] 피드백 회귀 테스트와 관련 테스트를 통과시키고 커밋한다.
+- [x] 전체 테스트, compileall, diff check를 실행한다.
 
 ## newly filled slot 재질문 방지
 

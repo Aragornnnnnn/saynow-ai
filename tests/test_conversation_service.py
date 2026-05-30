@@ -2609,6 +2609,98 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertTrue(all(feedback.betterExpression for feedback in result.turnFeedbacks))
         self.assertIn("board my connecting flight", result.turnFeedbacks[3].betterExpression)
 
+    def test_feedback_preserves_literal_meaning_for_name_answer_to_purpose_question(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황입니다.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "sessionResult": "FAILURE",
+            "slots": [
+                {"slotName": "visit_purpose", "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부", "filled": False},
+            ],
+            "turns": [
+                {
+                    "turnId": 445,
+                    "originalQuestion": "Hi, what's the purpose of your visit?",
+                    "userUtterance": "I am Trevor",
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 50,
+            "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 방문 목적을 더 명확히 말해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 445,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 이름을 말한 것으로 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '나는 트레버입니다'처럼 들려요.",
+                    "betterExpression": "I am here for my visit. 이렇게 말하면 방문 목적을 더 명확하게 전달할 수 있어요.",
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+        turn_feedback = result.turnFeedbacks[0]
+
+        self.assertTrue(turn_feedback.feedbackRequired)
+        self.assertEqual(turn_feedback.nativeUnderstanding, "외국인은 사용자가 이름을 말한다고 이해했어요.")
+        self.assertEqual(turn_feedback.nativeLanguageInterpretation, "한국어로 비유하자면, '나는 트레버입니다'처럼 들려요.")
+        self.assertEqual(
+            turn_feedback.betterExpression,
+            "I'm here to study. 이렇게 말하면 이름이 아니라 방문 목적을 답할 수 있어요.",
+        )
+        self.assertNotIn("my visit", turn_feedback.betterExpression)
+
+    def test_feedback_does_not_invent_country_for_compound_study_utterance(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황입니다.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "sessionResult": "FAILURE",
+            "slots": [
+                {"slotName": "visit_purpose", "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부", "filled": True},
+            ],
+            "turns": [
+                {
+                    "turnId": 449,
+                    "originalQuestion": "What is the purpose of your visit to the United States?",
+                    "userUtterance": "SaudiStudy",
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "comprehensionScore": 50,
+            "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 방문 목적을 더 명확히 말해 보세요.",
+            "turnFeedbacks": [
+                {
+                    "turnId": 449,
+                    "feedbackRequired": True,
+                    "nativeUnderstanding": "외국인은 사용자가 유학을 목적으로 방문한다고 이해했어요.",
+                    "nativeLanguageInterpretation": "한국어로 비유하자면, '유학을 위해 방문했어요'처럼 들려요.",
+                    "betterExpression": "I am here to study in Saudi Arabia. 이렇게 말하면 더 명확하게 전달할 수 있어요.",
+                }
+            ],
+        })
+
+        result = self.service.generate_feedback(request)
+        turn_feedback = result.turnFeedbacks[0]
+
+        self.assertTrue(turn_feedback.feedbackRequired)
+        self.assertEqual(turn_feedback.nativeUnderstanding, "외국인은 사용자가 사우디스터디라고 말한다고 이해했어요.")
+        self.assertEqual(turn_feedback.nativeLanguageInterpretation, "한국어로 비유하자면, '사우디스터디'처럼 들려요.")
+        self.assertEqual(
+            turn_feedback.betterExpression,
+            "I'm here to study. 이렇게 말하면 붙어 들리는 단어를 방문 목적 답변으로 분명하게 바꿀 수 있어요.",
+        )
+        self.assertNotIn("Saudi Arabia", turn_feedback.betterExpression)
+
     def test_feedback_normalizes_i_dont_know_native_language_interpretation(self):
         from app.models.conversation import ConversationFeedbackRequest
 
@@ -3906,6 +3998,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Direct want + concrete service item response", prompt)
         self.assertIn("must be treated as a near-miss response", prompt)
         self.assertIn("Do not invent a specific service item for incomplete order fragments or generic object responses", prompt)
+        self.assertIn("Do not invent any purpose, country, city, accommodation, destination, or user intent", prompt)
+        self.assertIn("For fused or unclear words, do not expand them into a country", prompt)
         self.assertIn("Stable feedback decision rubric", prompt)
         self.assertIn("85-100", prompt)
         self.assertIn("feedbackRequired=false", prompt)
