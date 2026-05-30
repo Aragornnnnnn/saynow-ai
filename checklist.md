@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## legacy slot evidence 제거
+
+- [x] `evidencePolicy` 없는 슬롯 검증 fallback이 어디에 남아 있는지 확인한다.
+- [x] `evidencePolicy` 없는 슬롯은 최종 `filledSlots`에 적용되지 않는 회귀 테스트를 추가한다.
+- [x] `_legacy_slot_has_user_evidence()`와 슬롯명 switch fallback을 제거한다.
+- [x] 기존 회귀 테스트를 typed `evidencePolicy` 기반으로 정리한다.
+- [x] 단위 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## semantic evidence false negative 개선
 
 - [x] BE dev 테스트 결과를 기준으로 실패 케이스를 AI 단위 테스트로 고정한다.

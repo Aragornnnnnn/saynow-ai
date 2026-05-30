@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-05-30 dev 재테스트 결과, 현재 BE는 모든 슬롯에 typed `evidencePolicy`를 내려주고 있다. 따라서 AI 서버의 기존 MVP용 `_legacy_slot_has_user_evidence()` 슬롯명 switch는 운영 계약상 더 이상 필요하지 않다.
+- 2026-05-30 legacy 제거 방향은 `evidencePolicy`가 없는 슬롯을 묵시적으로 통과시키지 않는 것이다. 정책 없는 슬롯은 최종 슬롯 적용에서 제외하고, 새 슬롯 추가 시 BE가 policy를 누락하면 테스트와 응답에서 바로 드러나게 만든다.
 - 2026-05-30 BE dev 재검증에서 `I missed my connecting flight.`가 `baggage_delay_reason`을 채우던 과잉 채움은 막혔지만, `My items came out too late.`, `My baggage came out too late.`, `My baggage took too long.` 같은 정상 수하물 지연 근거가 `ASSISTANCE_REQUEST`로 남고 슬롯을 채우지 못하는 false negative가 확인됐다.
 - 2026-05-30 원인은 `semantic_evidence`가 모델이 만든 `candidateFilledSlots`를 검증하는 단계에 머물러 있다는 점이다. 모델이 후보를 만들지 않거나 raw `ASSISTANCE_REQUEST`로 오분류하면, 현재 AI 서버는 `evidencePolicy`가 있는 슬롯을 description 기반으로 복구하지 않는다.
 - 2026-05-30 이번 보정은 슬롯명 switch를 늘리지 않는다. `slots[].evidencePolicy`가 있는 미충족 슬롯에 대해 최신 `userUtterance` 전체를 fallback evidence로 삼아 공통 policy validator를 한 번 더 통과시키고, 검증된 슬롯이 있으면 최종 분류를 `ANSWER`로 끌어올린다.
