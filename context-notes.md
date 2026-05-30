@@ -1,5 +1,11 @@
 # 작업 맥락 기록
 
+- 2026-05-30 22:08 KST BE dev 테스트에서 scenarioId 6, sessionId 202가 첫 발화 `I miss my connecting flight because baggage come out too late.`만으로 `next_options_request=true`가 되어 즉시 `SUCCESS`가 됐다.
+- 같은 발화의 피드백은 “다음 조치에 대해 더 구체적으로 물어보면 좋겠어요.”라고 나왔다. 피드백은 실제 발화 기준으로 자연스럽고, 불일치의 근본 원인은 next-question 슬롯 판정 쪽이다.
+- `missed_connection`과 `baggage_delay_reason`은 이 발화로 채워지는 것이 맞다. `next_options_request`는 사용자가 다음 조치, 대체편, 재예약을 직접 묻거나 요청해야 채워져야 한다.
+- 이번 수정은 DB seed나 BE 저장 정책보다 AI 서버의 semantic evidence 검증을 우선한다. 슬롯명을 하드코딩하지 않고, slot description이 요청, 질문, 확인 행위를 요구하는 경우 최신 발화 안에 request act가 있는지 추가로 본다.
+- 구현 결과, `next_options_request`처럼 요청형 description을 가진 슬롯은 `I miss my connecting flight because baggage come out too late.` 같은 상황 설명만으로 채워지지 않는다. 반대로 `Can you rebook me on the next flight?`가 포함된 happy path는 계속 통과한다.
+- 검증은 세션 202 회귀 테스트 RED 후 GREEN, `tests.test_conversation_service` 96개, 전체 `unittest discover` 122개, `compileall`, `git diff --check`로 확인했다.
 - 2026-05-30 dev 재테스트 결과, 현재 BE는 모든 슬롯에 typed `evidencePolicy`를 내려주고 있다. 따라서 AI 서버의 기존 MVP용 `_legacy_slot_has_user_evidence()` 슬롯명 switch는 운영 계약상 더 이상 필요하지 않다.
 - 2026-05-30 legacy 제거 방향은 `evidencePolicy`가 없는 슬롯을 묵시적으로 통과시키지 않는 것이다. 정책 없는 슬롯은 최종 슬롯 적용에서 제외하고, 새 슬롯 추가 시 BE가 policy를 누락하면 테스트와 응답에서 바로 드러나게 만든다.
 - 2026-05-30 BE dev 재검증에서 `I missed my connecting flight.`가 `baggage_delay_reason`을 채우던 과잉 채움은 막혔지만, `My items came out too late.`, `My baggage came out too late.`, `My baggage took too long.` 같은 정상 수하물 지연 근거가 `ASSISTANCE_REQUEST`로 남고 슬롯을 채우지 못하는 false negative가 확인됐다.

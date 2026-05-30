@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## request-like semantic evidence 과잉 채움 보정
+
+- [x] 세션 202의 `next_options_request` 과잉 채움 케이스를 회귀 테스트로 고정한다.
+- [x] 회귀 테스트가 현재 구현에서 실패하는지 RED를 확인한다.
+- [x] 슬롯 description이 요청, 질문, 확인 행위를 요구할 때 최신 발화에 request act가 있는지 검증한다.
+- [x] `next_options_request` 같은 요청형 슬롯은 상황 설명만으로 채워지지 않게 한다.
+- [x] `Can you rebook me?`, `What should I do now?` 같은 실제 요청 발화는 계속 통과하게 한다.
+- [x] next-question 프롬프트에 request-like 슬롯의 명시적 행위 기준을 반영한다.
+- [x] 관련 단위 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## legacy slot evidence 제거
 
 - [x] `evidencePolicy` 없는 슬롯 검증 fallback이 어디에 남아 있는지 확인한다.

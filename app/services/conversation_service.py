@@ -406,6 +406,8 @@ def _next_question_system_prompt() -> str:
             "For every filled slot, also include candidateFilledSlots with the exact evidenceText copied from the latest user utterance and a short understoodMeaning.\n"
             "Use evidencePolicy.mode and hints as guidance. Hints are representative expressions, not a complete required keyword list.\n"
             "For semantic_evidence slots, accept awkward or non-hint wording when the evidenceText still communicates the slot meaning.\n"
+            "If a slot description says the user asks, requests, checks, confirms, inquires, or wants to know something, only fill it when the evidenceText itself contains an explicit request act such as a question, can you, can I, please, help me, tell me, rebook me, or what should I do.\n"
+            "Do not fill ask/request/check/confirm slots from a situation statement alone, even when the situation implies the user may need that help.\n"
             "For explicit_pattern slots, fill only when the latest utterance contains the required format such as phone number, email, date, or reservation code.\n"
             "For explicit_keyword slots, fill only when the latest utterance contains the required expression.\n"
             "If a slot description defines the user's task as asking, checking, or confirming something with the AI role, a direct user question can satisfy that slot.\n"
@@ -2177,6 +2179,8 @@ def _slot_evidence_policy_accepts_candidate(
         return _explicit_keyword_policy_matches(policy.hints, request.userUtterance, evidence_text)
     if policy.mode == EvidencePolicyMode.SEMANTIC_EVIDENCE:
         semantic_evidence_text = evidence_text or request.userUtterance
+        if _slot_requires_request_act(slot) and not _evidence_text_contains_request_act(semantic_evidence_text):
+            return False
         return _semantic_evidence_supports_slot(slot, request, semantic_evidence_text, candidate_evidence or {})
 
     return False
@@ -2207,6 +2211,105 @@ def _explicit_keyword_policy_matches(hints: list[str], user_utterance: str, evid
     )
 
 
+def _slot_requires_request_act(slot: SlotStatusRequest) -> bool:
+    description = slot.description.lower()
+    korean_markers = (
+        "요청했",
+        "요청 했",
+        "요청을 했",
+        "요청하는지",
+        "요청했는지",
+        "요청할",
+        "요청해야",
+        "물었",
+        "물어",
+        "묻",
+        "문의",
+        "확인 요청",
+    )
+    if any(marker in description for marker in korean_markers):
+        return True
+
+    english_description = _normalize_utterance(slot.description)
+    english_patterns = (
+        r"\bask(s|ed|ing)?\b",
+        r"\brequest(s|ed|ing)?\b",
+        r"\binquire(s|d|ing)?\b",
+        r"\binquiry\b",
+        r"\bcheck(s|ed|ing)? with\b",
+        r"\bconfirm(s|ed|ing)? with\b",
+        r"\bwants? to know\b",
+    )
+    return any(re.search(pattern, english_description) for pattern in english_patterns)
+
+
+def _evidence_text_contains_request_act(evidence_text: str) -> bool:
+    if "?" in evidence_text:
+        return True
+
+    normalized = _normalize_utterance(evidence_text)
+    request_patterns = (
+        "what should i",
+        "what can i",
+        "what do i",
+        "how can i",
+        "how do i",
+        "where is",
+        "where can i",
+        "where should i",
+        "can you",
+        "could you",
+        "would you",
+        "will you",
+        "can i",
+        "could i",
+        "may i",
+        "should i",
+        "do i need",
+        "is it possible",
+        "please",
+        "help me",
+        "i need help",
+        "i need your help",
+        "i need to know",
+        "i need to find",
+        "i need directions",
+        "i need direction",
+        "i need the location",
+        "i need another",
+        "i need a new",
+        "i need next",
+        "i need the next",
+        "i need compensation",
+        "i need repair",
+        "i need a repair",
+        "i need a report",
+        "i want to know",
+        "i would like to know",
+        "i wonder",
+        "i am looking for",
+        "im looking for",
+        "looking for",
+        "tell me",
+        "let me know",
+        "show me",
+        "give me",
+        "make a report",
+        "make report",
+        "file a report",
+        "file report",
+        "compensate",
+        "repair",
+        "fix",
+        "rebook",
+        "book me",
+        "find me",
+        "find another",
+        "get another",
+    )
+    return any(pattern in normalized for pattern in request_patterns)
+
+
 def _semantic_evidence_supports_slot(
     slot: SlotStatusRequest,
     request: NextQuestionRequest,
@@ -2221,6 +2324,8 @@ def _semantic_evidence_supports_slot(
         "Use the scenario only to interpret vague nouns in the evidence text. "
         "Do not use the previous AI question or scenario background to invent missing facts. "
         "Return true when the evidence text provides the core evidence needed to fill this slot. "
+        "If the slot description requires the user to ask, request, check, confirm, inquire, or say they want to know something, return true only when the candidate evidence text contains that request act. "
+        "A plain situation statement such as missing a flight or baggage being late does not satisfy a request slot by itself. "
         "If the slot description combines multiple facts, do not require the latest utterance to restate facts that are already filled or established by the scenario. "
         "Return false for vague objects without an event, cause, request, or other slot-specific meaning."
     )

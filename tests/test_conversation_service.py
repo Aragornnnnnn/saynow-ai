@@ -962,6 +962,95 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.filledSlots, [])
         self.assertEqual(result.turnClassification, NextQuestionTurnClassification.INVALID_RESPONSE)
 
+    def test_next_question_semantic_evidence_does_not_fill_request_slot_from_situation_statement(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Please explain what happened and what you need next.",
+            "userUtterance": "I miss my connecting flight because baggage come out too late.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 놓쳤거나 환승편을 탈 수 없게 된 상황을 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "flight already left", "could not catch my connection"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "next_options_request",
+                    "description": "사용자가 다음 항공편이나 재예약 등 다음 선택지를 요청했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["next flight", "rebook", "another flight", "options"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = iter([
+            json.dumps({
+                "filledSlots": [
+                    {"slotName": "missed_connection"},
+                    {"slotName": "baggage_delay_reason"},
+                    {"slotName": "next_options_request"},
+                ],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "missed_connection",
+                        "evidenceText": "I miss my connecting flight",
+                        "understoodMeaning": "The user missed their connecting flight.",
+                    },
+                    {
+                        "slotName": "baggage_delay_reason",
+                        "evidenceText": "baggage come out too late",
+                        "understoodMeaning": "The user's baggage was delayed.",
+                    },
+                    {
+                        "slotName": "next_options_request",
+                        "evidenceText": "I miss my connecting flight because baggage come out too late",
+                        "understoodMeaning": "The user needs next flight options.",
+                    },
+                ],
+                "nextQuestion": "What should I help you with next?",
+                "translatedQuestion": "다음에 어떤 도움이 필요하신가요?",
+                "turnClassification": "ANSWER",
+            }),
+            json.dumps({"supportsSlot": True}),
+            json.dumps({"supportsSlot": True}),
+            json.dumps({"supportsSlot": True}),
+        ])
+        self.service.chat = lambda *args, **kwargs: next(responses)
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(
+            [slot.slotName for slot in result.filledSlots],
+            ["missed_connection", "baggage_delay_reason"],
+        )
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertEqual(result.nextQuestion, "What should I help you with next?")
+
     def test_next_question_semantic_evidence_rescues_multiple_slots_from_partial_model_answer(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1684,6 +1773,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("evidenceText", prompt)
         self.assertIn("Hints are representative expressions", prompt)
         self.assertIn("For semantic_evidence slots, accept awkward or non-hint wording", prompt)
+        self.assertIn("only fill it when the evidenceText itself contains an explicit request act", prompt)
+        self.assertIn("Do not fill ask/request/check/confirm slots from a situation statement alone", prompt)
         self.assertIn("For explicit_pattern slots", prompt)
         self.assertIn("For explicit_keyword slots", prompt)
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
