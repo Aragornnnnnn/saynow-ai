@@ -1,5 +1,19 @@
 # 작업 체크리스트
 
+## semantic evidence false negative 개선
+
+- [x] BE dev 테스트 결과를 기준으로 실패 케이스를 AI 단위 테스트로 고정한다.
+- [x] `My items came out too late.`가 raw `ASSISTANCE_REQUEST`여도 `baggage_delay_reason`을 채우도록 RED를 확인한다.
+- [x] `My baggage came out too late.`와 `My baggage took too long.`도 같은 방식으로 RED를 확인한다.
+- [x] `I missed my connecting flight.`는 `baggage_delay_reason`을 채우지 않는 기존 방어를 유지한다.
+- [x] 한 문장 happy path에서 여러 semantic evidence 슬롯을 채우는 회귀 테스트를 추가한다.
+- [x] `evidencePolicy` 기반 rescue pass를 슬롯명 switch 없이 구현한다.
+- [x] semantic verifier 프롬프트를 핵심 evidence 기준으로 완화한다.
+- [x] `ASSISTANCE_REQUEST` 최종화 조건을 실제 도움 요청일 때만 유지하도록 조정한다.
+- [x] Obsidian semantic evidence 문서에 false negative 원인과 해결 결과를 기록한다.
+- [x] 단위 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## semantic evidence 기반 슬롯 검증
 
 - [x] 현재 next-question 요청 모델과 슬롯 검증 경로를 확인한다.

@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-05-30 BE dev 재검증에서 `I missed my connecting flight.`가 `baggage_delay_reason`을 채우던 과잉 채움은 막혔지만, `My items came out too late.`, `My baggage came out too late.`, `My baggage took too long.` 같은 정상 수하물 지연 근거가 `ASSISTANCE_REQUEST`로 남고 슬롯을 채우지 못하는 false negative가 확인됐다.
+- 2026-05-30 원인은 `semantic_evidence`가 모델이 만든 `candidateFilledSlots`를 검증하는 단계에 머물러 있다는 점이다. 모델이 후보를 만들지 않거나 raw `ASSISTANCE_REQUEST`로 오분류하면, 현재 AI 서버는 `evidencePolicy`가 있는 슬롯을 description 기반으로 복구하지 않는다.
+- 2026-05-30 이번 보정은 슬롯명 switch를 늘리지 않는다. `slots[].evidencePolicy`가 있는 미충족 슬롯에 대해 최신 `userUtterance` 전체를 fallback evidence로 삼아 공통 policy validator를 한 번 더 통과시키고, 검증된 슬롯이 있으면 최종 분류를 `ANSWER`로 끌어올린다.
 - 2026-05-30 신규 시나리오 189에서 `I missed my connecting flight.`가 `baggage_delay_reason`까지 채운 문제는 slot_name switch 구조의 확장성 한계로 본다. 새 슬롯은 기존 최소 증거 검증 목록에 없으면 모델 판단을 그대로 통과할 수 있었다.
 - 2026-05-30 새 방향은 strict keyword 목록이 아니라 `semantic_evidence` 기반이다. BE는 `description`, `evidencePolicy.mode`, `hints`, `requiresEvidenceText`, `mustBeGroundedIn`을 JSON object로 내려주고, AI는 모델이 제시한 최신 발화 근거 문구인 `evidenceText`를 기준으로 최종 슬롯을 검증한다.
 - 2026-05-30 `hints`는 정답 단어 전체 목록이 아니다. `My items came out too late.`처럼 힌트에 없는 표현도 외국인이 공항 맥락에서 짐이 늦게 나왔다고 이해할 수 있으면 통과해야 한다. 반대로 `I missed my connecting flight.`는 수하물 원인 근거가 없으므로 `missed_connection`만 채워야 한다.
