@@ -113,6 +113,48 @@ class ConversationRoutesTest(unittest.TestCase):
             "turnClassification": "ANSWER",
         })
 
+    def test_next_question_route_propagates_request_id_to_context_and_response(self):
+        seen_request_ids = []
+
+        def record_request_id(request):
+            from app.core.request_context import get_request_id
+
+            seen_request_ids.append(get_request_id())
+            from app.models.conversation import (
+                FilledSlotResponse,
+                NextQuestionResponse,
+                NextQuestionTurnClassification,
+            )
+            return NextQuestionResponse(
+                nextQuestion="What size would you like?",
+                translatedQuestion="어떤 사이즈로 드릴까요?",
+                nextQuestionTargetSlotName="size",
+                filledSlots=[FilledSlotResponse(slotName="drink")],
+                turnClassification=NextQuestionTurnClassification.ANSWER,
+            )
+
+        self.conversation_route.generate_next_question = record_request_id
+
+        response = self.client.post(
+            "/api/v1/conversation/next-question",
+            headers={"X-Request-Id": "trace-ai-123"},
+            json={
+                "originalQuestion": "What would you like to order?",
+                "userUtterance": "I want iced americano.",
+                "scenarioTitle": "카페에서 주문하기",
+                "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                "aiRole": "상대방 역할",
+                "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                "slots": [
+                    {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Request-Id"], "trace-ai-123")
+        self.assertEqual(seen_request_ids, ["trace-ai-123"])
+
     def test_feedback_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/feedback", json={
             "scenarioTitle": "카페에서 주문하기",
@@ -163,6 +205,46 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertLess(body.index("event: turnFeedback"), body.index("event: done"))
         self.assertIn('"comprehensionScore":82', body)
         self.assertIn('"turnId":101', body)
+
+    def test_feedback_stream_route_keeps_request_id_during_event_generation(self):
+        seen_request_ids = []
+
+        def record_stream_request_id(request):
+            from app.core.request_context import get_request_id
+
+            seen_request_ids.append(get_request_id())
+            return iter([("done", {"turnCount": 1})])
+
+        self.conversation_route.generate_feedback_stream_events = record_stream_request_id
+
+        with self.client.stream(
+            "POST",
+            "/api/v1/conversation/feedback/stream",
+            headers={"X-Request-Id": "stream-trace-123"},
+            json={
+                "scenarioTitle": "카페에서 주문하기",
+                "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+                "aiRole": "상대방 역할",
+                "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+                "sessionResult": "SUCCESS",
+                "slots": [
+                    {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
+                ],
+                "turns": [
+                    {
+                        "turnId": 101,
+                        "originalQuestion": "What would you like to order?",
+                        "userUtterance": "I want iced americano.",
+                    }
+                ],
+            },
+        ) as response:
+            body = response.read().decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Request-Id"], "stream-trace-123")
+        self.assertIn("event: done", body)
+        self.assertEqual(seen_request_ids, ["stream-trace-123"])
 
     def test_feedback_stream_route_returns_error_event_when_generation_fails(self):
         captured = []

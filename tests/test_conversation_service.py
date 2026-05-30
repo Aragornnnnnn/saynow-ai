@@ -4484,10 +4484,12 @@ class ConversationServiceTest(unittest.TestCase):
             self.service.generate_next_question(request)
 
         messages = "\n".join(logs.output)
+        self.assertIn("requestId=- workflow=next_question stage=rag_lookup", messages)
         self.assertIn("workflow=next_question stage=rag_lookup", messages)
         self.assertIn("workflow=next_question stage=llm_chat", messages)
         self.assertIn("workflow=next_question stage=parse_validate", messages)
         self.assertIn("workflow=next_question stage=postprocess", messages)
+        self.assertIn("AI workflow 전체 소요 시간 | requestId=- workflow=next_question", messages)
 
     def test_feedback_logs_stage_durations(self):
         from app.models.conversation import ConversationFeedbackRequest
@@ -4527,9 +4529,11 @@ class ConversationServiceTest(unittest.TestCase):
             self.service.generate_feedback(request)
 
         messages = "\n".join(logs.output)
+        self.assertIn("requestId=- workflow=feedback stage=llm_chat", messages)
         self.assertIn("workflow=feedback stage=llm_chat", messages)
         self.assertIn("workflow=feedback stage=parse_validate", messages)
         self.assertIn("workflow=feedback stage=postprocess", messages)
+        self.assertIn("AI workflow 전체 소요 시간 | requestId=- workflow=feedback", messages)
 
     def test_guide_logs_stage_durations(self):
         from app.models.conversation import GuideChatRequest
@@ -4549,8 +4553,10 @@ class ConversationServiceTest(unittest.TestCase):
             self.service.generate_guide_answer(request)
 
         messages = "\n".join(logs.output)
+        self.assertIn("requestId=- workflow=guide stage=llm_chat", messages)
         self.assertIn("workflow=guide stage=llm_chat", messages)
         self.assertIn("workflow=guide stage=parse_validate", messages)
+        self.assertIn("AI workflow 전체 소요 시간 | requestId=- workflow=guide", messages)
 
     def test_invalid_model_json_logs_failure_context(self):
         with self.assertLogs("conversation", level="ERROR") as logs:

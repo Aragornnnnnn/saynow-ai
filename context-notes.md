@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-05-31 AI 응답 시간 및 지연 측정은 BE 전체 latency 계측과 연결될 수 있도록 `X-Request-Id`를 AI 서버 요청 컨텍스트에 저장하는 방향으로 시작한다. AI 쪽 책임은 사용자 체감 전체 시간을 단독 판단하는 것이 아니라, 같은 요청 안에서 `llm_chat`, `rag_lookup`, `parse_validate`, `postprocess` 같은 내부 단계 중 어디가 느린지 분해해 주는 것이다.
+- 2026-05-31 이번 변경은 새 저장소나 DB 테이블을 만들지 않고 구조화 로그만 확장한다. 기존 `AI workflow 단계 소요 시간` 로그를 유지하되 `requestId`를 추가하고, workflow 전체 소요 시간 로그를 별도로 남겨 BE의 `aiCallMs`와 대조할 수 있게 한다.
+- 2026-05-31 구현은 `app.core.request_context`의 `ContextVar`와 FastAPI middleware로 처리한다. BE가 `X-Request-Id`를 보내면 AI 응답 헤더에도 같은 값을 돌려주고, 헤더가 없으면 AI 서버가 UUID hex를 생성한다. 단계별 로그와 workflow 전체 로그는 context에 저장된 값을 `requestId`로 남긴다.
+- 2026-05-31 검증은 requestId route focused 테스트, timing focused 테스트, `tests.test_conversation_routes`, `tests.test_conversation_service`, 전체 `unittest discover` 133개, `compileall`, `git diff --check`로 확인했다.
 - 2026-05-31 BE dev 회귀 테스트에서 scenarioId 6, sessionId 220은 슬롯 적용과 저장 target은 맞았지만, 실제 `nextQuestion` 문구가 `next_options_request`가 아니라 수하물 지연 이유를 다시 묻는 형태였다. 원인은 target metadata를 보정한 뒤 질문 문구가 target 슬롯과 정렬되는지 다시 검증하지 않는 경로다. 이번 보정은 모델 target이 남은 슬롯을 가리키는데 질문 문구가 해당 슬롯을 겨냥하지 않으면, target 슬롯의 fallback 질문으로 바꾸는 방향으로 진행한다.
 - 2026-05-31 해당 보정 후 회귀 테스트 `test_next_question_rewrites_question_when_model_target_and_text_disagree`를 추가했다. 모델이 `nextQuestionTargetSlotName=next_options_request`를 내면서도 문구로는 `items` 재설명을 요구하는 경우, 최종 질문을 `What would you like me to help you with next?`로 바꾼다.
 - 2026-05-31 재질문 방지 구조는 이전 대화 전체를 전달하는 방식보다 target slot metadata를 명시하는 방식으로 잡았다. `originalQuestionTargetSlotName`은 직전 질문의 주 target이고, `nextQuestionTargetSlotName`은 AI가 생성한 다음 질문의 주 target이다. 다만 `filledSlots`는 target slot 하나로 제한하지 않고, 최신 `userUtterance` 안에 명확한 evidence가 있으면 여러 미충족 슬롯을 함께 채울 수 있다.

@@ -1,4 +1,5 @@
 # 2차 MVP 대화 API의 LLM 호출과 응답 정규화를 담당한다.
+from functools import wraps
 import json
 import re
 import time
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 
 from app.core.llm import chat
 from app.core.logger import get_logger
+from app.core.request_context import get_request_id
 from app.models.conversation import (
     ConversationFeedbackRequest,
     ConversationFeedbackResponse,
@@ -45,10 +47,26 @@ PROBLEM_UTTERANCE_FEEDBACK_ISSUE = (
 assistance_knowledge_store = build_assistance_knowledge_store()
 
 
+def _record_workflow_duration(workflow: str):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            started_at = time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _log_workflow_total_duration(workflow, started_at)
+
+        return wrapper
+
+    return decorator
+
+
 class ConversationGenerationError(Exception):
     """AI 모델 응답을 API 계약에 맞게 변환하지 못했을 때 발생한다."""
 
 
+@_record_workflow_duration("next_question")
 def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
     workflow = "next_question"
     unfilled_slot_names = [slot.slotName for slot in request.slots if not slot.filled]
@@ -167,6 +185,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     return response
 
 
+@_record_workflow_duration("feedback")
 def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedbackResponse:
     workflow = "feedback"
     stage_started_at = time.perf_counter()
@@ -195,6 +214,7 @@ def generate_feedback(request: ConversationFeedbackRequest) -> ConversationFeedb
     return response
 
 
+@_record_workflow_duration("guide")
 def generate_guide_answer(request: GuideChatRequest) -> GuideChatResponse:
     safety_decision = inspect_user_text(request.question, SafetyPurpose.GUIDE_CHAT)
     if not safety_decision.allowed:
@@ -246,6 +266,7 @@ def generate_feedback_stream_events(request: ConversationFeedbackRequest):
     yield "done", {"turnCount": len(request.turns)}
 
 
+@_record_workflow_duration("feedback_summary")
 def generate_feedback_summary(request: ConversationFeedbackRequest) -> ConversationFeedbackSummaryResponse:
     workflow = "feedback_summary"
     stage_started_at = time.perf_counter()
@@ -276,6 +297,7 @@ def generate_feedback_summary(request: ConversationFeedbackRequest) -> Conversat
     return summary
 
 
+@_record_workflow_duration("turn_feedback")
 def generate_turn_feedback(
     request: ConversationFeedbackRequest,
     turn: FeedbackTurnRequest,
@@ -1351,6 +1373,7 @@ def _should_review_feedback_quality(response: ConversationFeedbackResponse) -> b
     )
 
 
+@_record_workflow_duration("feedback_review")
 def _review_feedback_quality(
     request: ConversationFeedbackRequest,
     response: ConversationFeedbackResponse,
@@ -1380,6 +1403,7 @@ def _review_feedback_quality(
     return {"pass": passed, "issues": issues}
 
 
+@_record_workflow_duration("feedback_repair")
 def _repair_feedback(
     request: ConversationFeedbackRequest,
     response: ConversationFeedbackResponse,
@@ -1895,12 +1919,27 @@ def _should_attempt_assistance_rag(user_utterance: str) -> bool:
     return user_utterance.strip().endswith("?") or compact.startswith(question_prefixes)
 
 
+def _request_id_for_log() -> str:
+    return get_request_id() or "-"
+
+
 def _log_workflow_stage_duration(workflow: str, stage: str, started_at: float) -> None:
     duration_ms = (time.perf_counter() - started_at) * 1000
     logger.info(
-        "AI workflow 단계 소요 시간 | workflow=%s stage=%s duration_ms=%.2f",
+        "AI workflow 단계 소요 시간 | requestId=%s workflow=%s stage=%s duration_ms=%.2f",
+        _request_id_for_log(),
         workflow,
         stage,
+        duration_ms,
+    )
+
+
+def _log_workflow_total_duration(workflow: str, started_at: float) -> None:
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    logger.info(
+        "AI workflow 전체 소요 시간 | requestId=%s workflow=%s duration_ms=%.2f",
+        _request_id_for_log(),
+        workflow,
         duration_ms,
     )
 
@@ -2738,6 +2777,7 @@ def _evidence_text_contains_request_act(evidence_text: str) -> bool:
     return any(pattern in normalized for pattern in request_patterns)
 
 
+@_record_workflow_duration("next_question_semantic_evidence")
 def _semantic_evidence_supports_slot(
     slot: SlotStatusRequest,
     request: NextQuestionRequest,

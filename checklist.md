@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## AI 응답 시간 및 지연 측정
+
+- [x] 요청 ID 전달과 workflow latency 로그 범위를 현재 코드에서 확인한다.
+- [x] `X-Request-Id`가 AI 요청 컨텍스트에 저장되고 응답 헤더로 반환되는 RED 테스트를 추가한다.
+- [x] 기존 단계별 timing 로그에 `requestId`가 포함되는 RED 테스트를 추가한다.
+- [x] workflow 전체 소요 시간 로그가 남는 RED 테스트를 추가한다.
+- [x] 요청 컨텍스트와 middleware를 최소 구현한다.
+- [x] conversation service timing 로그에 `requestId`와 전체 workflow 로그를 추가한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## prompt-engineering-patterns 기준 보강
 
 - [x] `next-question` 요청과 응답에 target slot metadata를 추가한다.
