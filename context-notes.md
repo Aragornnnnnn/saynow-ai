@@ -1,5 +1,11 @@
 # 작업 맥락 기록
 
+- 2026-05-30 신규 시나리오 189에서 `I missed my connecting flight.`가 `baggage_delay_reason`까지 채운 문제는 slot_name switch 구조의 확장성 한계로 본다. 새 슬롯은 기존 최소 증거 검증 목록에 없으면 모델 판단을 그대로 통과할 수 있었다.
+- 2026-05-30 새 방향은 strict keyword 목록이 아니라 `semantic_evidence` 기반이다. BE는 `description`, `evidencePolicy.mode`, `hints`, `requiresEvidenceText`, `mustBeGroundedIn`을 JSON object로 내려주고, AI는 모델이 제시한 최신 발화 근거 문구인 `evidenceText`를 기준으로 최종 슬롯을 검증한다.
+- 2026-05-30 `hints`는 정답 단어 전체 목록이 아니다. `My items came out too late.`처럼 힌트에 없는 표현도 외국인이 공항 맥락에서 짐이 늦게 나왔다고 이해할 수 있으면 통과해야 한다. 반대로 `I missed my connecting flight.`는 수하물 원인 근거가 없으므로 `missed_connection`만 채워야 한다.
+- 2026-05-30 `evidencePolicy`는 요청 DTO에서 typed object로 받는다. DB 저장이 JSONB나 JSON 문자열이어도 BE가 AI payload로 보낼 때는 `"evidencePolicy": {...}` 형태여야 하며, AI 서버는 문자열 JSON을 계약으로 삼지 않는다.
+- 2026-05-30 구현은 `candidateFilledSlots[].evidenceText`를 AI 내부 근거 필드로 받아 검증한다. `semantic_evidence` 슬롯은 evidenceText가 최신 사용자 발화에 실제로 포함되어야 하며, 별도 좁은 LLM verifier가 슬롯 description을 지지하는지 확인한다. verifier 단계도 `next_question_semantic_evidence` workflow timing 로그를 남긴다.
+- 2026-05-30 검증은 새 회귀 테스트 RED 확인 후 GREEN으로 진행했다. 전체 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 116개, compileall, diff check가 통과했다.
 - 2026-05-30 품질 개선 전에 관측성을 먼저 추가한다. 목표는 Sentry로 운영 오류를 수집하고, AI 서버 내부의 주요 LLM workflow 단계별 latency를 로그로 남겨 다음 병목 분석의 근거를 만드는 것이다.
 - Sentry DSN은 아직 전달되지 않았으므로 `SENTRY_DSN`이 비어 있으면 초기화하지 않는 no-op 구조가 필요하다. DSN이 들어오면 코드 변경 없이 초기화되어야 한다.
 - 오류 추적 로그는 사용자 발화 전문이나 프롬프트 전체를 남기지 않고, 실패 지점과 계약 위반 원인, stage, workflow, preview 수준의 짧은 정보만 남긴다. 민감 정보와 긴 프롬프트 유출을 피하는 방향으로 제한한다.

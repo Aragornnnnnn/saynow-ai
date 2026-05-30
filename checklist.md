@@ -1,5 +1,17 @@
 # 작업 체크리스트
 
+## semantic evidence 기반 슬롯 검증
+
+- [x] 현재 next-question 요청 모델과 슬롯 검증 경로를 확인한다.
+- [x] `EvidencePolicy` 요청 DTO를 추가하고 JSON object payload를 검증한다.
+- [x] 세션 189의 `baggage_delay_reason` 과잉 채움 회귀 테스트를 추가하고 RED를 확인한다.
+- [x] `my items came out too late`처럼 힌트에 없는 자유 표현이 semantic evidence로 통과하는 회귀 테스트를 추가한다.
+- [x] `my items`처럼 의미 근거가 부족한 발화는 슬롯을 채우지 않는 회귀 테스트를 추가한다.
+- [x] `candidateFilledSlots[].evidenceText` 기반 공통 검증을 구현한다.
+- [x] next-question 프롬프트에 evidencePolicy와 evidenceText 기준을 반영한다.
+- [x] 관련 단위 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋한다.
+
 ## 관측성 로깅과 Sentry 추가
 
 - [x] Sentry DSN은 SSM의 `/saynow/develop/SENTRY_DSN` 또는 `/saynow/prod/SENTRY_DSN`에 두는 것으로 정리한다.
