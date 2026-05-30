@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-05-31 BE dev 회귀 테스트에서 scenarioId 6, sessionId 220은 슬롯 적용과 저장 target은 맞았지만, 실제 `nextQuestion` 문구가 `next_options_request`가 아니라 수하물 지연 이유를 다시 묻는 형태였다. 원인은 target metadata를 보정한 뒤 질문 문구가 target 슬롯과 정렬되는지 다시 검증하지 않는 경로다. 이번 보정은 모델 target이 남은 슬롯을 가리키는데 질문 문구가 해당 슬롯을 겨냥하지 않으면, target 슬롯의 fallback 질문으로 바꾸는 방향으로 진행한다.
+- 2026-05-31 해당 보정 후 회귀 테스트 `test_next_question_rewrites_question_when_model_target_and_text_disagree`를 추가했다. 모델이 `nextQuestionTargetSlotName=next_options_request`를 내면서도 문구로는 `items` 재설명을 요구하는 경우, 최종 질문을 `What would you like me to help you with next?`로 바꾼다.
 - 2026-05-31 재질문 방지 구조는 이전 대화 전체를 전달하는 방식보다 target slot metadata를 명시하는 방식으로 잡았다. `originalQuestionTargetSlotName`은 직전 질문의 주 target이고, `nextQuestionTargetSlotName`은 AI가 생성한 다음 질문의 주 target이다. 다만 `filledSlots`는 target slot 하나로 제한하지 않고, 최신 `userUtterance` 안에 명확한 evidence가 있으면 여러 미충족 슬롯을 함께 채울 수 있다.
 - 2026-05-31 AI 서버 구현은 `NextQuestionRequest.originalQuestionTargetSlotName`을 optional로 받고, `NextQuestionResponse.nextQuestionTargetSlotName`을 반환하도록 바꿨다. 모델 출력 target이 없거나 부정확해도 후처리에서 남은 슬롯과 질문 문장을 기준으로 target을 보정한다. 모든 슬롯이 채워져 `nextQuestion=null`이면 target도 `null`이다.
 - 2026-05-30 develop 배포 후 live smoke에서 `Two week`는 `stay_duration`을 채웠지만 다음 질문이 `Can you tell me the exact dates of your stay?`로 다시 기간 상세를 물었다. 원인은 `_question_asks_duration()`이 `exact dates`, `dates of your stay` 같은 표현을 기간 질문으로 보지 못한 것이다. 회귀 테스트를 추가하고 기간 질문 marker를 보강해, 방금 채운 기간 슬롯을 다시 묻지 않고 남은 `accommodation` 질문으로 retarget하도록 수정했다.

@@ -19,6 +19,9 @@
 - [x] `Two week` 같은 짧은 기간 답변을 `stay_duration`으로 채우는 RED 테스트를 추가한다.
 - [x] description/hints/question 기반 기간 evidence 보강을 구현한다.
 - [x] 기간 답변 회귀 테스트와 관련 테스트를 통과시키고 커밋한다.
+- [x] BE dev 케이스 4에서 target은 `next_options_request`인데 질문 문구가 수하물 지연을 다시 묻는 문제를 회귀 테스트로 고정한다.
+- [x] target metadata와 질문 문구가 어긋날 때 target 슬롯 fallback 질문으로 보정한다.
+- [x] 관련 단위 테스트와 전체 검증을 실행하고 의미 있는 단위로 커밋한다.
 - [x] 이미 채워진 슬롯을 다시 묻는 질문을 남은 슬롯 질문으로 retarget하는 RED 테스트를 추가한다.
 - [x] 기존 filled 슬롯 재질문 방지 보정을 구현한다.
 - [x] retarget 회귀 테스트와 관련 테스트를 통과시키고 커밋한다.

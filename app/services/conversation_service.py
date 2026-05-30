@@ -140,6 +140,14 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         remaining_slots,
         next_question,
     )
+    next_question, translated_question = _retarget_next_question_when_model_target_and_text_disagree(
+        data,
+        request,
+        remaining_slots,
+        next_question_target_slot_name,
+        next_question,
+        translated_question,
+    )
     next_question, translated_question = _ensure_visible_information_response(
         request,
         next_question,
@@ -954,6 +962,31 @@ def _resolve_next_question_target_slot_name(
         return model_target
 
     return remaining_slot_names[0]
+
+
+def _retarget_next_question_when_model_target_and_text_disagree(
+    data: dict[str, Any],
+    request: NextQuestionRequest,
+    remaining_slot_names: list[str],
+    next_question_target_slot_name: str | None,
+    next_question: str,
+    translated_question: str,
+) -> tuple[str, str]:
+    model_target = _normalize_next_question_target_slot_name(
+        data.get("nextQuestionTargetSlotName"),
+        remaining_slot_names,
+    )
+    if model_target is None or model_target != next_question_target_slot_name:
+        return next_question, translated_question
+
+    target_slot = next(
+        (slot for slot in request.slots if slot.slotName == next_question_target_slot_name),
+        None,
+    )
+    if target_slot is None or _question_targets_slot(next_question, target_slot):
+        return next_question, translated_question
+
+    return _fallback_follow_up_question_for_slot(target_slot)
 
 
 def _normalize_next_question_target_slot_name(value: Any, remaining_slot_names: list[str]) -> str | None:
