@@ -10,10 +10,33 @@ def _validate_not_blank(value: str) -> str:
     return value
 
 
+class EvidencePolicyMode(StrEnum):
+    SEMANTIC_EVIDENCE = "semantic_evidence"
+    EXPLICIT_PATTERN = "explicit_pattern"
+    EXPLICIT_KEYWORD = "explicit_keyword"
+
+
+class EvidenceGrounding(StrEnum):
+    LATEST_USER_UTTERANCE = "latest_user_utterance"
+
+
+class EvidencePolicy(BaseModel):
+    mode: EvidencePolicyMode
+    hints: list[str] = Field(default_factory=list)
+    requiresEvidenceText: bool = True
+    mustBeGroundedIn: EvidenceGrounding = EvidenceGrounding.LATEST_USER_UTTERANCE
+
+    @field_validator("hints")
+    @classmethod
+    def hints_must_not_include_blank_values(cls, value: list[str]) -> list[str]:
+        return [_validate_not_blank(hint) for hint in value]
+
+
 class SlotStatusRequest(BaseModel):
     slotName: str
     description: str
     filled: bool
+    evidencePolicy: EvidencePolicy | None = None
 
     @field_validator("slotName", "description")
     @classmethod

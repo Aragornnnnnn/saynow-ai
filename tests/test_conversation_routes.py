@@ -88,7 +88,17 @@ class ConversationRoutesTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+                {
+                    "slotName": "drink",
+                    "description": "사용자가 원하는 구체적인 음료를 말했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["coffee", "latte", "tea"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
             ],
         })
 
