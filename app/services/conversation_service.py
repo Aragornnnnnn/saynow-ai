@@ -97,6 +97,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             candidate_evidence_by_slot,
         )
         filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
+        filled_slots = _add_policy_defined_evidence_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
         request,
@@ -1561,6 +1562,18 @@ def _is_information_request(user_utterance: str) -> bool:
     ]) or any(re.fullmatch(pattern, compact) for pattern in menu_request_patterns)
 
 
+def _is_actual_assistance_request(request: NextQuestionRequest) -> bool:
+    if _is_recommendation_request(request.userUtterance):
+        return True
+    if _is_information_request(request.userUtterance):
+        return True
+    if _is_relevant_contact_info_assistance_request(request.userUtterance):
+        return True
+    if _should_attempt_assistance_rag(request.userUtterance):
+        return True
+    return False
+
+
 def _ensure_visible_information_response(
     request: NextQuestionRequest,
     next_question: str,
@@ -1730,7 +1743,7 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.ANSWER
     if _is_clear_preference_or_option_answer(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
-    if raw_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
+    if raw_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST and _is_actual_assistance_request(request):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_recommendation_request(request.userUtterance):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
@@ -2104,6 +2117,33 @@ def _filter_filled_slots_with_user_evidence(
     return filtered, rejected
 
 
+def _add_policy_defined_evidence_slots(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    filled_slots: list[FilledSlotResponse],
+) -> list[FilledSlotResponse]:
+    filled_slot_names = {slot.slotName for slot in filled_slots}
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    additions: list[FilledSlotResponse] = []
+    fallback_candidate = {
+        "evidenceText": request.userUtterance,
+        "understoodMeaning": "",
+        "confidence": "fallback",
+    }
+    for slot_name in unfilled_slot_names:
+        if slot_name in filled_slot_names:
+            continue
+
+        slot = slots_by_name.get(slot_name)
+        if slot is None or slot.evidencePolicy is None:
+            continue
+
+        if _slot_evidence_policy_accepts_candidate(slot, request, fallback_candidate):
+            additions.append(FilledSlotResponse(slotName=slot_name))
+
+    return [*filled_slots, *additions]
+
+
 def _slot_has_user_evidence(
     slot: SlotStatusRequest,
     request: NextQuestionRequest,
@@ -2198,11 +2238,15 @@ def _semantic_evidence_supports_slot(
         "Return ONLY valid JSON matching this schema: {\"supportsSlot\":true|false}. "
         "Use the scenario only to interpret vague nouns in the evidence text. "
         "Do not use the previous AI question or scenario background to invent missing facts. "
-        "Return true only when a foreign listener could reasonably understand the slot meaning from the evidence text in the latest user utterance."
+        "Return true when the evidence text provides the core evidence needed to fill this slot. "
+        "If the slot description combines multiple facts, do not require the latest utterance to restate facts that are already filled or established by the scenario. "
+        "Return false for vague objects without an event, cause, request, or other slot-specific meaning."
     )
+    slot_state = "\n".join(_format_slot_line(existing_slot) for existing_slot in request.slots)
     user = (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario situation: {request.scenarioSituation}\n"
+        f"Current slot state:\n{slot_state}\n"
         f"Slot name: {slot.slotName}\n"
         f"Slot description: {slot.description}\n"
         f"Policy hints: {hints or 'None'}\n"
