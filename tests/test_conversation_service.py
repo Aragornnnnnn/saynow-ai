@@ -20,6 +20,32 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.chat = self.original_chat
         self.service.assistance_knowledge_store = self.original_assistance_knowledge_store
 
+    def _explicit_keyword_slot(self, slot_name, description, hints, filled=False):
+        return {
+            "slotName": slot_name,
+            "description": description,
+            "filled": filled,
+            "evidencePolicy": {
+                "mode": "explicit_keyword",
+                "hints": hints,
+                "requiresEvidenceText": False,
+                "mustBeGroundedIn": "latest_user_utterance",
+            },
+        }
+
+    def _explicit_pattern_slot(self, slot_name, description, filled=False):
+        return {
+            "slotName": slot_name,
+            "description": description,
+            "filled": filled,
+            "evidencePolicy": {
+                "mode": "explicit_pattern",
+                "hints": [],
+                "requiresEvidenceText": False,
+                "mustBeGroundedIn": "latest_user_utterance",
+            },
+        }
+
     def test_next_question_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import NextQuestionRequest, NextQuestionTurnClassification
 
@@ -338,7 +364,7 @@ class ConversationServiceTest(unittest.TestCase):
             "slots": [
                 {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
                 {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
-                {"slotName": "temperature", "description": "테스트 슬롯 채움 기준", "filled": False},
+                self._explicit_keyword_slot("temperature", "테스트 슬롯 채움 기준", ["iced"]),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -369,8 +395,8 @@ class ConversationServiceTest(unittest.TestCase):
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
                 {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": True},
-                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
-                {"slotName": "temperature", "description": "테스트 슬롯 채움 기준", "filled": False},
+                self._explicit_keyword_slot("size", "테스트 슬롯 채움 기준", ["small"]),
+                self._explicit_keyword_slot("temperature", "테스트 슬롯 채움 기준", ["iced"]),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -409,11 +435,23 @@ class ConversationServiceTest(unittest.TestCase):
                     "slotName": "boarding_possibility",
                     "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
                     "filled": False,
+                    "evidencePolicy": {
+                        "mode": "explicit_keyword",
+                        "hints": ["can i still board", "board the flight", "still board"],
+                        "requiresEvidenceText": False,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
                 },
                 {
                     "slotName": "time_pressure",
                     "description": "사용자가 비행기 출발 시간이 임박했거나 시간이 부족한 긴급 상황임을 설명했는지 여부",
                     "filled": False,
+                    "evidencePolicy": {
+                        "mode": "explicit_keyword",
+                        "hints": ["not much time", "running out of time", "departs soon"],
+                        "requiresEvidenceText": False,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
                 },
             ],
         })
@@ -482,11 +520,10 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "항공사 수하물 서비스 직원",
             "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
             "slots": [
-                {
-                    "slotName": "contact_info",
-                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
-                    "filled": False,
-                },
+                self._explicit_pattern_slot(
+                    "contact_info",
+                    "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                ),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -555,11 +592,10 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "항공사 수하물 서비스 직원",
             "scenarioGoal": "항공사 직원에게 수하물 문제를 설명하고 도움을 요청할 수 있다.",
             "slots": [
-                {
-                    "slotName": "contact_info",
-                    "description": "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
-                    "filled": False,
-                },
+                self._explicit_pattern_slot(
+                    "contact_info",
+                    "사용자가 후속 안내를 받을 수 있는 연락처나 이메일을 제공했는지 여부",
+                ),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -607,6 +643,36 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(policy.hints, ["baggage", "luggage", "suitcase", "bag"])
         self.assertTrue(policy.requiresEvidenceText)
         self.assertEqual(policy.mustBeGroundedIn, "latest_user_utterance")
+
+    def test_next_question_rejects_model_filled_slot_without_evidence_policy(self):
+        from app.models.conversation import NextQuestionRequest, NextQuestionTurnClassification
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "I want an iced americano.",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페 직원과 대화하며 원하는 음료를 주문해야 한다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "drink",
+                    "description": "사용자가 원하는 음료를 말했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [{"slotName": "drink"}],
+            "nextQuestion": None,
+            "translatedQuestion": None,
+            "turnClassification": "ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, NextQuestionTurnClassification.INVALID_RESPONSE)
 
     def test_next_question_semantic_evidence_rejects_context_only_slot_overfill(self):
         from app.models.conversation import NextQuestionRequest
@@ -1016,11 +1082,23 @@ class ConversationServiceTest(unittest.TestCase):
                     "slotName": "gate_location",
                     "description": "사용자가 Gate B 또는 환승편 탑승 게이트의 위치를 물어보거나 찾고 있음을 설명했는지 여부",
                     "filled": False,
+                    "evidencePolicy": {
+                        "mode": "explicit_keyword",
+                        "hints": ["where the gate", "gate"],
+                        "requiresEvidenceText": False,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
                 },
                 {
                     "slotName": "boarding_possibility",
                     "description": "사용자가 환승편에 아직 탑승할 수 있는지 직원에게 확인 요청을 했는지 여부",
                     "filled": False,
+                    "evidencePolicy": {
+                        "mode": "explicit_keyword",
+                        "hints": ["can i still board", "still board"],
+                        "requiresEvidenceText": False,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
                 },
             ],
         })
@@ -1177,8 +1255,8 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
             "slots": [
-                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
-                {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": False},
+                self._explicit_keyword_slot("drink", "테스트 슬롯 채움 기준", ["coffee"]),
+                self._explicit_keyword_slot("size", "테스트 슬롯 채움 기준", ["small", "large"]),
             ],
         })
         calls = []
@@ -1557,7 +1635,7 @@ class ConversationServiceTest(unittest.TestCase):
             "slots": [
                 {"slotName": "baseDrink", "description": "테스트 슬롯 채움 기준", "filled": True},
                 {"slotName": "size", "description": "테스트 슬롯 채움 기준", "filled": True},
-                {"slotName": "customOptions", "description": "테스트 슬롯 채움 기준", "filled": False},
+                self._explicit_keyword_slot("customOptions", "테스트 슬롯 채움 기준", ["that's all"]),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -1583,7 +1661,7 @@ class ConversationServiceTest(unittest.TestCase):
             "aiRole": "상대방 역할",
             "scenarioGoal": "좌석 선호도를 자연스럽게 말할 수 있다.",
             "slots": [
-                {"slotName": "seatPreference", "description": "테스트 슬롯 채움 기준", "filled": False},
+                self._explicit_keyword_slot("seatPreference", "테스트 슬롯 채움 기준", ["window seat"]),
             ],
         })
         self.service.chat = lambda *args, **kwargs: json.dumps({

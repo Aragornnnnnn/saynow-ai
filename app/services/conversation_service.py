@@ -96,7 +96,6 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             filled_slots,
             candidate_evidence_by_slot,
         )
-        filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
         filled_slots = _add_policy_defined_evidence_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
@@ -2149,26 +2148,9 @@ def _slot_has_user_evidence(
     request: NextQuestionRequest,
     candidate_evidence: dict[str, str] | None = None,
 ) -> bool:
-    if slot.evidencePolicy is not None:
-        return _slot_evidence_policy_accepts_candidate(slot, request, candidate_evidence)
-    return _legacy_slot_has_user_evidence(slot, request)
-
-
-def _legacy_slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
-    slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
-    if slot_name == "contact_info":
-        return _utterance_contains_contact_info(request.userUtterance)
-    if slot_name == "gate_location":
-        return _utterance_asks_gate_location(request.userUtterance)
-    if slot_name == "boarding_possibility":
-        return _utterance_asks_boarding_possibility(request.userUtterance)
-    if slot_name == "time_pressure":
-        return _utterance_expresses_time_pressure(request.userUtterance)
-    if slot_name == "baggage_issue":
-        return _utterance_describes_baggage_issue(request.userUtterance)
-    if slot_name == "requested_help":
-        return _utterance_requests_baggage_help(request.userUtterance)
-    return True
+    if slot.evidencePolicy is None:
+        return False
+    return _slot_evidence_policy_accepts_candidate(slot, request, candidate_evidence)
 
 
 def _slot_evidence_policy_accepts_candidate(
@@ -2178,7 +2160,7 @@ def _slot_evidence_policy_accepts_candidate(
 ) -> bool:
     policy = slot.evidencePolicy
     if policy is None:
-        return _legacy_slot_has_user_evidence(slot, request)
+        return False
 
     evidence_text = (candidate_evidence or {}).get("evidenceText", "")
     if policy.requiresEvidenceText and not evidence_text:
@@ -2277,96 +2259,6 @@ def _utterance_contains_contact_info(user_utterance: str) -> bool:
     return bool(re.search(email_pattern, user_utterance) or re.search(phone_pattern, user_utterance))
 
 
-def _utterance_asks_gate_location(user_utterance: str) -> bool:
-    compact = _normalize_utterance(user_utterance).replace("'", "")
-    has_gate_target = "gate" in compact
-    asks_location = any(
-        marker in compact
-        for marker in [
-            "where",
-            "located",
-            "location",
-            "direction",
-            "directions",
-            "find",
-            "tell me",
-            "how do i get",
-            "how can i get",
-        ]
-    )
-    return has_gate_target and asks_location
-
-
-def _utterance_asks_boarding_possibility(user_utterance: str) -> bool:
-    compact = _normalize_utterance(user_utterance).replace("'", "")
-    if "order my connecting flight" in compact:
-        return False
-    has_boarding_target = any(marker in compact for marker in ["board", "boarding", "catch my flight", "catch the flight"])
-    has_flight_context = "flight" in compact or "plane" in compact
-    asks_possibility = any(
-        marker in compact
-        for marker in [
-            "can i",
-            "could i",
-            "may i",
-            "am i able",
-            "is it possible",
-            "wonder if",
-            "still",
-        ]
-    )
-    return has_boarding_target and has_flight_context and asks_possibility
-
-
-def _utterance_expresses_time_pressure(user_utterance: str) -> bool:
-    compact = _normalize_utterance(user_utterance).replace("'", "")
-    direct_pressure_markers = [
-        "in a rush",
-        "in a hurry",
-        "urgent",
-        "late",
-        "no time",
-        "not much time",
-        "dont have much time",
-        "do not have much time",
-        "running out of time",
-        "leaves soon",
-        "depart soon",
-        "departs soon",
-        "about to leave",
-    ]
-    if any(marker in compact for marker in direct_pressure_markers):
-        return True
-    return ("transfer" in compact or "connecting flight" in compact) and any(
-        marker in compact for marker in ["time", "hurry", "late", "soon"]
-    )
-
-
-def _utterance_describes_baggage_issue(user_utterance: str) -> bool:
-    compact = _normalize_utterance(user_utterance).replace("'", "")
-    has_baggage = any(marker in compact for marker in ["luggage", "baggage", "bag", "suitcase", "carry on", "carryon"])
-    has_issue = any(marker in compact for marker in ["broken", "damaged", "lost", "missing", "delayed", "issue", "problem"])
-    return has_baggage and has_issue
-
-
-def _utterance_requests_baggage_help(user_utterance: str) -> bool:
-    compact = _normalize_utterance(user_utterance).replace("'", "")
-    return any(
-        marker in compact
-        for marker in [
-            "compensate",
-            "compensation",
-            "refund",
-            "repair",
-            "replace",
-            "claim",
-            "report",
-            "help",
-            "assist",
-        ]
-    )
-
-
 def _should_force_invalid_next_question(request: NextQuestionRequest) -> bool:
     if _is_known_problem_utterance(request.userUtterance):
         return True
@@ -2423,72 +2315,6 @@ def _is_known_problem_utterance(user_utterance: str) -> bool:
         "yes i already told you",
     ]
     return any(marker in compact for marker in exact_or_phrase_markers)
-
-
-def _add_description_defined_request_slots(
-    request: NextQuestionRequest,
-    unfilled_slot_names: list[str],
-    filled_slots: list[FilledSlotResponse],
-) -> list[FilledSlotResponse]:
-    filled_slot_names = {slot.slotName for slot in filled_slots}
-    slots_by_name = {slot.slotName: slot for slot in request.slots}
-    additions: list[FilledSlotResponse] = []
-    for slot_name in unfilled_slot_names:
-        if slot_name in filled_slot_names:
-            continue
-
-        slot = slots_by_name.get(slot_name)
-        if slot is None:
-            continue
-
-        if _description_defined_slot_has_user_evidence(slot, request):
-            additions.append(FilledSlotResponse(slotName=slot_name))
-
-    return [*filled_slots, *additions]
-
-
-def _description_defined_slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
-    if slot.evidencePolicy is not None:
-        return False
-
-    slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
-    if slot_name in {
-        "gate_location",
-        "boarding_possibility",
-        "time_pressure",
-        "baggage_issue",
-        "requested_help",
-        "contact_info",
-    }:
-        return _slot_has_user_evidence(slot, request)
-    return _user_question_satisfies_confirmation_slot(slot, request.userUtterance)
-
-
-def _user_question_satisfies_confirmation_slot(slot: SlotStatusRequest, user_utterance: str) -> bool:
-    compact_utterance = _normalize_utterance(user_utterance).replace("'", "")
-    compact_slot_name = _normalize_utterance(slot.slotName)
-    compact_description = re.sub(r"\s+", "", slot.description)
-
-    if "확인요청" not in compact_description:
-        return False
-
-    boarding_slot = (
-        "boarding" in compact_slot_name
-        and "possibility" in compact_slot_name
-    ) or ("탑승" in compact_description and "수있는지" in compact_description)
-    if not boarding_slot:
-        return False
-
-    asks_boarding_possibility = (
-        "board" in compact_utterance
-        or "boarding" in compact_utterance
-        or "still board" in compact_utterance
-    )
-    asks_as_question = any(
-        marker in compact_utterance
-        for marker in ["can i", "could i", "may i", "am i able", "is it possible"]
-    )
-    return asks_boarding_possibility and asks_as_question
 
 
 def _optional_non_blank_string(value: Any) -> str | None:
