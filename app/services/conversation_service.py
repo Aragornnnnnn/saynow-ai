@@ -125,7 +125,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             return _retry_question_for_slot(remaining_slots[0])
         raise ConversationGenerationError("next question is required while unfilled slots remain")
 
-    next_question, translated_question = _retarget_next_question_when_it_asks_newly_filled_slot(
+    next_question, translated_question = _retarget_next_question_when_it_asks_completed_slot(
         request,
         remaining_slots,
         filled_slots,
@@ -861,39 +861,40 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
     )
 
 
-def _retarget_next_question_when_it_asks_newly_filled_slot(
+def _retarget_next_question_when_it_asks_completed_slot(
     request: NextQuestionRequest,
     remaining_slot_names: list[str],
     filled_slots: list[FilledSlotResponse],
     next_question: str,
     translated_question: str,
 ) -> tuple[str, str]:
-    if not filled_slots or not remaining_slot_names:
+    if not remaining_slot_names:
         return next_question, translated_question
 
     slots_by_name = {slot.slotName: slot for slot in request.slots}
-    newly_filled_slots = [
+    completed_slots = [slot for slot in request.slots if slot.filled]
+    completed_slots.extend(
         slots_by_name[filled_slot.slotName]
         for filled_slot in filled_slots
         if filled_slot.slotName in slots_by_name
-    ]
+    )
     remaining_slots = [
         slots_by_name[slot_name]
         for slot_name in remaining_slot_names
         if slot_name in slots_by_name
     ]
-    if not newly_filled_slots or not remaining_slots:
+    if not completed_slots or not remaining_slots:
         return next_question, translated_question
 
-    asks_newly_filled_slot = any(
+    asks_completed_slot = any(
         _question_targets_slot(next_question, slot)
-        for slot in newly_filled_slots
+        for slot in completed_slots
     )
     asks_remaining_slot = any(
         _question_targets_slot(next_question, slot)
         for slot in remaining_slots
     )
-    if not asks_newly_filled_slot or asks_remaining_slot:
+    if not asks_completed_slot or asks_remaining_slot:
         return next_question, translated_question
 
     return _fallback_follow_up_question_for_slot(remaining_slots[0])

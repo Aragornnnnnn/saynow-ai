@@ -1196,6 +1196,67 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.nextQuestion, "What would you like me to help you with next?")
         self.assertEqual(result.translatedQuestion, "다음에 무엇을 도와드릴까요?")
 
+    def test_next_question_retargets_follow_up_when_model_asks_already_filled_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "How long do you plan to stay in the United States?",
+            "userUtterance": "Three days",
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황이에요. 심사관의 질문에 여행 계획을 차분히 설명해야 해요.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "visit_purpose",
+                    "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["travel", "business", "study", "vacation", "visit"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "stay_duration",
+                    "description": "사용자가 미국에 머무를 기간이나 출국 예정 시점을 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["days", "weeks", "until", "stay for", "return"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "accommodation",
+                    "description": "사용자가 머무를 숙소, 호텔, 주소, 지인 집 등 체류 장소를 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["hotel", "address", "friend house", "stay at", "accommodation"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "What is the purpose of your visit to the United States?",
+            "translatedQuestion": "미국 방문 목적이 무엇인가요?",
+            "turnClassification": "ANSWER",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertEqual(result.nextQuestion, "Where will you be staying in the United States?")
+        self.assertEqual(result.translatedQuestion, "미국에서는 어디에 머무를 예정인가요?")
+
     def test_next_question_semantic_evidence_rescues_multiple_slots_from_partial_model_answer(self):
         from app.models.conversation import NextQuestionRequest
 
