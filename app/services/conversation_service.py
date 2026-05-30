@@ -97,6 +97,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             candidate_evidence_by_slot,
         )
         filled_slots = _add_policy_defined_evidence_slots(request, unfilled_slot_names, filled_slots)
+    filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
         request,
@@ -899,6 +900,13 @@ def _retarget_next_question_when_it_asks_newly_filled_slot(
 
 
 def _question_targets_slot(question: str, slot: SlotStatusRequest) -> bool:
+    if _slot_describes_duration(slot) and _question_asks_duration(question):
+        return True
+    if _slot_describes_accommodation(slot) and _question_asks_accommodation(question):
+        return True
+    if _slot_describes_visit_purpose(slot) and _question_asks_visit_purpose(question):
+        return True
+
     question_tokens = set(_normalize_utterance(question).split())
     if not question_tokens:
         return False
@@ -915,14 +923,17 @@ def _question_targets_slot(question: str, slot: SlotStatusRequest) -> bool:
 
 def _candidate_terms_match_question(candidate: str, question_tokens: set[str]) -> bool:
     stop_words = {"a", "an", "the", "my", "your", "you", "i", "me", "to", "do", "can", "could", "would"}
+    raw_candidate_tokens = _normalize_utterance(candidate).split()
     candidate_tokens = [
         token
-        for token in _normalize_utterance(candidate).split()
+        for token in raw_candidate_tokens
         if len(token) > 2 and token not in stop_words
     ]
     if not candidate_tokens:
         return False
     if len(candidate_tokens) == 1:
+        if len(raw_candidate_tokens) > 1:
+            return False
         return candidate_tokens[0] in question_tokens
     return all(token in question_tokens for token in candidate_tokens)
 
@@ -930,6 +941,13 @@ def _candidate_terms_match_question(candidate: str, question_tokens: set[str]) -
 def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str]:
     if _slot_requires_request_act(slot):
         return "What would you like me to help you with next?", "다음에 무엇을 도와드릴까요?"
+
+    if _slot_describes_accommodation(slot):
+        return "Where will you be staying in the United States?", "미국에서는 어디에 머무를 예정인가요?"
+    if _slot_describes_duration(slot):
+        return "How long do you plan to stay in the United States?", "미국에 얼마나 머무를 계획인가요?"
+    if _slot_describes_visit_purpose(slot):
+        return "What is the purpose of your visit to the United States?", "미국 방문 목적이 무엇인가요?"
 
     slot_key = slot.slotName.lower()
     if slot_key == "contact_info":
@@ -1820,13 +1838,13 @@ def _resolve_next_question_turn_classification(
     rejected_evidence_slot_names = rejected_evidence_slot_names or set()
     if _should_force_invalid_next_question(request):
         return NextQuestionTurnClassification.INVALID_RESPONSE
+    if filled_slots:
+        return NextQuestionTurnClassification.ANSWER
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         return NextQuestionTurnClassification.INVALID_RESPONSE
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
     if filled_slots and _fills_option_or_customization_slot(filled_slots):
-        return NextQuestionTurnClassification.ANSWER
-    if filled_slots:
         return NextQuestionTurnClassification.ANSWER
     if _is_clear_preference_or_option_answer(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
@@ -2231,6 +2249,38 @@ def _add_policy_defined_evidence_slots(
     return [*filled_slots, *additions]
 
 
+def _add_deterministic_evidence_slots(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    filled_slots: list[FilledSlotResponse],
+) -> list[FilledSlotResponse]:
+    filled_slot_names = {slot.slotName for slot in filled_slots}
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    additions: list[FilledSlotResponse] = []
+    for slot_name in unfilled_slot_names:
+        if slot_name in filled_slot_names:
+            continue
+
+        slot = slots_by_name.get(slot_name)
+        if slot is None:
+            continue
+        if _slot_accepts_deterministic_evidence(slot, request):
+            additions.append(FilledSlotResponse(slotName=slot_name))
+
+    return [*filled_slots, *additions]
+
+
+def _slot_accepts_deterministic_evidence(
+    slot: SlotStatusRequest,
+    request: NextQuestionRequest,
+) -> bool:
+    if slot.evidencePolicy is None or slot.evidencePolicy.mode != EvidencePolicyMode.SEMANTIC_EVIDENCE:
+        return False
+    if _slot_describes_duration(slot) and _question_asks_duration(request.originalQuestion):
+        return _utterance_contains_duration_expression(request.userUtterance)
+    return False
+
+
 def _slot_has_user_evidence(
     slot: SlotStatusRequest,
     request: NextQuestionRequest,
@@ -2327,6 +2377,138 @@ def _slot_requires_request_act(slot: SlotStatusRequest) -> bool:
         r"\bwants? to know\b",
     )
     return any(re.search(pattern, english_description) for pattern in english_patterns)
+
+
+def _slot_describes_duration(slot: SlotStatusRequest) -> bool:
+    compact = _normalize_utterance(
+        " ".join([
+            slot.description,
+            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
+        ])
+    )
+    markers = (
+        "기간",
+        "머무를",
+        "체류",
+        "출국",
+        "duration",
+        "how long",
+        "days",
+        "weeks",
+        "months",
+        "until",
+        "stay for",
+        "return",
+        "leave",
+    )
+    return any(marker in compact for marker in markers)
+
+
+def _slot_describes_accommodation(slot: SlotStatusRequest) -> bool:
+    compact = _normalize_utterance(
+        " ".join([
+            slot.description,
+            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
+        ])
+    )
+    markers = (
+        "숙소",
+        "호텔",
+        "주소",
+        "체류 장소",
+        "머무를",
+        "accommodation",
+        "hotel",
+        "address",
+        "stay at",
+        "staying at",
+        "friend house",
+    )
+    return any(marker in compact for marker in markers)
+
+
+def _slot_describes_visit_purpose(slot: SlotStatusRequest) -> bool:
+    compact = _normalize_utterance(
+        " ".join([
+            slot.description,
+            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
+        ])
+    )
+    markers = (
+        "방문 목적",
+        "목적",
+        "purpose",
+        "travel",
+        "business",
+        "study",
+        "vacation",
+        "visit",
+    )
+    return any(marker in compact for marker in markers)
+
+
+def _question_asks_duration(question: str) -> bool:
+    compact = _normalize_utterance(question).replace("'", "")
+    return any(
+        marker in compact
+        for marker in [
+            "how long",
+            "how many days",
+            "how many weeks",
+            "when do you leave",
+            "when will you leave",
+            "when do you return",
+            "when will you return",
+            "until when",
+        ]
+    )
+
+
+def _question_asks_accommodation(question: str) -> bool:
+    compact = _normalize_utterance(question).replace("'", "")
+    return any(
+        marker in compact
+        for marker in [
+            "where will you be staying",
+            "where are you staying",
+            "where do you plan to stay",
+            "where will you stay",
+            "where is your accommodation",
+            "what is your address",
+            "hotel",
+            "accommodation",
+        ]
+    )
+
+
+def _question_asks_visit_purpose(question: str) -> bool:
+    compact = _normalize_utterance(question).replace("'", "")
+    return any(
+        marker in compact
+        for marker in [
+            "purpose of your visit",
+            "why are you visiting",
+            "why did you come",
+            "what brings you",
+            "business or pleasure",
+        ]
+    )
+
+
+def _utterance_contains_duration_expression(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    number_word = (
+        "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+        "thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+        "twenty|thirty"
+    )
+    if re.search(rf"\b(?:\d+|{number_word})\s*(?:day|days|week|weeks|month|months|year|years)\b", compact):
+        return True
+    if re.search(r"\b(?:next|this)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year)\b", compact):
+        return True
+    if re.search(r"\b(?:until|till)\s+\w+", compact):
+        return True
+    return False
 
 
 def _evidence_text_contains_request_act(evidence_text: str) -> bool:

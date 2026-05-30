@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-05-30 세션 207에서 `Two week`가 피드백상 2주 체류로 이해됐지만 `stay_duration` 슬롯은 다음 턴 `Three days`에서야 충족됐다. 원인은 짧은 기간 fragment가 semantic evidence 후보나 verifier에서 떨어질 수 있는 구조다.
+- 같은 세션에서 `visit_purpose=true`, `stay_duration=true`, `accommodation=false` 상태인데 다음 질문이 다시 방문 목적을 물었다. 기존 보정은 newly filled slot 재질문만 막고, request에서 이미 `filled=true`인 슬롯 재질문은 막지 못한다.
+- 피드백에서는 `I am Trevor`를 방문 목적 답변처럼 고치고, `SaudiStudy`를 `study in Saudi Arabia`로 확장했다. 사용자 발화에 없는 목적, 국가, 장소, 의도를 만들지 않는 grounding 보강이 필요하다.
 - 2026-05-30 22:20 KST develop 배포 후 dev AI `POST /api/v1/conversation/next-question`에 세션 202 payload를 직접 호출했다. `filledSlots`는 `missed_connection`, `baggage_delay_reason`만 반환해 `next_options_request` 과잉 채움은 해결됐지만, `nextQuestion`이 `Can you confirm that you missed your connecting flight?`로 방금 채운 슬롯을 다시 묻는 문제가 남아 있었다.
 - 원인은 모델 호출 프롬프트의 `Primary target slot`이 호출 전 미충족 슬롯 첫 번째인 `missed_connection`으로 고정되는 점이다. 모델이 같은 발화에서 해당 슬롯을 채워도 후속 질문은 여전히 그 슬롯을 겨냥할 수 있다.
 - 보정은 모델 응답의 다음 질문이 newly filled slot을 겨냥하고 remaining slot은 겨냥하지 않을 때만 적용한다. 이 경우 남은 슬롯의 description 기준 질문으로 retarget하며, `next_options_request` 같은 요청형 슬롯은 `What would you like me to help you with next?`로 이어간다.
