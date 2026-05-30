@@ -2,6 +2,8 @@
 
 ## prompt-engineering-patterns 기준 보강
 
+- [x] `next-question` 요청과 응답에 target slot metadata를 추가한다.
+- [x] target slot이 있어도 최신 발화 근거가 있으면 여러 슬롯을 채울 수 있는 회귀 테스트를 추가한다.
 - [x] live smoke에서 드러난 `exact dates` 기간 상세 재질문을 회귀 테스트로 고정하고 수정한다.
 - [x] next-question few-shot 예시가 Output Schema와 같은 필드를 쓰는지 RED 테스트를 추가한다.
 - [x] 한국어 slot description만으로도 duration intent를 판정하는 RED 테스트를 추가한다.

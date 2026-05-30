@@ -39,11 +39,13 @@ saynow-ai/
 
 ### `POST /api/v1/conversation/next-question`
 
-- 백엔드가 직전 질문, 사용자 텍스트 발화, 시나리오 제목, 상황, AI 역할, 목표, 현재 슬롯 상태와 슬롯별 설명을 전달합니다.
+- 백엔드가 직전 질문, 직전 질문의 target slot, 사용자 텍스트 발화, 시나리오 제목, 상황, AI 역할, 목표, 현재 슬롯 상태와 슬롯별 설명을 전달합니다.
 - `slots[].description`은 슬롯을 채웠다고 판단하는 의미 기준이며, 특정 영어 표현을 강제하는 문구가 아닙니다.
 - AI 서버는 이번 발화로 새롭게 충족된 슬롯만 `filledSlots`에 반환합니다.
+- `originalQuestionTargetSlotName`은 직전 질문의 주 target일 뿐이며, 최신 발화 근거가 있으면 여러 슬롯을 함께 채울 수 있습니다.
+- AI 서버는 다음 질문의 주 target을 `nextQuestionTargetSlotName`으로 반환합니다.
 - 이미 `filled=true`인 슬롯은 `filledSlots`에 다시 넣지 않습니다.
-- 모든 미충족 슬롯이 이번 발화로 채워졌다면 `nextQuestion`과 `translatedQuestion`은 `null`입니다.
+- 모든 미충족 슬롯이 이번 발화로 채워졌다면 `nextQuestion`, `translatedQuestion`, `nextQuestionTargetSlotName`은 `null`입니다.
 - 세션 완료 여부와 누적 슬롯 상태 갱신은 백엔드 책임입니다.
 
 ### `POST /api/v1/conversation/feedback`

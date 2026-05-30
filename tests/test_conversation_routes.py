@@ -32,6 +32,7 @@ class ConversationRoutesTest(unittest.TestCase):
         conversation.generate_next_question = lambda request: NextQuestionResponse(
             nextQuestion="What size would you like?",
             translatedQuestion="어떤 사이즈로 드릴까요?",
+            nextQuestionTargetSlotName="size",
             filledSlots=[FilledSlotResponse(slotName="drink")],
             turnClassification=NextQuestionTurnClassification.ANSWER,
         )
@@ -82,6 +83,7 @@ class ConversationRoutesTest(unittest.TestCase):
     def test_next_question_route_returns_documented_shape(self):
         response = self.client.post("/api/v1/conversation/next-question", json={
             "originalQuestion": "What would you like to order?",
+            "originalQuestionTargetSlotName": "drink",
             "userUtterance": "I want iced americano.",
             "scenarioTitle": "카페에서 주문하기",
             "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
@@ -106,6 +108,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.json(), {
             "nextQuestion": "What size would you like?",
             "translatedQuestion": "어떤 사이즈로 드릴까요?",
+            "nextQuestionTargetSlotName": "size",
             "filledSlots": [{"slotName": "drink"}],
             "turnClassification": "ANSWER",
         })

@@ -56,6 +56,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         return NextQuestionResponse(
             nextQuestion=None,
             translatedQuestion=None,
+            nextQuestionTargetSlotName=None,
             filledSlots=[],
             turnClassification=NextQuestionTurnClassification.ANSWER,
         )
@@ -114,6 +115,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         return NextQuestionResponse(
             nextQuestion=None,
             translatedQuestion=None,
+            nextQuestionTargetSlotName=None,
             filledSlots=filled_slots,
             turnClassification=turn_classification,
         )
@@ -132,6 +134,12 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         next_question,
         translated_question,
     )
+    next_question_target_slot_name = _resolve_next_question_target_slot_name(
+        data,
+        request,
+        remaining_slots,
+        next_question,
+    )
     next_question, translated_question = _ensure_visible_information_response(
         request,
         next_question,
@@ -140,6 +148,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     response = NextQuestionResponse(
         nextQuestion=next_question,
         translatedQuestion=translated_question,
+        nextQuestionTargetSlotName=next_question_target_slot_name,
         filledSlots=filled_slots,
         turnClassification=turn_classification,
     )
@@ -397,7 +406,7 @@ def _next_question_system_prompt() -> str:
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"filledSlots":[{"slotName":"..."}],"candidateFilledSlots":[{"slotName":"...","evidenceText":"...","understoodMeaning":"...","confidence":"high|medium|low"}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
+            '{"filledSlots":[{"slotName":"..."}],"candidateFilledSlots":[{"slotName":"...","evidenceText":"...","understoodMeaning":"...","confidence":"high|medium|low"}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","nextQuestionTargetSlotName":"<slotName or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
         ),
         (
             "Decision Policy:\n"
@@ -422,7 +431,8 @@ def _next_question_system_prompt() -> str:
             "Never include slots that were already filled before this request.\n"
             "Do not infer slot values from scenario background, previous AI questions, politeness, refusal, uncertainty, random text, or unrelated sentences.\n"
             "Do not ask the user for information that the AI role should know, such as gate location or service policy details.\n"
-            "Do not ask again for a slot that is already marked filled in Current slot state."
+            "Do not ask again for a slot that is already marked filled in Current slot state.\n"
+            "Do not set nextQuestionTargetSlotName to a slot included in filledSlots or already marked filled in Current slot state."
         ),
         (
             "Invalid And Generic Input Policy:\n"
@@ -446,20 +456,22 @@ def _next_question_system_prompt() -> str:
         (
             "Response Policy:\n"
             "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null.\n"
+            "When nextQuestion is null, set nextQuestionTargetSlotName to null.\n"
             "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance.\n"
             "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation.\n"
+            "Set nextQuestionTargetSlotName to the one unfilled slot mainly targeted by nextQuestion after excluding filledSlots.\n"
             "Ask about one primary target slot only. Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
             "Use only the provided slot names."
         ),
         (
             "Few-shot Examples:\n"
             "Few-shot calibration examples use the same schema as the required output.\n"
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"nextQuestionTargetSlotName":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"INVALID_RESPONSE"}.'
         ),
     ])
 
@@ -486,6 +498,7 @@ def _next_question_user_prompt(
         f"AI role: {request.aiRole}\n"
         f"Scenario goal: {request.scenarioGoal}\n"
         f"Previous AI question: {request.originalQuestion}\n"
+        f"Original question target slot: {request.originalQuestionTargetSlotName or 'None'}\n"
         f"User utterance: {request.userUtterance}\n\n"
         f"Current slot state:\n{slot_lines}\n\n"
         f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
@@ -845,6 +858,7 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
         return NextQuestionResponse(
             nextQuestion="What drink would you like to order?",
             translatedQuestion="어떤 음료를 주문하고 싶으신가요?",
+            nextQuestionTargetSlotName=slot_name,
             filledSlots=[],
             turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
         )
@@ -852,6 +866,7 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
         return NextQuestionResponse(
             nextQuestion="What size would you like?",
             translatedQuestion="어떤 사이즈로 하시겠어요?",
+            nextQuestionTargetSlotName=slot_name,
             filledSlots=[],
             turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
         )
@@ -860,6 +875,7 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
     return NextQuestionResponse(
         nextQuestion=f"Could you tell me your {readable_slot}?",
         translatedQuestion=f"{slot_name} 정보를 알려주시겠어요?",
+        nextQuestionTargetSlotName=slot_name,
         filledSlots=[],
         turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
     )
@@ -902,6 +918,52 @@ def _retarget_next_question_when_it_asks_completed_slot(
         return next_question, translated_question
 
     return _fallback_follow_up_question_for_slot(remaining_slots[0])
+
+
+def _resolve_next_question_target_slot_name(
+    data: dict[str, Any],
+    request: NextQuestionRequest,
+    remaining_slot_names: list[str],
+    next_question: str,
+) -> str | None:
+    if not remaining_slot_names:
+        return None
+
+    slots_by_name = {slot.slotName: slot for slot in request.slots}
+    remaining_slots = [
+        slots_by_name[slot_name]
+        for slot_name in remaining_slot_names
+        if slot_name in slots_by_name
+    ]
+    inferred_target = next(
+        (
+            slot.slotName
+            for slot in remaining_slots
+            if _question_targets_slot(next_question, slot)
+        ),
+        None,
+    )
+    if inferred_target is not None:
+        return inferred_target
+
+    model_target = _normalize_next_question_target_slot_name(
+        data.get("nextQuestionTargetSlotName"),
+        remaining_slot_names,
+    )
+    if model_target is not None:
+        return model_target
+
+    return remaining_slot_names[0]
+
+
+def _normalize_next_question_target_slot_name(value: Any, remaining_slot_names: list[str]) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    slot_name = value.strip()
+    if slot_name in set(remaining_slot_names):
+        return slot_name
+    return None
 
 
 def _question_targets_slot(question: str, slot: SlotStatusRequest) -> bool:

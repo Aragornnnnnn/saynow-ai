@@ -66,6 +66,7 @@ class SessionResult(StrEnum):
 
 class NextQuestionRequest(BaseModel):
     originalQuestion: str
+    originalQuestionTargetSlotName: str | None = None
     userUtterance: str
     scenarioTitle: str
     scenarioSituation: str
@@ -78,12 +79,27 @@ class NextQuestionRequest(BaseModel):
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
+    @field_validator("originalQuestionTargetSlotName")
+    @classmethod
+    def optional_target_slot_name_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_not_blank(value)
+
 
 class NextQuestionResponse(BaseModel):
     nextQuestion: str | None
     translatedQuestion: str | None
+    nextQuestionTargetSlotName: str | None = None
     filledSlots: list[FilledSlotResponse]
     turnClassification: NextQuestionTurnClassification
+
+    @field_validator("nextQuestionTargetSlotName")
+    @classmethod
+    def optional_target_slot_name_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_not_blank(value)
 
 
 class FeedbackTurnRequest(BaseModel):
