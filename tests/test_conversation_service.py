@@ -575,6 +575,200 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.turnClassification, "ANSWER")
         self.assertIsNone(result.nextQuestion)
 
+    def test_next_question_request_accepts_typed_evidence_policy_object(self):
+        from app.models.conversation import EvidencePolicyMode, NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Did you miss your connecting flight?",
+            "userUtterance": "My items came out too late.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+
+        policy = request.slots[0].evidencePolicy
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.mode, EvidencePolicyMode.SEMANTIC_EVIDENCE)
+        self.assertEqual(policy.hints, ["baggage", "luggage", "suitcase", "bag"])
+        self.assertTrue(policy.requiresEvidenceText)
+        self.assertEqual(policy.mustBeGroundedIn, "latest_user_utterance")
+
+    def test_next_question_semantic_evidence_rejects_context_only_slot_overfill(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please explain what happened with your baggage? Did you miss your connecting flight?",
+            "userUtterance": "I missed my connecting flight.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 놓쳤거나 환승편을 탈 수 없게 된 상황을 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "flight already left", "could not catch my connection"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag", "checked bag", "baggage claim"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = iter([
+            json.dumps({
+                "filledSlots": [
+                    {"slotName": "missed_connection"},
+                    {"slotName": "baggage_delay_reason"},
+                ],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "missed_connection",
+                        "evidenceText": "I missed my connecting flight",
+                        "understoodMeaning": "The user missed their connecting flight.",
+                    },
+                    {
+                        "slotName": "baggage_delay_reason",
+                        "evidenceText": "I missed my connecting flight",
+                        "understoodMeaning": "The user's baggage was delayed.",
+                    },
+                ],
+                "nextQuestion": "Was it because your baggage was delayed?",
+                "translatedQuestion": "수하물이 지연되어서 그런 건가요?",
+                "turnClassification": "ANSWER",
+            }),
+            json.dumps({"supportsSlot": True}),
+            json.dumps({"supportsSlot": False}),
+        ])
+        self.service.chat = lambda *args, **kwargs: next(responses)
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["missed_connection"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+
+    def test_next_question_semantic_evidence_rejects_vague_items_only(self):
+        from app.models.conversation import NextQuestionRequest, NextQuestionTurnClassification
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What happened with your baggage?",
+            "userUtterance": "My items.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = iter([
+            json.dumps({
+                "filledSlots": [{"slotName": "baggage_delay_reason"}],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "baggage_delay_reason",
+                        "evidenceText": "My items",
+                        "understoodMeaning": "The user's baggage was delayed.",
+                    },
+                ],
+                "nextQuestion": "Could you explain what happened with your baggage?",
+                "translatedQuestion": "수하물에 무슨 일이 있었는지 설명해 주시겠어요?",
+                "turnClassification": "ANSWER",
+            }),
+            json.dumps({"supportsSlot": False}),
+        ])
+        self.service.chat = lambda *args, **kwargs: next(responses)
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.turnClassification, NextQuestionTurnClassification.INVALID_RESPONSE)
+
+    def test_next_question_semantic_evidence_allows_non_hint_understandable_phrase(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What happened with your baggage?",
+            "userUtterance": "My items came out too late.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = iter([
+            json.dumps({
+                "filledSlots": [{"slotName": "baggage_delay_reason"}],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "baggage_delay_reason",
+                        "evidenceText": "My items came out too late",
+                        "understoodMeaning": "The user's baggage was delayed.",
+                    },
+                ],
+                "nextQuestion": "Would you like me to check the next available flight?",
+                "translatedQuestion": "다음 이용 가능한 항공편을 확인해 드릴까요?",
+                "turnClassification": "ANSWER",
+            }),
+            json.dumps({"supportsSlot": True}),
+        ])
+        self.service.chat = lambda *args, **kwargs: next(responses)
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["baggage_delay_reason"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+
     def test_next_question_assistance_request_never_fills_slots(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1206,7 +1400,13 @@ class ConversationServiceTest(unittest.TestCase):
     def test_next_question_prompt_requires_explicit_slot_evidence(self):
         prompt = self.service._next_question_system_prompt()
 
-        self.assertIn("Only mark a slot as filled when the user explicitly provides a concrete value", prompt)
+        self.assertIn("Only mark a slot as filled when the user provides evidence in the latest utterance", prompt)
+        self.assertIn("candidateFilledSlots", prompt)
+        self.assertIn("evidenceText", prompt)
+        self.assertIn("Hints are representative expressions", prompt)
+        self.assertIn("For semantic_evidence slots, accept awkward or non-hint wording", prompt)
+        self.assertIn("For explicit_pattern slots", prompt)
+        self.assertIn("For explicit_keyword slots", prompt)
         self.assertIn("Nonsense, off-topic, refusal, or vague non-answer utterances must return filledSlots=[]", prompt)
         self.assertIn("Incomplete order fragments without a concrete object must return filledSlots=[]", prompt)
         self.assertIn("I want, I need, I'd like, I would like, Can I get", prompt)
@@ -1218,7 +1418,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I do not want to order anything", prompt)
         self.assertIn("Do not ask the user for information that the AI role should know", prompt)
         self.assertIn("Do not ask again for a slot that is already marked filled", prompt)
-        self.assertIn("Do not include long explanations or multiple follow-up questions", prompt)
+        self.assertIn("Ask about one primary target slot only", prompt)
 
     def test_next_question_prompt_uses_sectioned_template(self):
         prompt = self.service._next_question_system_prompt()
@@ -1289,6 +1489,46 @@ class ConversationServiceTest(unittest.TestCase):
         prompt = self.service._next_question_user_prompt(request, ["drink"])
 
         self.assertIn("Scenario situation: 사용자는 출근길에 카페 직원에게 테이크아웃 음료를 주문한다.", prompt)
+
+    def test_next_question_user_prompt_includes_evidence_policy_and_primary_target_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What happened with your baggage?",
+            "userUtterance": "My items came out too late.",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "next_options_request",
+                    "description": "사용자가 다음 항공편이나 재예약 등 다음 선택지를 요청했는지 여부",
+                    "filled": False,
+                },
+            ],
+        })
+
+        prompt = self.service._next_question_user_prompt(
+            request,
+            ["baggage_delay_reason", "next_options_request"],
+        )
+
+        self.assertIn("Primary target slot for the next follow-up question: baggage_delay_reason", prompt)
+        self.assertIn("evidencePolicy=mode:semantic_evidence", prompt)
+        self.assertIn("hints:[baggage, luggage, suitcase, bag]", prompt)
+        self.assertIn("mustBeGroundedIn:latest_user_utterance", prompt)
 
     def test_feedback_preserves_backend_turn_ids_and_feedback_fields(self):
         from app.models.conversation import ConversationFeedbackRequest

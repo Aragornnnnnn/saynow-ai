@@ -12,6 +12,8 @@ from app.models.conversation import (
     ConversationFeedbackRequest,
     ConversationFeedbackResponse,
     ConversationFeedbackSummaryResponse,
+    EvidenceGrounding,
+    EvidencePolicyMode,
     FeedbackTurnRequest,
     FilledSlotResponse,
     GuideChatRequest,
@@ -82,18 +84,25 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     data = _parse_json_object(raw, workflow=workflow)
     raw_classification = _parse_next_question_turn_classification(data.get("turnClassification"))
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
+    candidate_evidence_by_slot = _normalize_candidate_filled_slot_evidence(data, unfilled_slot_names)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
     stage_started_at = time.perf_counter()
+    rejected_evidence_slot_names: set[str] = set()
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         filled_slots = []
     else:
-        filled_slots = _filter_filled_slots_with_user_evidence(request, filled_slots)
+        filled_slots, rejected_evidence_slot_names = _filter_filled_slots_with_user_evidence(
+            request,
+            filled_slots,
+            candidate_evidence_by_slot,
+        )
         filled_slots = _add_description_defined_request_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
         request,
         filled_slots,
         raw_classification,
+        rejected_evidence_slot_names,
     )
     if turn_classification != NextQuestionTurnClassification.ANSWER:
         filled_slots = []
@@ -380,7 +389,7 @@ def _next_question_system_prompt() -> str:
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"filledSlots":[{"slotName":"..."}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
+            '{"filledSlots":[{"slotName":"..."}],"candidateFilledSlots":[{"slotName":"...","evidenceText":"...","understoodMeaning":"...","confidence":"high|medium|low"}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
         ),
         (
             "Decision Policy:\n"
@@ -393,10 +402,15 @@ def _next_question_system_prompt() -> str:
         (
             "Slot Policy:\n"
             "filledSlots must contain only slot names that were newly satisfied by the user's latest utterance.\n"
-            "Only mark a slot as filled when the user explicitly provides a concrete value for that exact slot.\n"
+            "Only mark a slot as filled when the user provides evidence in the latest utterance that a foreign listener could reasonably understand for that exact slot.\n"
+            "For every filled slot, also include candidateFilledSlots with the exact evidenceText copied from the latest user utterance and a short understoodMeaning.\n"
+            "Use evidencePolicy.mode and hints as guidance. Hints are representative expressions, not a complete required keyword list.\n"
+            "For semantic_evidence slots, accept awkward or non-hint wording when the evidenceText still communicates the slot meaning.\n"
+            "For explicit_pattern slots, fill only when the latest utterance contains the required format such as phone number, email, date, or reservation code.\n"
+            "For explicit_keyword slots, fill only when the latest utterance contains the required expression.\n"
             "If a slot description defines the user's task as asking, checking, or confirming something with the AI role, a direct user question can satisfy that slot.\n"
             "Never include slots that were already filled before this request.\n"
-            "Do not infer slot values from context, politeness, refusal, uncertainty, random text, or unrelated sentences.\n"
+            "Do not infer slot values from scenario background, previous AI questions, politeness, refusal, uncertainty, random text, or unrelated sentences.\n"
             "Do not ask the user for information that the AI role should know, such as gate location or service policy details.\n"
             "Do not ask again for a slot that is already marked filled in Current slot state."
         ),
@@ -424,7 +438,7 @@ def _next_question_system_prompt() -> str:
             "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null.\n"
             "Do not set nextQuestion or translatedQuestion to null unless every currently unfilled slot is explicitly satisfied by the latest utterance.\n"
             "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation.\n"
-            "Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
+            "Ask about one primary target slot only. Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
             "Use only the provided slot names."
         ),
         (
@@ -454,6 +468,7 @@ def _next_question_user_prompt(
         f"- {slot_name}: {description_by_slot.get(slot_name, '')}"
         for slot_name in unfilled_slot_names
     )
+    primary_target_slot = unfilled_slot_names[0] if unfilled_slot_names else "None"
     retrieved_assistance_context = retrieved_assistance_answer or "None"
     return (
         f"Scenario title: {request.scenarioTitle}\n"
@@ -464,6 +479,7 @@ def _next_question_user_prompt(
         f"User utterance: {request.userUtterance}\n\n"
         f"Current slot state:\n{slot_lines}\n\n"
         f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
+        f"Primary target slot for the next follow-up question: {primary_target_slot}\n\n"
         f"Retrieved assistance context:\n{retrieved_assistance_context}"
     )
 
@@ -508,7 +524,22 @@ def _guide_user_prompt(request: GuideChatRequest) -> str:
 
 def _format_slot_line(slot: SlotStatusRequest) -> str:
     state = "filled" if slot.filled else "unfilled"
-    return f"- {slot.slotName}: {state} - {slot.description}"
+    evidence_policy = _format_evidence_policy_for_prompt(slot)
+    return f"- {slot.slotName}: {state} - {slot.description}{evidence_policy}"
+
+
+def _format_evidence_policy_for_prompt(slot: SlotStatusRequest) -> str:
+    if slot.evidencePolicy is None:
+        return ""
+    policy = slot.evidencePolicy
+    hints = ", ".join(policy.hints) if policy.hints else "None"
+    return (
+        " | evidencePolicy="
+        f"mode:{policy.mode.value}, "
+        f"hints:[{hints}], "
+        f"requiresEvidenceText:{str(policy.requiresEvidenceText).lower()}, "
+        f"mustBeGroundedIn:{policy.mustBeGroundedIn.value}"
+    )
 
 
 def _feedback_system_prompt() -> str:
@@ -1684,7 +1715,9 @@ def _resolve_next_question_turn_classification(
     request: NextQuestionRequest,
     filled_slots: list[FilledSlotResponse],
     raw_classification: NextQuestionTurnClassification | None = None,
+    rejected_evidence_slot_names: set[str] | None = None,
 ) -> NextQuestionTurnClassification:
+    rejected_evidence_slot_names = rejected_evidence_slot_names or set()
     if _should_force_invalid_next_question(request):
         return NextQuestionTurnClassification.INVALID_RESPONSE
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
@@ -1703,6 +1736,8 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_information_request(request.userUtterance):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
+    if raw_classification == NextQuestionTurnClassification.ANSWER and rejected_evidence_slot_names:
+        return NextQuestionTurnClassification.INVALID_RESPONSE
     if raw_classification == NextQuestionTurnClassification.ANSWER:
         return NextQuestionTurnClassification.ANSWER
 
@@ -2013,22 +2048,73 @@ def _normalize_newly_filled_slots(data: dict[str, Any], unfilled_slot_names: lis
     return normalized
 
 
+def _normalize_candidate_filled_slot_evidence(
+    data: dict[str, Any],
+    unfilled_slot_names: list[str],
+) -> dict[str, dict[str, str]]:
+    raw_candidates = data.get("candidateFilledSlots")
+    if raw_candidates is None:
+        return {}
+    if not isinstance(raw_candidates, list):
+        raise ConversationGenerationError("candidateFilledSlots must be a list when provided")
+
+    unfilled_slot_set = set(unfilled_slot_names)
+    normalized: dict[str, dict[str, str]] = {}
+    for raw_candidate in raw_candidates:
+        if not isinstance(raw_candidate, dict):
+            raise ConversationGenerationError("candidateFilledSlots entries must be objects")
+
+        slot_name = raw_candidate.get("slotName")
+        if not isinstance(slot_name, str) or not slot_name.strip():
+            raise ConversationGenerationError("candidateFilledSlots entries must include slotName")
+
+        slot_name = slot_name.strip()
+        if slot_name not in unfilled_slot_set or slot_name in normalized:
+            continue
+
+        evidence_text = raw_candidate.get("evidenceText")
+        understood_meaning = raw_candidate.get("understoodMeaning")
+        confidence = raw_candidate.get("confidence")
+        normalized[slot_name] = {
+            "evidenceText": evidence_text.strip() if isinstance(evidence_text, str) else "",
+            "understoodMeaning": understood_meaning.strip() if isinstance(understood_meaning, str) else "",
+            "confidence": confidence.strip() if isinstance(confidence, str) else "",
+        }
+
+    return normalized
+
+
 def _filter_filled_slots_with_user_evidence(
     request: NextQuestionRequest,
     filled_slots: list[FilledSlotResponse],
-) -> list[FilledSlotResponse]:
+    candidate_evidence_by_slot: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[FilledSlotResponse], set[str]]:
+    candidate_evidence_by_slot = candidate_evidence_by_slot or {}
     slots_by_name = {slot.slotName: slot for slot in request.slots}
     filtered: list[FilledSlotResponse] = []
+    rejected: set[str] = set()
     for filled_slot in filled_slots:
         slot = slots_by_name.get(filled_slot.slotName)
         if slot is None:
             continue
-        if _slot_has_user_evidence(slot, request):
+        if _slot_has_user_evidence(slot, request, candidate_evidence_by_slot.get(filled_slot.slotName)):
             filtered.append(filled_slot)
-    return filtered
+        else:
+            rejected.add(filled_slot.slotName)
+    return filtered, rejected
 
 
-def _slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+def _slot_has_user_evidence(
+    slot: SlotStatusRequest,
+    request: NextQuestionRequest,
+    candidate_evidence: dict[str, str] | None = None,
+) -> bool:
+    if slot.evidencePolicy is not None:
+        return _slot_evidence_policy_accepts_candidate(slot, request, candidate_evidence)
+    return _legacy_slot_has_user_evidence(slot, request)
+
+
+def _legacy_slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
     slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
     if slot_name == "contact_info":
         return _utterance_contains_contact_info(request.userUtterance)
@@ -2043,6 +2129,102 @@ def _slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionReques
     if slot_name == "requested_help":
         return _utterance_requests_baggage_help(request.userUtterance)
     return True
+
+
+def _slot_evidence_policy_accepts_candidate(
+    slot: SlotStatusRequest,
+    request: NextQuestionRequest,
+    candidate_evidence: dict[str, str] | None,
+) -> bool:
+    policy = slot.evidencePolicy
+    if policy is None:
+        return _legacy_slot_has_user_evidence(slot, request)
+
+    evidence_text = (candidate_evidence or {}).get("evidenceText", "")
+    if policy.requiresEvidenceText and not evidence_text:
+        return False
+    if policy.mustBeGroundedIn == EvidenceGrounding.LATEST_USER_UTTERANCE:
+        if evidence_text and not _evidence_text_is_grounded_in_latest_utterance(evidence_text, request.userUtterance):
+            return False
+        if policy.requiresEvidenceText and not evidence_text:
+            return False
+
+    if policy.mode == EvidencePolicyMode.EXPLICIT_PATTERN:
+        return _explicit_pattern_policy_matches(slot, request)
+    if policy.mode == EvidencePolicyMode.EXPLICIT_KEYWORD:
+        return _explicit_keyword_policy_matches(policy.hints, request.userUtterance, evidence_text)
+    if policy.mode == EvidencePolicyMode.SEMANTIC_EVIDENCE:
+        semantic_evidence_text = evidence_text or request.userUtterance
+        return _semantic_evidence_supports_slot(slot, request, semantic_evidence_text, candidate_evidence or {})
+
+    return False
+
+
+def _evidence_text_is_grounded_in_latest_utterance(evidence_text: str, user_utterance: str) -> bool:
+    normalized_evidence = _normalize_utterance(evidence_text)
+    normalized_utterance = _normalize_utterance(user_utterance)
+    return bool(normalized_evidence) and normalized_evidence in normalized_utterance
+
+
+def _explicit_pattern_policy_matches(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+    compact_slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
+    compact_description = _normalize_utterance(slot.description)
+    if compact_slot_name == "contact_info" or any(marker in compact_description for marker in ["email", "phone", "contact"]):
+        return _utterance_contains_contact_info(request.userUtterance)
+    return False
+
+
+def _explicit_keyword_policy_matches(hints: list[str], user_utterance: str, evidence_text: str) -> bool:
+    compact_utterance = _normalize_utterance(user_utterance)
+    compact_evidence = _normalize_utterance(evidence_text)
+    return any(
+        (hint_compact := _normalize_utterance(hint)) and (
+            hint_compact in compact_utterance or hint_compact in compact_evidence
+        )
+        for hint in hints
+    )
+
+
+def _semantic_evidence_supports_slot(
+    slot: SlotStatusRequest,
+    request: NextQuestionRequest,
+    evidence_text: str,
+    candidate_evidence: dict[str, str],
+) -> bool:
+    workflow = "next_question_semantic_evidence"
+    hints = ", ".join(slot.evidencePolicy.hints) if slot.evidencePolicy else ""
+    system = (
+        "You verify whether a candidate evidence text from the latest user utterance supports one scenario slot. "
+        "Return ONLY valid JSON matching this schema: {\"supportsSlot\":true|false}. "
+        "Use the scenario only to interpret vague nouns in the evidence text. "
+        "Do not use the previous AI question or scenario background to invent missing facts. "
+        "Return true only when a foreign listener could reasonably understand the slot meaning from the evidence text in the latest user utterance."
+    )
+    user = (
+        f"Scenario title: {request.scenarioTitle}\n"
+        f"Scenario situation: {request.scenarioSituation}\n"
+        f"Slot name: {slot.slotName}\n"
+        f"Slot description: {slot.description}\n"
+        f"Policy hints: {hints or 'None'}\n"
+        f"Latest user utterance: {request.userUtterance}\n"
+        f"Candidate evidence text: {evidence_text}\n"
+        f"Candidate understood meaning: {candidate_evidence.get('understoodMeaning') or 'None'}"
+    )
+    try:
+        stage_started_at = time.perf_counter()
+        raw = _call_chat(system, user, max_tokens=80, temperature=0, workflow=workflow)
+        _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+        stage_started_at = time.perf_counter()
+        data = _parse_json_object(raw, workflow=workflow)
+        _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
+    except ConversationGenerationError as exc:
+        logger.warning(
+            "semantic evidence 검증 실패로 슬롯 후보 제거 | slot=%s error=%s",
+            slot.slotName,
+            exc,
+        )
+        return False
+    return data.get("supportsSlot") is True
 
 
 def _utterance_contains_contact_info(user_utterance: str) -> bool:
@@ -2222,6 +2404,9 @@ def _add_description_defined_request_slots(
 
 
 def _description_defined_slot_has_user_evidence(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+    if slot.evidencePolicy is not None:
+        return False
+
     slot_name = _normalize_utterance(slot.slotName).replace(" ", "_")
     if slot_name in {
         "gate_location",
