@@ -1023,6 +1023,45 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.nextQuestion, "Where will you be staying in the United States?")
         self.assertEqual(result.translatedQuestion, "미국에서는 어디에 머무를 예정인가요?")
 
+    def test_next_question_recovers_short_duration_answer_from_korean_slot_description(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "How long do you plan to stay in the United States?",
+            "userUtterance": "Two week",
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황이에요. 심사관의 질문에 여행 계획을 차분히 설명해야 해요.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "stay_duration",
+                    "description": "사용자가 미국에 머무를 기간이나 출국 예정 시점을 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": [],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "How long do you plan to stay in the United States?",
+            "translatedQuestion": "미국에 얼마나 머무를 계획이신가요?",
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["stay_duration"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertIsNone(result.nextQuestion)
+        self.assertIsNone(result.translatedQuestion)
+
     def test_next_question_semantic_evidence_does_not_fill_request_slot_from_situation_statement(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -2037,6 +2076,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("For recommendation requests, name one concrete plausible option", prompt)
         self.assertIn("For menu or option requests, name two to four concrete plausible choices", prompt)
         self.assertIn("Few-shot calibration examples", prompt)
+        self.assertIn('"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte.', prompt)
+        self.assertIn('"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea.', prompt)
+        self.assertIn('"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions"', prompt)
         self.assertIn("Can you recommend something?", prompt)
         self.assertIn("I recommend an iced latte. What would you like to order?", prompt)
         self.assertIn("Can I see the menu?", prompt)
@@ -2651,7 +2693,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(turn_feedback.nativeLanguageInterpretation, "한국어로 비유하자면, '나는 트레버입니다'처럼 들려요.")
         self.assertEqual(
             turn_feedback.betterExpression,
-            "I'm here to study. 이렇게 말하면 이름이 아니라 방문 목적을 답할 수 있어요.",
+            "I'm here to study. 예시 답변으로, 이름이 아니라 방문 목적을 답할 때 쓸 수 있어요.",
         )
         self.assertNotIn("my visit", turn_feedback.betterExpression)
 
@@ -4000,6 +4042,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not invent a specific service item for incomplete order fragments or generic object responses", prompt)
         self.assertIn("Do not invent any purpose, country, city, accommodation, destination, or user intent", prompt)
         self.assertIn("For fused or unclear words, do not expand them into a country", prompt)
+        self.assertIn("Verify feedback fields do not invent any purpose, country, city, accommodation, destination, or user intent", prompt)
         self.assertIn("Stable feedback decision rubric", prompt)
         self.assertIn("85-100", prompt)
         self.assertIn("feedbackRequired=false", prompt)
@@ -4063,6 +4106,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Direct want + concrete service item response", prompt)
         self.assertIn("must be treated as a near-miss response", prompt)
         self.assertIn("Do not invent a specific service item for incomplete order fragments or generic object responses", prompt)
+        self.assertIn("Verify the repaired JSON does not invent any purpose, country, city, accommodation, destination, or user intent", prompt)
         self.assertIn("Self-check before output", prompt)
         self.assertIn("Never return a one-sentence feedbackSummary", prompt)
         self.assertIn("Do not write nativeUnderstanding as if the listener heard the English words", prompt)

@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-05-30 `prompt-engineering-patterns` 기준 재점검 결과, 세션 207 보정은 동작하지만 프롬프트 품질 측면에서 4개 보강점이 남았다. few-shot 예시가 `candidateFilledSlots` 없는 JSON을 보여 schema와 충돌하고, 한국어 slot description은 `_normalize_utterance()`에서 사라져 hints 의존도가 높으며, name-only 목적 질문 보정은 예시 답변임을 더 명확히 해야 하고, feedback self-check에는 목적, 국가, 장소, 의도 hallucination 검증이 반복되지 않는다.
+- 2026-05-30 보강 구현은 next-question few-shot의 `candidateFilledSlots` 필드 일관화, 한국어 description을 보존하는 `_slot_intent_text()` 도입, name-only 목적 질문 betterExpression의 예시 답변 표시, feedback/repair self-check의 grounding 검증 추가로 정리했다. 검증은 관련 RED 후 GREEN, `tests.test_conversation_service` 102개, 전체 `unittest discover` 128개, `compileall`, `git diff --check`로 확인했다.
 - 2026-05-30 세션 207에서 `Two week`가 피드백상 2주 체류로 이해됐지만 `stay_duration` 슬롯은 다음 턴 `Three days`에서야 충족됐다. 원인은 짧은 기간 fragment가 semantic evidence 후보나 verifier에서 떨어질 수 있는 구조다.
 - 같은 세션에서 `visit_purpose=true`, `stay_duration=true`, `accommodation=false` 상태인데 다음 질문이 다시 방문 목적을 물었다. 기존 보정은 newly filled slot 재질문만 막고, request에서 이미 `filled=true`인 슬롯 재질문은 막지 못한다.
 - 피드백에서는 `I am Trevor`를 방문 목적 답변처럼 고치고, `SaudiStudy`를 `study in Saudi Arabia`로 확장했다. 사용자 발화에 없는 목적, 국가, 장소, 의도를 만들지 않는 grounding 보강이 필요하다.

@@ -454,12 +454,12 @@ def _next_question_system_prompt() -> str:
         (
             "Few-shot Examples:\n"
             "Few-shot calibration examples use the same schema as the required output.\n"
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","turnClassification":"ASSISTANCE_REQUEST"}.\n'
+            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","turnClassification":"INVALID_RESPONSE"}.'
         ),
     ])
 
@@ -696,6 +696,7 @@ def _feedback_system_prompt() -> str:
         "Verify feedbackRequired=false has null turn feedback fields. "
         "Verify Direct want + concrete service item responses have feedbackRequired=true and a 75-84 score. "
         "Verify incomplete order fragments and generic object responses do not invent a specific service item. "
+        "Verify feedback fields do not invent any purpose, country, city, accommodation, destination, or user intent. "
         "Verify recommendation requests preserve the recommendation intent. "
         "Verify No-more options responses after option or customization questions do not receive unnecessary feedback. "
         "Verify Clear preference or option answers do not receive unnecessary feedback when they directly answer the question. "
@@ -1395,7 +1396,8 @@ def _feedback_repair_system_prompt() -> str:
         "For Direct want + concrete service item responses, keep feedbackRequired=true, keep comprehensionScore at 75-84, and start betterExpression with I'd like plus the same item and please. "
         "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn. "
         "Self-check before output: "
-        "Verify the repaired JSON still matches the schema, preserves turnId values, keeps summary at 2 short Korean sentences by default, keeps Direct want + concrete service item responses as feedbackRequired=true, does not quote English utterances in nativeUnderstanding, does not invent a service item for incomplete or generic responses, and leaves clear preference or option answers feedbackRequired=false when they directly answer the question."
+        "Verify the repaired JSON still matches the schema, preserves turnId values, keeps summary at 2 short Korean sentences by default, keeps Direct want + concrete service item responses as feedbackRequired=true, does not quote English utterances in nativeUnderstanding, does not invent a service item for incomplete or generic responses, and leaves clear preference or option answers feedbackRequired=false when they directly answer the question. "
+        "Verify the repaired JSON does not invent any purpose, country, city, accommodation, destination, or user intent."
     )
 
 
@@ -1647,7 +1649,7 @@ def _problem_better_expression_for_turn(turn: FeedbackTurnRequest) -> str:
 
 def _grounded_better_expression_override(turn: FeedbackTurnRequest) -> str | None:
     if _is_name_only_answer_to_purpose_question(turn):
-        return "I'm here to study. 이렇게 말하면 이름이 아니라 방문 목적을 답할 수 있어요."
+        return "I'm here to study. 예시 답변으로, 이름이 아니라 방문 목적을 답할 때 쓸 수 있어요."
     if _is_compound_study_answer_to_purpose_question(turn):
         return "I'm here to study. 이렇게 말하면 붙어 들리는 단어를 방문 목적 답변으로 분명하게 바꿀 수 있어요."
     return None
@@ -2443,17 +2445,15 @@ def _slot_requires_request_act(slot: SlotStatusRequest) -> bool:
 
 
 def _slot_describes_duration(slot: SlotStatusRequest) -> bool:
-    compact = _normalize_utterance(
-        " ".join([
-            slot.description,
-            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
-        ])
-    )
+    compact = _slot_intent_text(slot)
     markers = (
         "기간",
-        "머무를",
-        "체류",
         "출국",
+        "예정 시점",
+        "얼마나",
+        "며칠",
+        "몇 주",
+        "몇 달",
         "duration",
         "how long",
         "days",
@@ -2468,12 +2468,7 @@ def _slot_describes_duration(slot: SlotStatusRequest) -> bool:
 
 
 def _slot_describes_accommodation(slot: SlotStatusRequest) -> bool:
-    compact = _normalize_utterance(
-        " ".join([
-            slot.description,
-            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
-        ])
-    )
+    compact = _slot_intent_text(slot)
     markers = (
         "숙소",
         "호텔",
@@ -2491,12 +2486,7 @@ def _slot_describes_accommodation(slot: SlotStatusRequest) -> bool:
 
 
 def _slot_describes_visit_purpose(slot: SlotStatusRequest) -> bool:
-    compact = _normalize_utterance(
-        " ".join([
-            slot.description,
-            " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
-        ])
-    )
+    compact = _slot_intent_text(slot)
     markers = (
         "방문 목적",
         "목적",
@@ -2508,6 +2498,14 @@ def _slot_describes_visit_purpose(slot: SlotStatusRequest) -> bool:
         "visit",
     )
     return any(marker in compact for marker in markers)
+
+
+def _slot_intent_text(slot: SlotStatusRequest) -> str:
+    raw = " ".join([
+        slot.description,
+        " ".join(slot.evidencePolicy.hints if slot.evidencePolicy else []),
+    ]).lower()
+    return f"{raw} {_normalize_utterance(raw)}"
 
 
 def _question_asks_duration(question: str) -> bool:

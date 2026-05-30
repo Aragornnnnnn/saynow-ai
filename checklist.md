@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## prompt-engineering-patterns 기준 보강
+
+- [x] next-question few-shot 예시가 Output Schema와 같은 필드를 쓰는지 RED 테스트를 추가한다.
+- [x] 한국어 slot description만으로도 duration intent를 판정하는 RED 테스트를 추가한다.
+- [x] feedback self-check가 목적, 국가, 장소, 의도 hallucination을 다시 검증하는 RED 테스트를 추가한다.
+- [x] 이름만 말한 발화의 betterExpression이 예시 답변임을 명확히 드러내는 RED 테스트를 추가한다.
+- [x] 프롬프트와 후처리 보강을 구현한다.
+- [x] 관련 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## scenario 207 슬롯 판정과 피드백 grounding 개선
 
 - [x] 세션 207 문제를 작업 기록에 남긴다.
