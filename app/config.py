@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_environment: str = "local"
     sentry_traces_sample_rate: float = 0.0
+    sentry_max_breadcrumbs: int = 100
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

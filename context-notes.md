@@ -8,6 +8,9 @@
 - 2026-05-30 LLM 호출 실패, 모델 JSON 파싱 실패, 피드백과 가이드 응답 계약 검증 실패, 턴 ID 불일치 지점에 원인 로그를 추가했다. 긴 프롬프트 전체는 로그로 남기지 않고 JSON preview도 240자로 제한한다.
 - 2026-05-30 timing 로그는 `AI workflow 단계 소요 시간 | workflow=<name> stage=<name> duration_ms=<ms>` 형식이다. 대상 workflow는 `next_question`, `feedback`, `feedback_summary`, `turn_feedback`, `feedback_review`, `feedback_repair`, `guide`다.
 - 2026-05-30 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 110개 통과, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests` 통과, `git diff --check` 통과로 확인했다.
+- 2026-05-30 Sentry DSN은 repo나 README에 실제 값을 남기지 않고 SSM Parameter Store에 저장한다. develop은 `/saynow/develop/SENTRY_DSN`, prod는 `/saynow/prod/SENTRY_DSN`이며, 기존 deploy workflow가 해당 경로를 `.env`로 변환한다.
+- 2026-05-30 Sentry breadcrumb는 Python logging integration으로 처리한다. INFO 이상 로그를 breadcrumb로 남기고, logging integration의 `event_level`은 `None`으로 둬 `logger.exception`과 `capture_exception`이 같은 오류를 중복 이벤트로 보내지 않게 한다.
+- 2026-05-30 Sentry breadcrumb 보강 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 111개 통과, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests` 통과, `git diff --check` 통과로 확인했다.
 - `main`은 1차 MVP 운영 코드이고, `develop`은 2차 MVP 개발 브랜치다.
 - 2차 MVP AI 서버는 백엔드가 호출하는 내부 API만 제공한다. 인증은 애플리케이션 코드가 아니라 AWS Security Group 경계에서 처리한다.
 - 1차 MVP의 오디오 업로드, Whisper STT, OpenAI TTS, `/api/v1/turn-evaluations`, `/api/v1/session-feedbacks`는 하위 호환 없이 제거해도 된다.

@@ -176,10 +176,13 @@ Sentry DSN이 없으면 Sentry 초기화는 비활성화됩니다. DSN이 전달
 SENTRY_DSN=
 SENTRY_ENVIRONMENT=develop
 SENTRY_TRACES_SAMPLE_RATE=0.0
+SENTRY_MAX_BREADCRUMBS=100
 LOG_LEVEL=INFO
 ```
 
 AI workflow는 주요 단계별 소요 시간을 `workflow`, `stage`, `duration_ms` 형태로 남깁니다. 현재 대상은 `next_question`, `feedback`, `feedback_summary`, `turn_feedback`, `feedback_review`, `feedback_repair`, `guide`입니다.
+
+배포 workflow는 SSM Parameter Store의 `/saynow/develop` 또는 `/saynow/prod` 경로를 `.env`로 변환합니다. DSN은 코드에 넣지 말고 `SENTRY_DSN` 파라미터로 저장합니다. 일반 로그는 INFO 이상을 Sentry breadcrumb로 붙이고, 오류 이벤트는 API 라우터와 전역 500 handler의 `capture_exception` 경계에서 전송합니다.
 
 ## Development
 

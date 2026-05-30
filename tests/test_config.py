@@ -40,11 +40,13 @@ class ConfigTest(unittest.TestCase):
             sentry_dsn="https://public@example.ingest.sentry.io/123",
             sentry_environment="develop",
             sentry_traces_sample_rate=0.25,
+            sentry_max_breadcrumbs=150,
         )
 
         self.assertEqual(settings.sentry_dsn, "https://public@example.ingest.sentry.io/123")
         self.assertEqual(settings.sentry_environment, "develop")
         self.assertEqual(settings.sentry_traces_sample_rate, 0.25)
+        self.assertEqual(settings.sentry_max_breadcrumbs, 150)
 
 
 if __name__ == "__main__":

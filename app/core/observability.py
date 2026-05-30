@@ -8,6 +8,8 @@ from app.core.logger import get_logger
 
 logger = get_logger("observability")
 _sentry_initialized = False
+SENTRY_BREADCRUMB_LOG_LEVEL = logging.INFO
+SENTRY_EVENT_LOG_LEVEL = None
 
 
 def init_sentry(
@@ -32,16 +34,13 @@ def init_sentry(
         fastapi_integration_cls = fastapi_integration_cls or imported_fastapi_cls
         logging_integration_cls = logging_integration_cls or imported_logging_cls
 
-    integrations = []
-    if fastapi_integration_cls is not None:
-        integrations.append(fastapi_integration_cls())
-    if logging_integration_cls is not None:
-        integrations.append(logging_integration_cls(level=logging.INFO, event_level=logging.ERROR))
+    integrations = _build_sentry_integrations(fastapi_integration_cls, logging_integration_cls)
 
     sentry_sdk.init(
         dsn=dsn,
         environment=config.sentry_environment,
         traces_sample_rate=config.sentry_traces_sample_rate,
+        max_breadcrumbs=config.sentry_max_breadcrumbs,
         integrations=integrations,
         send_default_pii=False,
     )
@@ -53,6 +52,21 @@ def init_sentry(
         config.sentry_traces_sample_rate,
     )
     return True
+
+
+def _build_sentry_integrations(
+    fastapi_integration_cls: type | None,
+    logging_integration_cls: type | None,
+) -> list[Any]:
+    integrations = []
+    if fastapi_integration_cls is not None:
+        integrations.append(fastapi_integration_cls())
+    if logging_integration_cls is not None:
+        integrations.append(logging_integration_cls(
+            level=SENTRY_BREADCRUMB_LOG_LEVEL,
+            event_level=SENTRY_EVENT_LOG_LEVEL,
+        ))
+    return integrations
 
 
 def capture_exception(exc: BaseException, *, sentry_sdk_module: Any | None = None) -> bool:

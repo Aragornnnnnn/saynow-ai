@@ -2,6 +2,11 @@
 
 ## 관측성 로깅과 Sentry 추가
 
+- [x] Sentry DSN은 SSM의 `/saynow/develop/SENTRY_DSN` 또는 `/saynow/prod/SENTRY_DSN`에 두는 것으로 정리한다.
+- [x] 일반 로그가 Sentry breadcrumb로 붙도록 logging integration 설정을 명시하고 테스트한다.
+- [x] 오류 로그와 `capture_exception`이 중복 이벤트를 만들지 않도록 logging event capture를 비활성화한다.
+- [x] breadcrumb 설정과 SSM 적용 방식을 README와 context-notes에 기록한다.
+- [x] 관련 단위 테스트, compileall, diff check를 다시 실행한다.
 - [x] 현재 로깅, 설정, LLM 호출 구조를 확인한다.
 - [x] Sentry DSN이 없으면 초기화하지 않는 설정 테스트를 추가한다.
 - [x] Sentry DSN이 있으면 초기화 옵션이 적용되는 테스트를 추가한다.
