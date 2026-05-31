@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-05-31 응답 지연 추가 개선은 main `next_question` LLM 호출 자체를 줄이는 방향으로 진행한다. BE 재현 `duplicate-question-repro-002`의 4턴은 `I don't know what option I can do`가 최종적으로 `ANSWER`가 됐지만, 보정이 main LLM 이후에 적용되어 `aiCallMs=5717ms`가 남았다. 남은 슬롯이 요청형 semantic slot 하나이고 최신 발화가 target slot의 request act를 명확히 만족하면 RAG, main LLM, semantic verifier 없이 `ANSWER`와 `nextQuestion=null`을 반환할 수 있다.
+- 2026-05-31 구현은 `generate_next_question()`의 안전 정책, repeat fast-path, invalid fragment guard 이후에 `_try_complete_with_deterministic_evidence()`를 둔다. 이 함수는 기존 `_add_deterministic_evidence_slots()` 결과가 모든 미충족 슬롯을 채울 때만 조기 종료한다. 남은 슬롯이 있으면 기존 LLM 경로를 유지하므로 compound answer나 다음 질문 생성이 필요한 케이스를 과감하게 생략하지 않는다.
 - 2026-05-31 `Parden Can you tell again?`는 자연어로는 요청이지만, SayNow의 기존 `ASSISTANCE_REQUEST` 의미인 시나리오 내부 도움, 메뉴, 추천, 선택지 요청과는 다르다. UX상 하트를 깎지 않고 직전 질문을 다시 보여주는 별도 `REPEAT_REQUEST`가 맞으며, AI 서버에서는 RAG와 LLM 호출 전에 deterministic fast-path로 끝내는 방향으로 잡는다.
 - 2026-05-31 BE 적용 후 repeat 요청은 `200`, `aiCallMs=99`, `totalMs=1223`으로 확인되어 기존 9초에서 11초대 병목은 사라졌다. 남은 차이는 한국어 번역이 직전 문구 그대로가 아니라 target slot fallback 문구로 재계산되는 점이다.
 - 2026-05-31 번역까지 완전히 같은 질문을 반복하려면 AI가 원문 번역을 새로 추론하면 안 된다. BE가 현재 턴의 `session_turns.translated_question`을 `originalTranslatedQuestion`으로 넘기고, AI는 `REPEAT_REQUEST`에서 그 값을 그대로 반환하는 계약으로 고정한다. 이 필드는 optional로 받아 기존 BE 요청은 fallback 번역을 유지한다.

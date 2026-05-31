@@ -1446,6 +1446,56 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.nextQuestion)
         self.assertIsNone(result.translatedQuestion)
 
+    def test_next_question_completes_final_deterministic_request_slot_without_model_call(self):
+        from app.models.conversation import NextQuestionRequest
+
+        test_case = self
+
+        class FailingAssistanceKnowledgeStore:
+            def find_reusable_answer(self, request):
+                test_case.fail("final deterministic slot completion should not call RAG lookup")
+
+            def save_interaction(self, request, response, *, answer_source):
+                test_case.fail("final deterministic slot completion should not save RAG interaction")
+
+        self.service.assistance_knowledge_store = FailingAssistanceKnowledgeStore()
+
+        def fail_chat(*args, **kwargs):
+            self.fail("final deterministic slot completion should not call the model")
+
+        self.service.chat = fail_chat
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like me to help you with next?",
+            "originalQuestionTargetSlotName": "available_options_inquiry",
+            "userUtterance": "I don't know what option I can do",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물이 파손되어 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "available_options_inquiry",
+                    "description": "사용자가 다음 조치나 가능한 선택지를 요청했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["options", "what can I do", "alternative flight", "rebook"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["available_options_inquiry"])
+        self.assertIsNone(result.nextQuestion)
+        self.assertIsNone(result.translatedQuestion)
+        self.assertIsNone(result.nextQuestionTargetSlotName)
+        self.assertEqual(result.turnClassification, "ANSWER")
+
     def test_next_question_treats_indirect_option_request_as_assistance_when_target_is_different(self):
         from app.models.conversation import NextQuestionRequest
 

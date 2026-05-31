@@ -91,6 +91,15 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         return _retry_question_for_slot(unfilled_slot_names[0])
 
     stage_started_at = time.perf_counter()
+    deterministic_completion_response = _try_complete_with_deterministic_evidence(
+        request,
+        unfilled_slot_names,
+    )
+    if deterministic_completion_response is not None:
+        _log_workflow_stage_duration(workflow, "deterministic_completion", stage_started_at)
+        return deterministic_completion_response
+
+    stage_started_at = time.perf_counter()
     retrieved_assistance_answer = _find_reusable_assistance_answer(request)
     _log_workflow_stage_duration(workflow, "rag_lookup", stage_started_at)
     stage_started_at = time.perf_counter()
@@ -942,6 +951,32 @@ def _repeat_previous_question(
         nextQuestionTargetSlotName=target_slot_name,
         filledSlots=[],
         turnClassification=NextQuestionTurnClassification.REPEAT_REQUEST,
+    )
+
+
+def _try_complete_with_deterministic_evidence(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+) -> NextQuestionResponse | None:
+    filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, [])
+    if not filled_slots:
+        return None
+
+    filled_slot_names = {slot.slotName for slot in filled_slots}
+    remaining_slot_names = [
+        slot_name
+        for slot_name in unfilled_slot_names
+        if slot_name not in filled_slot_names
+    ]
+    if remaining_slot_names:
+        return None
+
+    return NextQuestionResponse(
+        nextQuestion=None,
+        translatedQuestion=None,
+        nextQuestionTargetSlotName=None,
+        filledSlots=filled_slots,
+        turnClassification=NextQuestionTurnClassification.ANSWER,
     )
 
 

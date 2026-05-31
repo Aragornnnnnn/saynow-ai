@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AI deterministic completion fast-path
+
+- [x] 남은 요청형 슬롯 하나를 로컬 정책으로 채울 수 있는데도 main LLM을 호출하는 RED 테스트를 추가한다.
+- [x] 해당 케이스에서 RAG lookup, main LLM, semantic verifier, RAG save를 모두 건너뛰도록 구현한다.
+- [x] 슬롯명이나 airport 도메인에 의존하지 않고 `evidencePolicy`, target slot, request act 기준으로 처리한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] `SayNow AI 병목 제거 작업 2026-05-31` 하위 문서에 개선 이유와 기대 효과를 정리한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## repeat request 별도 분류와 빠른 재질문
 
 - [x] `Parden Can you tell again?` 같은 반복 요청이 `REPEAT_REQUEST`가 되는 RED 테스트를 추가한다.
