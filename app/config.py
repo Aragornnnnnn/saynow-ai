@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     assistance_rag_match_threshold: float = 0.78
     assistance_rag_match_count: int = 3
     assistance_rag_candidate_repeat_threshold: int = 2
+    semantic_evidence_timeout_seconds: float = 3.0
     log_level: str = "INFO"
     sentry_dsn: str | None = None
     sentry_environment: str = "local"

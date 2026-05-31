@@ -55,6 +55,13 @@ class ConfigTest(unittest.TestCase):
 
         self.assertFalse(settings.assistance_rag_enabled)
 
+    def test_semantic_evidence_timeout_defaults_to_three_seconds(self):
+        from app.config import Settings
+
+        settings = Settings(openai_api_key="test-key")
+
+        self.assertEqual(settings.semantic_evidence_timeout_seconds, 3.0)
+
 
 if __name__ == "__main__":
     unittest.main()

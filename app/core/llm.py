@@ -44,17 +44,26 @@ MODEL = OPTIONS.model
 logger = get_logger("llm")
 
 
-def chat(system: str, user: str, max_tokens: int = 1024, temperature: float = 0) -> str:
+def chat(
+    system: str,
+    user: str,
+    max_tokens: int = 1024,
+    temperature: float = 0,
+    timeout: float | None = None,
+) -> str:
     logger.debug("LLM 호출 | user_prompt_preview: %s", user[:100].replace("\n", " "))
-    response = client.chat.completions.create(
-        model=MODEL,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        messages=[
+    request_options = {
+        "model": MODEL,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-    )
+    }
+    if timeout is not None:
+        request_options["timeout"] = timeout
+    response = client.chat.completions.create(**request_options)
     result = response.choices[0].message.content
     logger.debug("LLM 응답 | preview: %s", result[:100].replace("\n", " "))
     return result

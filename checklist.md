@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## AI 대화 턴 지연 3차 개선
+
+- [x] deterministic completion skip reason 로그를 추가한다.
+- [x] target request slot local accept로 semantic verifier 호출을 보수적으로 줄인다.
+- [x] `next_options_request` 최종 완료 fast-path를 실제 슬롯명으로 고정한다.
+- [x] `next_question_semantic_evidence` timeout 설정과 fail-closed 동작을 추가한다.
+- [x] 일반 슬롯 답변 경로의 next-question prompt와 max token을 줄인다.
+- [x] 관련 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] Obsidian 병목 제거 문서에 변경 이유와 검증 결과를 이어서 정리한다.
+
 ## Assistance RAG 기본 비활성화
 
 - [x] `assistance_rag_enabled` 기본값이 false인 RED 테스트를 추가한다.

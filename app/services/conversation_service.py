@@ -1,5 +1,6 @@
 # 2차 MVP 대화 API의 LLM 호출과 응답 정규화를 담당한다.
 from functools import wraps
+import inspect
 import json
 import re
 import time
@@ -7,6 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.config import settings
 from app.core.llm import chat
 from app.core.logger import get_logger
 from app.core.request_context import get_request_id
@@ -98,17 +100,24 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if deterministic_completion_response is not None:
         _log_workflow_stage_duration(workflow, "deterministic_completion", stage_started_at)
         return deterministic_completion_response
+    _log_deterministic_completion_skip(request, unfilled_slot_names)
 
     retrieved_assistance_answer = None
     if _assistance_rag_is_enabled():
         stage_started_at = time.perf_counter()
         retrieved_assistance_answer = _find_reusable_assistance_answer(request)
         _log_workflow_stage_duration(workflow, "rag_lookup", stage_started_at)
+    assistance_prompt_mode = _should_use_assistance_prompt_mode(request)
     stage_started_at = time.perf_counter()
     raw = _call_chat(
-        _next_question_system_prompt(),
-        _next_question_user_prompt(request, unfilled_slot_names, retrieved_assistance_answer),
-        max_tokens=512,
+        _next_question_system_prompt(include_assistance_examples=assistance_prompt_mode),
+        _next_question_user_prompt(
+            request,
+            unfilled_slot_names,
+            retrieved_assistance_answer,
+            include_assistance_context=assistance_prompt_mode,
+        ),
+        max_tokens=384,
         temperature=0,
         workflow=workflow,
     )
@@ -441,8 +450,8 @@ def _simple_better_expression_for_question(original_question: str) -> str:
     return "I'd like a coffee, please. 이렇게 말하면 원하는 음료를 명확하게 주문할 수 있어요."
 
 
-def _next_question_system_prompt() -> str:
-    return "\n\n".join([
+def _next_question_system_prompt(*, include_assistance_examples: bool = True) -> str:
+    sections = [
         (
             "Role:\n"
             "You generate follow-up questions for an English speaking practice scenario.\n"
@@ -494,15 +503,29 @@ def _next_question_system_prompt() -> str:
             "A repeat-seeking utterance asks to hear the previous question again and should be REPEAT_REQUEST, not ASSISTANCE_REQUEST. Examples include Pardon?, Parden Can you tell again?, Can you say that again?, and One more time please.\n"
             "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything."
         ),
-        (
-            "Context Policy:\n"
-            "Use aiRole as the role you are playing and scenarioSituation as the user's situation.\n"
-            "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, recommendation, options, rules, ingredients, policy, or details, answer the request briefly before asking the next short scenario question.\n"
-            "If retrieved assistance context is provided, use it as the factual basis for the assistance answer.\n"
-            "If no retrieved assistance context is provided, generate a plausible role-play answer that fits the scenario, then return to the current scenario question.\n"
-            "For recommendation requests, name one concrete plausible option. For menu or option requests, name two to four concrete plausible choices.\n"
-            "Do not answer assistance requests with empty phrases such as Here are the options or Here is the menu unless you also include useful concrete information."
-        ),
+    ]
+
+    if include_assistance_examples:
+        sections.append(
+            (
+                "Context Policy:\n"
+                "Use aiRole as the role you are playing and scenarioSituation as the user's situation.\n"
+                "The user can only use information that appears in your nextQuestion, so when the user asks for a menu, recommendation, options, rules, ingredients, policy, or details, answer the request briefly before asking the next short scenario question.\n"
+                "If retrieved assistance context is provided, use it as the factual basis for the assistance answer.\n"
+                "If no retrieved assistance context is provided, generate a plausible role-play answer that fits the scenario, then return to the current scenario question.\n"
+                "For recommendation requests, name one concrete plausible option. For menu or option requests, name two to four concrete plausible choices.\n"
+                "Do not answer assistance requests with empty phrases such as Here are the options or Here is the menu unless you also include useful concrete information."
+            )
+        )
+    else:
+        sections.append(
+            (
+                "Context Policy:\n"
+                "Use aiRole as the role you are playing and scenarioSituation as the user's situation."
+            )
+        )
+
+    sections.extend([
         (
             "Response Policy:\n"
             "If all currently unfilled slots are newly satisfied, set nextQuestion and translatedQuestion to null.\n"
@@ -513,25 +536,43 @@ def _next_question_system_prompt() -> str:
             "Ask about one primary target slot only. Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
             "Use only the provided slot names."
         ),
+    ])
+
+    few_shot_examples = []
+    if include_assistance_examples:
+        few_shot_examples.extend([
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.',
+            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.',
+            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.',
+            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.',
+        ])
+    few_shot_examples.extend([
+        'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"nextQuestionTargetSlotName":null,"turnClassification":"ANSWER"}.',
+    ])
+    if include_assistance_examples:
+        few_shot_examples.append(
+            'Input: Previous AI question=Could you explain what happened with your baggage? User utterance=I don\'t know what option I can do. Unfilled slots=baggage_issue_detail,next_options_request. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"You may be able to ask for rebooking or another available flight. Could you explain what happened with your baggage?","translatedQuestion":"재예약이나 다른 이용 가능한 항공편을 요청할 수 있어요. 수하물에 어떤 일이 있었는지 설명해 주시겠어요?","nextQuestionTargetSlotName":"baggage_issue_detail","turnClassification":"ASSISTANCE_REQUEST"}.'
+        )
+    few_shot_examples.extend([
+        'Input: Previous AI question=What drink would you like to order? User utterance=Pardon, can you say that again? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"REPEAT_REQUEST"}.',
+        'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"INVALID_RESPONSE"}.',
+    ])
+    sections.append(
         (
             "Few-shot Examples:\n"
             "Few-shot calibration examples use the same schema as the required output.\n"
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can you recommend something? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"I recommend an iced latte. What would you like to order?","translatedQuestion":"아이스 라떼를 추천해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I need a menu. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We have Americano, latte, and tea. What would you like to order?","translatedQuestion":"아메리카노, 라떼, 차가 있어요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"nextQuestionTargetSlotName":null,"turnClassification":"ANSWER"}.\n'
-            'Input: Previous AI question=Could you explain what happened with your baggage? User utterance=I don\'t know what option I can do. Unfilled slots=baggage_issue_detail,next_options_request. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"You may be able to ask for rebooking or another available flight. Could you explain what happened with your baggage?","translatedQuestion":"재예약이나 다른 이용 가능한 항공편을 요청할 수 있어요. 수하물에 어떤 일이 있었는지 설명해 주시겠어요?","nextQuestionTargetSlotName":"baggage_issue_detail","turnClassification":"ASSISTANCE_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=Pardon, can you say that again? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"REPEAT_REQUEST"}.\n'
-            'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"INVALID_RESPONSE"}.'
-        ),
-    ])
+            + "\n".join(few_shot_examples)
+        )
+    )
+    return "\n\n".join(sections)
 
 
 def _next_question_user_prompt(
     request: NextQuestionRequest,
     unfilled_slot_names: list[str],
     retrieved_assistance_answer: str | None = None,
+    *,
+    include_assistance_context: bool = True,
 ) -> str:
     slot_lines = "\n".join(
         _format_slot_line(slot)
@@ -544,7 +585,7 @@ def _next_question_user_prompt(
     )
     primary_target_slot = unfilled_slot_names[0] if unfilled_slot_names else "None"
     retrieved_assistance_context = retrieved_assistance_answer or "None"
-    return (
+    prompt = (
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario situation: {request.scenarioSituation}\n"
         f"AI role: {request.aiRole}\n"
@@ -554,9 +595,11 @@ def _next_question_user_prompt(
         f"User utterance: {request.userUtterance}\n\n"
         f"Current slot state:\n{slot_lines}\n\n"
         f"Only these unfilled slots may be newly filled or asked about:\n{unfilled_lines}\n\n"
-        f"Primary target slot for the next follow-up question: {primary_target_slot}\n\n"
-        f"Retrieved assistance context:\n{retrieved_assistance_context}"
+        f"Primary target slot for the next follow-up question: {primary_target_slot}"
     )
+    if include_assistance_context:
+        prompt += f"\n\nRetrieved assistance context:\n{retrieved_assistance_context}"
+    return prompt
 
 
 def _guide_system_prompt() -> str:
@@ -980,6 +1023,62 @@ def _try_complete_with_deterministic_evidence(
         filledSlots=filled_slots,
         turnClassification=NextQuestionTurnClassification.ANSWER,
     )
+
+
+def _log_deterministic_completion_skip(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+) -> None:
+    filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, [])
+    skip_reason = _deterministic_completion_skip_reason(request, unfilled_slot_names, filled_slots)
+    logger.info(
+        "deterministic completion skip | requestId=%s unfilledSlotCount=%s targetSlotName=%s acceptedSlotCount=%s skipReason=%s",
+        _request_id_for_log(),
+        len(unfilled_slot_names),
+        request.originalQuestionTargetSlotName or "-",
+        len(filled_slots),
+        skip_reason,
+    )
+
+
+def _deterministic_completion_skip_reason(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    filled_slots: list[FilledSlotResponse],
+) -> str:
+    if not filled_slots:
+        return _deterministic_evidence_absent_reason(request, unfilled_slot_names)
+    if len(filled_slots) < len(unfilled_slot_names):
+        return "partial_deterministic_evidence"
+    return "unknown"
+
+
+def _deterministic_evidence_absent_reason(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+) -> str:
+    target_slot_name = request.originalQuestionTargetSlotName
+    if not target_slot_name:
+        return "missing_target_slot"
+    if target_slot_name not in set(unfilled_slot_names):
+        return "target_slot_not_unfilled"
+
+    target_slot = next((slot for slot in request.slots if slot.slotName == target_slot_name), None)
+    if target_slot is None:
+        return "target_slot_not_found"
+    if target_slot.evidencePolicy is None or target_slot.evidencePolicy.mode != EvidencePolicyMode.SEMANTIC_EVIDENCE:
+        return "target_slot_not_semantic_evidence"
+    if not _slot_requires_request_act(target_slot):
+        return "target_slot_not_request_slot"
+    if not _evidence_text_contains_request_act(request.userUtterance):
+        return "request_act_not_found"
+    if not _question_targets_slot(request.userUtterance, target_slot):
+        return "utterance_not_targeting_slot"
+    return "no_deterministic_evidence"
+
+
+def _should_use_assistance_prompt_mode(request: NextQuestionRequest) -> bool:
+    return _is_actual_assistance_request(request)
 
 
 def _is_repeat_request(user_utterance: str) -> bool:
@@ -2472,19 +2571,41 @@ def _call_chat(
     temperature: float,
     *,
     workflow: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> str:
     try:
-        return chat(system, user, max_tokens=max_tokens, temperature=temperature)
+        kwargs: dict[str, Any] = {
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if timeout_seconds is not None and _callable_accepts_keyword(chat, "timeout"):
+            kwargs["timeout"] = timeout_seconds
+        return chat(system, user, **kwargs)
     except Exception as exc:
         logger.error(
-            "LLM 호출 실패 | workflow=%s max_tokens=%s temperature=%s error=%s",
+            "LLM 호출 실패 | workflow=%s max_tokens=%s temperature=%s timeout_seconds=%s error=%s",
             workflow or "unknown",
             max_tokens,
             temperature,
+            timeout_seconds,
             exc,
             exc_info=(type(exc), exc, exc.__traceback__),
         )
         raise ConversationGenerationError("model call failed") from exc
+
+
+def _callable_accepts_keyword(func: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return True
+
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == keyword:
+            return True
+    return False
 
 
 def _log_preview(value: str, limit: int = 240) -> str:
@@ -2738,6 +2859,8 @@ def _slot_evidence_policy_local_decision(
         semantic_evidence_text = evidence_text or request.userUtterance
         if _slot_requires_request_act(slot) and not _evidence_text_contains_request_act(semantic_evidence_text):
             return False
+        if _slot_accepts_deterministic_evidence(slot, request):
+            return True
         return None
 
     return False
@@ -3088,8 +3211,15 @@ def _semantic_evidence_supports_candidates(
     )
     try:
         stage_started_at = time.perf_counter()
-        max_tokens = min(512, 80 + 60 * len(candidates))
-        raw = _call_chat(system, user, max_tokens=max_tokens, temperature=0, workflow=workflow)
+        max_tokens = min(320, 80 + 50 * len(candidates))
+        raw = _call_chat(
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=0,
+            workflow=workflow,
+            timeout_seconds=settings.semantic_evidence_timeout_seconds,
+        )
         _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
         stage_started_at = time.perf_counter()
         data = _parse_json_object(raw, workflow=workflow)
