@@ -1838,6 +1838,173 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.nextQuestion, "Could you explain what happened with your baggage?")
         self.assertEqual(result.translatedQuestion, "수하물에 어떤 일이 있었는지 설명해 주시겠어요?")
 
+    def test_next_question_rewrites_slot_name_fallback_for_missed_connection(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Oh, you look worried. What's going on?",
+            "userUtterance": "Oh I miss my airport",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "Gate B에서 출발한 환승편을 이미 놓친 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "환승편을 놓친 사실과 관련된 수하물 문제를 설명하고 다음 조치를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 이미 놓쳤거나 비행기가 이미 출발했다고 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "missed my flight", "flight already left"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "Could you tell me your missed connection?",
+            "translatedQuestion": "missed_connection 정보를 알려주시겠어요?",
+            "nextQuestionTargetSlotName": "missed_connection",
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.nextQuestionTargetSlotName, "missed_connection")
+        self.assertEqual(result.nextQuestion, "What happened with your connecting flight?")
+        self.assertEqual(result.translatedQuestion, "환승편에 어떤 일이 있었는지 말씀해 주시겠어요?")
+        self.assertNotIn("missed_connection", result.translatedQuestion)
+
+    def test_next_question_uses_generic_safe_fallback_for_unknown_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you explain that?",
+            "userUtterance": "I am not sure",
+            "scenarioTitle": "새 시나리오",
+            "scenarioSituation": "새로운 서비스 상황입니다.",
+            "aiRole": "서비스 직원",
+            "scenarioGoal": "필요한 정보를 설명할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "unusual_internal_slot",
+                    "description": "사용자가 아직 분류되지 않은 새 업무 정보를 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["unusual marker"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "Could you tell me your unusual internal slot?",
+            "translatedQuestion": "unusual_internal_slot 정보를 알려주시겠어요?",
+            "nextQuestionTargetSlotName": "unusual_internal_slot",
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.nextQuestion, "Could you explain that part a little more?")
+        self.assertEqual(result.translatedQuestion, "그 부분을 조금 더 설명해 주시겠어요?")
+        self.assertNotIn("unusual_internal_slot", result.translatedQuestion)
+        self.assertNotIn("unusual internal slot", result.nextQuestion.lower())
+
+    def test_next_question_prompt_self_check_blocks_visible_slot_names(self):
+        prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("visible fields", prompt)
+        self.assertIn("slot keys", prompt)
+
+    def test_next_question_fills_baggage_issue_detail_after_db_slot_update(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you explain what happened with your baggage?",
+            "originalQuestionTargetSlotName": "baggage_issue_detail",
+            "userUtterance": "My baggage is broken",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "Gate B에서 출발한 환승편을 이미 놓쳤고, 수하물 문제도 함께 처리해야 하는 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "환승편을 놓친 사실과 관련된 수하물 문제를 설명하고, 다음 조치나 대체편을 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 이미 놓쳤거나 비행기가 이미 출발했다고 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "missed my flight"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "baggage_issue_detail",
+                    "description": "사용자가 수하물 지연, 파손, 분실, 수령 지연 등 환승 상황과 관련된 수하물 문제가 무엇인지 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage issue", "damaged baggage", "my baggage is broken"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "next_options_request",
+                    "description": "사용자가 다음에 무엇을 해야 하는지, 대체 항공편이나 재예약 가능 여부를 물었는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["next flight", "another flight", "rebook", "what should I do"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = [
+            {
+                "filledSlots": [{"slotName": "baggage_issue_detail"}],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "baggage_issue_detail",
+                        "evidenceText": "My baggage is broken",
+                        "understoodMeaning": "The user's baggage was broken.",
+                        "confidence": "high",
+                    }
+                ],
+                "nextQuestion": "What would you like me to help you with next?",
+                "translatedQuestion": "다음에 무엇을 도와드릴까요?",
+                "nextQuestionTargetSlotName": "next_options_request",
+                "turnClassification": "ANSWER",
+            },
+            {
+                "results": [
+                    {"candidateId": "baggage_issue_detail#candidate", "supportsSlot": True},
+                ],
+            },
+        ]
+
+        def sequential_chat(*args, **kwargs):
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["baggage_issue_detail"])
+        self.assertEqual(result.nextQuestionTargetSlotName, "next_options_request")
+        self.assertEqual(result.nextQuestion, "What would you like me to help you with next?")
+
     def test_next_question_allows_compound_target_answer_and_indirect_request_slot(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -5119,6 +5286,204 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(result.turnFeedbacks[0].nativeUnderstanding)
         self.assertIsNone(result.turnFeedbacks[0].nativeLanguageInterpretation)
         self.assertIsNone(result.turnFeedbacks[0].betterExpression)
+
+    def test_feedback_uses_baggage_context_for_i_dont_know(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 문제도 함께 처리해야 하는 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "환승편을 놓친 사실과 관련된 수하물 문제를 설명하고 다음 조치를 요청할 수 있다.",
+            "sessionResult": "FAILURE",
+            "slots": [
+                {
+                    "slotName": "baggage_issue_detail",
+                    "description": "사용자가 수하물 지연, 파손, 분실 등 수하물 문제가 무엇인지 설명했는지 여부",
+                    "filled": False,
+                }
+            ],
+            "turns": [
+                {
+                    "turnId": 762,
+                    "originalQuestion": "Could you explain what happened with your baggage?",
+                    "userUtterance": "I don't know",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 50,
+                "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 다음에는 질문에 맞는 핵심 정보를 먼저 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 762,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요.",
+                        "betterExpression": "I'm not sure what happened to my baggage. 이렇게 말하면 수하물 상황을 모른다고 더 정확히 말할 수 있어요.",
+                    }
+                ],
+            },
+            {"pass": True, "issues": []},
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+
+        result = self.service.generate_feedback(request)
+        feedback = result.turnFeedbacks[0]
+
+        self.assertTrue(feedback.feedbackRequired)
+        self.assertIn("수하물", feedback.nativeUnderstanding)
+        self.assertIn("수하물", feedback.nativeLanguageInterpretation)
+        self.assertNotIn("주문", feedback.nativeUnderstanding)
+        self.assertNotIn("주문", feedback.nativeLanguageInterpretation)
+
+    def test_feedback_keeps_order_context_for_i_dont_know(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "카페에서 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "sessionResult": "FAILURE",
+            "slots": [
+                {"slotName": "drink", "description": "사용자가 원하는 음료를 말했는지 여부", "filled": False}
+            ],
+            "turns": [
+                {
+                    "turnId": 601,
+                    "originalQuestion": "What would you like to order?",
+                    "userUtterance": "I don't know",
+                }
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 50,
+                "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 다음에는 질문에 맞는 핵심 정보를 먼저 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 601,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 사용자가 질문에 대한 답을 모르겠다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '질문에 답을 모르겠어요'처럼 들려요.",
+                        "betterExpression": "I'm not sure what to order. 이렇게 말하면 주문할 음료를 모르겠다고 더 분명하게 말할 수 있어요.",
+                    }
+                ],
+            },
+            {"pass": True, "issues": []},
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+
+        result = self.service.generate_feedback(request)
+        feedback = result.turnFeedbacks[0]
+
+        self.assertIn("주문", feedback.nativeUnderstanding)
+        self.assertIn("주문", feedback.nativeLanguageInterpretation)
+
+    def test_feedback_repairs_mixed_feedback_required_for_identical_turn_inputs(self):
+        from app.models.conversation import ConversationFeedbackRequest
+
+        request = ConversationFeedbackRequest.model_validate({
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 문제도 함께 처리해야 하는 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "환승편을 놓친 사실과 관련된 수하물 문제를 설명하고 다음 조치를 요청할 수 있다.",
+            "sessionResult": "FAILURE",
+            "slots": [
+                {
+                    "slotName": "baggage_issue_detail",
+                    "description": "사용자가 수하물 지연, 파손, 분실 등 수하물 문제가 무엇인지 설명했는지 여부",
+                    "filled": True,
+                }
+            ],
+            "turns": [
+                {
+                    "turnId": 759,
+                    "originalQuestion": "Could you explain what happened with your baggage?",
+                    "userUtterance": "My baggage is broken",
+                },
+                {
+                    "turnId": 760,
+                    "originalQuestion": "Could you explain what happened with your baggage?",
+                    "userUtterance": "My baggage is broken",
+                },
+                {
+                    "turnId": 761,
+                    "originalQuestion": "Could you explain what happened with your baggage?",
+                    "userUtterance": "My baggage is broken",
+                },
+            ],
+        })
+        responses = [
+            {
+                "comprehensionScore": 59,
+                "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 다음에는 질문에 맞는 핵심 정보를 먼저 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 759,
+                        "feedbackRequired": True,
+                        "nativeUnderstanding": "외국인은 수하물이 망가졌다고 이해했어요.",
+                        "nativeLanguageInterpretation": "한국어로 비유하자면, '수하물이 망가졌어요'처럼 들려요.",
+                        "betterExpression": "My baggage is damaged. 이렇게 말하면 수하물 파손을 더 자연스럽게 말할 수 있어요.",
+                    },
+                    {
+                        "turnId": 760,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    },
+                    {
+                        "turnId": 761,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    },
+                ],
+            },
+            {
+                "comprehensionScore": 59,
+                "feedbackSummary": "시나리오 목표를 달성하지 못했어요. 다음에는 질문에 맞는 핵심 정보를 먼저 말해 보세요.",
+                "turnFeedbacks": [
+                    {
+                        "turnId": 759,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    },
+                    {
+                        "turnId": 760,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    },
+                    {
+                        "turnId": 761,
+                        "feedbackRequired": False,
+                        "nativeUnderstanding": None,
+                        "nativeLanguageInterpretation": None,
+                        "betterExpression": None,
+                    },
+                ],
+            },
+        ]
+        systems = []
+
+        def sequential_chat(system, *args, **kwargs):
+            systems.append(system)
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = sequential_chat
+
+        result = self.service.generate_feedback(request)
+
+        self.assertEqual(len(systems), 2)
+        self.assertEqual([feedback.feedbackRequired for feedback in result.turnFeedbacks], [False, False, False])
 
     def test_feedback_fallback_handles_failed_repair_for_good_response(self):
         from app.models.conversation import ConversationFeedbackRequest

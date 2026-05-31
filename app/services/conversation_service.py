@@ -44,6 +44,9 @@ DIRECT_WANT_NEAR_MISS_ISSUE = (
 PROBLEM_UTTERANCE_FEEDBACK_ISSUE = (
     "problem utterance must be treated as feedbackRequired=true."
 )
+DUPLICATE_TURN_FEEDBACK_CONSISTENCY_ISSUE = (
+    "identical originalQuestion and userUtterance must have consistent feedbackRequired and equivalent feedback fields."
+)
 assistance_knowledge_store = build_assistance_knowledge_store()
 
 
@@ -427,12 +430,12 @@ def _fill_missing_required_feedback_fields_before_validation(
 
         if _feedback_field_is_blank(raw_turn_feedback.get("nativeUnderstanding")):
             raw_turn_feedback["nativeUnderstanding"] = (
-                _native_understanding_override(turn.userUtterance)
+                _native_understanding_override_for_turn(turn)
                 or "외국인은 사용자가 대답하지 않았다고 이해했어요."
             )
         if _feedback_field_is_blank(raw_turn_feedback.get("nativeLanguageInterpretation")):
             raw_turn_feedback["nativeLanguageInterpretation"] = (
-                _native_language_interpretation_override(turn.userUtterance)
+                _native_language_interpretation_override_for_turn(turn)
                 or "한국어로 비유하자면, '대답을 하지 않은 것'처럼 들려요."
             )
         if _feedback_field_is_blank(raw_turn_feedback.get("betterExpression")):
@@ -538,7 +541,8 @@ def _next_question_system_prompt(*, include_assistance_examples: bool = True) ->
             "If any currently unfilled slot remains, ask one short natural English follow-up question and include a Korean translation.\n"
             "Set nextQuestionTargetSlotName to the one unfilled slot mainly targeted by nextQuestion after excluding filledSlots.\n"
             "Ask about one primary target slot only. Do not include long explanations or multiple follow-up questions; keep any assistance information brief and usable.\n"
-            "Use only the provided slot names."
+            "Use only the provided slot names.\n"
+            "Self-check visible fields before output: nextQuestion and translatedQuestion are visible fields and must not expose slot keys, snake_case, or internal slot names. Slot names may appear only in filledSlots and nextQuestionTargetSlotName."
         ),
     ])
 
@@ -675,6 +679,7 @@ def _feedback_system_prompt() -> str:
         '{"comprehensionScore":82,"feedbackSummary":"...","turnFeedbacks":[{"turnId":101,"feedbackRequired":true,"nativeUnderstanding":"...","nativeLanguageInterpretation":"...","betterExpression":"..."}]}. '
         "For each turn, preserve the exact turnId from the request. "
         "Classify each turn before writing feedback fields. "
+        "If multiple turns have the same originalQuestion and userUtterance after normalization, give them the same feedbackRequired decision and equivalent feedback fields. "
         "Domain-neutral policy: The same core rules must work for cafe, airport, hotel, restaurant, and other service scenarios. "
         "Use scenarioTitle, scenarioGoal, originalQuestion, and userUtterance to infer the active domain, but keep the classification labels domain-neutral. "
         "Use scenarioSituation as the concrete role-play context when judging whether the answer fits the situation. "
@@ -753,6 +758,7 @@ def _feedback_system_prompt() -> str:
         "For generic object responses, preserve the generic object instead of pretending the listener heard a specific menu item. "
         "Instead, describe the practical intent, uncertainty, or likely misunderstanding a foreign listener would act on. "
         "Do not write nativeUnderstanding as '주문할 음료에 대한 내용이 아니다' or '질문과 관련이 없다'; preserve the listener's literal interpretation instead. "
+        "For I don't know, infer only from the same turn's originalQuestion whether the user means they do not know the baggage situation, the order choice, or the answer to the question. "
         "If the user mentions one ice, explain that the listener may think the user wants one ice cube, not less ice in a drink. "
         "If the user says an unrelated nonsensical sentence, describe the literal odd meaning the listener receives instead of saying only that it is unrelated. "
         "nativeLanguageInterpretation must be a Korean analogy for how the user's English sounds to the foreign listener, not a literal target-language translation. "
@@ -1278,8 +1284,7 @@ def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str,
     if natural_question is not None:
         return natural_question
 
-    readable_slot = slot.slotName.replace("_", " ")
-    return f"Could you tell me your {readable_slot}?", f"{slot.slotName} 정보를 알려주시겠어요?"
+    return _generic_safe_follow_up_question()
 
 
 def _repair_slot_name_fallback_question(
@@ -1299,11 +1304,15 @@ def _repair_slot_name_fallback_question(
         return next_question, translated_question
 
     natural_question = _natural_follow_up_question_for_slot(target_slot)
-    if natural_question is None:
-        return next_question, translated_question
     if not _question_or_translation_exposes_slot_name(target_slot, next_question, translated_question):
         return next_question, translated_question
-    return natural_question
+    if natural_question is not None:
+        return natural_question
+    return _generic_safe_follow_up_question()
+
+
+def _generic_safe_follow_up_question() -> tuple[str, str]:
+    return "Could you explain that part a little more?", "그 부분을 조금 더 설명해 주시겠어요?"
 
 
 def _natural_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str] | None:
@@ -1316,6 +1325,8 @@ def _natural_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, 
         return "How long do you plan to stay in the United States?", "미국에 얼마나 머무를 계획인가요?"
     if _slot_describes_visit_purpose(slot):
         return "What is the purpose of your visit to the United States?", "미국 방문 목적이 무엇인가요?"
+    if _slot_describes_missed_connection(slot):
+        return "What happened with your connecting flight?", "환승편에 어떤 일이 있었는지 말씀해 주시겠어요?"
     if _slot_describes_baggage_issue(slot):
         return "Could you explain what happened with your baggage?", "수하물에 어떤 일이 있었는지 설명해 주시겠어요?"
 
@@ -1326,16 +1337,45 @@ def _natural_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, 
     return None
 
 
+def _slot_describes_missed_connection(slot: SlotStatusRequest) -> bool:
+    text = _slot_intent_text(slot)
+    flight_markers = [
+        "connecting flight",
+        "connection",
+        "flight",
+        "환승편",
+        "비행기",
+        "항공편",
+    ]
+    missed_markers = [
+        "missed",
+        "could not catch",
+        "already left",
+        "left",
+        "놓쳤",
+        "출발",
+    ]
+    return any(marker in text for marker in flight_markers) and any(
+        marker in text for marker in missed_markers
+    )
+
+
 def _question_or_translation_exposes_slot_name(
     slot: SlotStatusRequest,
     next_question: str,
     translated_question: str,
 ) -> bool:
     combined_text = f"{next_question}\n{translated_question}".lower()
-    if slot.slotName.lower() in combined_text:
+    slot_key = slot.slotName.lower()
+    if "_" in slot_key and slot_key in combined_text:
         return True
 
-    readable_slot = _normalize_utterance(slot.slotName.replace("_", " "))
+    if "_" not in slot_key:
+        return False
+
+    readable_slot = _normalize_utterance(slot_key.replace("_", " "))
+    if len(readable_slot.split()) < 2:
+        return False
     normalized_combined_text = _normalize_utterance(combined_text)
     return bool(readable_slot) and f" {readable_slot} " in f" {normalized_combined_text} "
 
@@ -1413,7 +1453,7 @@ def _enforce_turn_feedback_contract(
         if turn is None:
             continue
 
-        understanding = _native_understanding_override(turn.userUtterance)
+        understanding = _native_understanding_override_for_turn(turn)
         if _is_direct_want_concrete_order_near_miss(turn.userUtterance):
             _apply_direct_want_concrete_order_feedback(turn.userUtterance, turn_feedback)
             response.comprehensionScore = min(max(response.comprehensionScore, 75), 84)
@@ -1423,7 +1463,7 @@ def _enforce_turn_feedback_contract(
         if understanding is not None:
             turn_feedback.nativeUnderstanding = understanding
 
-        interpretation = _native_language_interpretation_override(turn.userUtterance)
+        interpretation = _native_language_interpretation_override_for_turn(turn)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
 
@@ -1518,6 +1558,7 @@ def _deterministic_feedback_issues(
 ) -> list[str]:
     turns_by_id = {turn.turnId: turn for turn in request.turns}
     issues = _feedback_summary_issues(response.feedbackSummary)
+    issues.extend(_duplicate_feedback_required_issues(request, response))
     for turn_feedback in response.turnFeedbacks:
         turn = turns_by_id.get(turn_feedback.turnId)
         issue_prefix = f"turnId {turn_feedback.turnId}: "
@@ -1564,6 +1605,40 @@ def _deterministic_feedback_issues(
             issues.append(issue_prefix + "betterExpression must start with an English improved expression.")
 
     return issues
+
+
+def _duplicate_feedback_required_issues(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> list[str]:
+    issues: list[str] = []
+    for grouped_items in _feedback_turn_groups_by_input(request, response).values():
+        if len(grouped_items) < 2:
+            continue
+        feedback_required_values = {turn_feedback.feedbackRequired for _, turn_feedback in grouped_items}
+        if len(feedback_required_values) <= 1:
+            continue
+        turn_ids = ", ".join(str(turn.turnId) for turn, _ in grouped_items)
+        issues.append(f"turnIds {turn_ids}: {DUPLICATE_TURN_FEEDBACK_CONSISTENCY_ISSUE}")
+    return issues
+
+
+def _feedback_turn_groups_by_input(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> dict[tuple[str, str], list[tuple[FeedbackTurnRequest, TurnFeedbackResponse]]]:
+    turn_feedbacks_by_id = {turn_feedback.turnId: turn_feedback for turn_feedback in response.turnFeedbacks}
+    groups: dict[tuple[str, str], list[tuple[FeedbackTurnRequest, TurnFeedbackResponse]]] = {}
+    for turn in request.turns:
+        turn_feedback = turn_feedbacks_by_id.get(turn.turnId)
+        if turn_feedback is None:
+            continue
+        key = (
+            _normalize_utterance(turn.originalQuestion),
+            _normalize_utterance(turn.userUtterance),
+        )
+        groups.setdefault(key, []).append((turn, turn_feedback))
+    return groups
 
 
 def _semantic_feedback_policy_issues(
@@ -1704,6 +1779,7 @@ def _feedback_quality_review_system_prompt() -> str:
         '{"pass":true,"issues":["..."]}. '
         "Review whether the feedback follows the product policy, not whether the JSON schema is valid. "
         "Check especially: a clearly good answer must not receive unnecessary turn feedback; "
+        "identical originalQuestion and userUtterance pairs must receive the same feedbackRequired decision and equivalent feedback fields; "
         "feedbackRequired=false is allowed only for genuinely good answers; "
         "Direct want + concrete service item responses such as I want coffee or I want a window seat must receive +1 feedback for naturalness and politeness; "
         "betterExpression must not claim to fix something already present in the user's utterance; "
@@ -1776,7 +1852,7 @@ def _feedback_repair_system_prompt() -> str:
         "For Direct want + concrete service item responses, keep feedbackRequired=true, keep comprehensionScore at 75-84, and start betterExpression with I'd like plus the same item and please. "
         "For clearly good, natural answers that directly satisfy the AI question, set feedbackRequired=false for that turn. "
         "Self-check before output: "
-        "Verify the repaired JSON still matches the schema, preserves turnId values, keeps summary at 2 short Korean sentences by default, keeps Direct want + concrete service item responses as feedbackRequired=true, does not quote English utterances in nativeUnderstanding, does not invent a service item for incomplete or generic responses, and leaves clear preference or option answers feedbackRequired=false when they directly answer the question. "
+        "Verify the repaired JSON still matches the schema, preserves turnId values, gives identical originalQuestion and userUtterance pairs the same feedbackRequired decision and equivalent feedback fields, keeps summary at 2 short Korean sentences by default, keeps Direct want + concrete service item responses as feedbackRequired=true, does not quote English utterances in nativeUnderstanding, does not invent a service item for incomplete or generic responses, and leaves clear preference or option answers feedbackRequired=false when they directly answer the question. "
         "Verify the repaired JSON does not invent any purpose, country, city, accommodation, destination, or user intent."
     )
 
@@ -1930,7 +2006,7 @@ def _apply_feedback_safety_fallbacks(
         if not turn_feedback.feedbackRequired:
             continue
 
-        understanding = _native_understanding_override(turn.userUtterance)
+        understanding = _native_understanding_override_for_turn(turn)
         if understanding is not None:
             turn_feedback.nativeUnderstanding = understanding
         else:
@@ -1938,7 +2014,7 @@ def _apply_feedback_safety_fallbacks(
                 turn_feedback.nativeUnderstanding
             )
 
-        interpretation = _native_language_interpretation_override(turn.userUtterance)
+        interpretation = _native_language_interpretation_override_for_turn(turn)
         if interpretation is not None:
             turn_feedback.nativeLanguageInterpretation = interpretation
         else:
@@ -1951,6 +2027,8 @@ def _apply_feedback_safety_fallbacks(
         ):
             turn_feedback.betterExpression = _simple_better_expression_for_question(turn.originalQuestion)
 
+    _apply_duplicate_feedback_consistency_fallback(request, response)
+
     if marked_good and all(not turn_feedback.feedbackRequired for turn_feedback in response.turnFeedbacks):
         response.feedbackSummary = (
             "전체적으로 질문에 자연스럽고 명확하게 답변했습니다. "
@@ -1962,6 +2040,72 @@ def _apply_feedback_safety_fallbacks(
             "시나리오 목표는 대체로 달성했어요. "
             "다음에는 더 자연스럽고 공손한 주문 표현을 연습해 보세요."
         )
+
+
+def _apply_duplicate_feedback_consistency_fallback(
+    request: ConversationFeedbackRequest,
+    response: ConversationFeedbackResponse,
+) -> None:
+    for grouped_items in _feedback_turn_groups_by_input(request, response).values():
+        if len(grouped_items) < 2:
+            continue
+        feedback_required_values = {turn_feedback.feedbackRequired for _, turn_feedback in grouped_items}
+        if len(feedback_required_values) <= 1:
+            continue
+
+        if any(_turn_has_feedback_false_guard(turn) for turn, _ in grouped_items):
+            for _, turn_feedback in grouped_items:
+                _mark_feedback_not_required(turn_feedback)
+            continue
+
+        source_feedback = next(
+            (
+                turn_feedback
+                for _, turn_feedback in grouped_items
+                if turn_feedback.feedbackRequired and _feedback_required_fields_are_valid(turn_feedback)
+            ),
+            None,
+        )
+        if source_feedback is None:
+            for _, turn_feedback in grouped_items:
+                _mark_feedback_not_required(turn_feedback)
+            continue
+
+        for turn, turn_feedback in grouped_items:
+            turn_feedback.feedbackRequired = True
+            turn_feedback.nativeUnderstanding = (
+                _native_understanding_override_for_turn(turn)
+                or source_feedback.nativeUnderstanding
+            )
+            turn_feedback.nativeLanguageInterpretation = (
+                _native_language_interpretation_override_for_turn(turn)
+                or source_feedback.nativeLanguageInterpretation
+            )
+            turn_feedback.betterExpression = source_feedback.betterExpression
+
+
+def _turn_has_feedback_false_guard(turn: FeedbackTurnRequest) -> bool:
+    return any([
+        _is_likely_good_response(turn.userUtterance),
+        _is_no_more_options_response(turn.originalQuestion, turn.userUtterance),
+        _is_clear_preference_or_option_answer(turn.originalQuestion, turn.userUtterance),
+    ])
+
+
+def _feedback_required_fields_are_valid(turn_feedback: TurnFeedbackResponse) -> bool:
+    return all([
+        isinstance(turn_feedback.nativeUnderstanding, str) and bool(turn_feedback.nativeUnderstanding.strip()),
+        isinstance(turn_feedback.nativeLanguageInterpretation, str)
+        and bool(turn_feedback.nativeLanguageInterpretation.strip()),
+        isinstance(turn_feedback.betterExpression, str) and bool(turn_feedback.betterExpression.strip()),
+    ])
+
+
+def _mark_feedback_not_required(turn_feedback: TurnFeedbackResponse) -> None:
+    turn_feedback.feedbackRequired = False
+    turn_feedback.nativeUnderstanding = None
+    turn_feedback.nativeLanguageInterpretation = None
+    turn_feedback.betterExpression = None
 
 
 def _turn_requires_problem_feedback(turn: FeedbackTurnRequest) -> bool:
@@ -1987,11 +2131,11 @@ def _apply_problem_utterance_feedback(
 ) -> None:
     turn_feedback.feedbackRequired = True
     turn_feedback.nativeUnderstanding = (
-        _native_understanding_override(turn.userUtterance)
+        _native_understanding_override_for_turn(turn)
         or "외국인은 사용자가 질문과 다른 내용을 말했다고 이해했어요."
     )
     turn_feedback.nativeLanguageInterpretation = (
-        _native_language_interpretation_override(turn.userUtterance)
+        _native_language_interpretation_override_for_turn(turn)
         or "한국어로 비유하자면, '질문과 다른 말을 하는 것'처럼 들려요."
     )
     turn_feedback.betterExpression = _problem_better_expression_for_turn(turn)
@@ -2510,6 +2654,58 @@ def _normalize_native_language_interpretation_format(value: str | None) -> str |
             phrase = phrase[: -len(suffix)].strip().rstrip(".")
 
     return f"한국어로 비유하자면, '{phrase}'처럼 들려요."
+
+
+def _native_understanding_override_for_turn(turn: FeedbackTurnRequest) -> str | None:
+    compact = _normalize_utterance(turn.userUtterance).replace("'", "")
+    if compact == "i dont know":
+        if _question_asks_baggage_context(turn.originalQuestion):
+            return "외국인은 사용자가 수하물에 어떤 일이 있었는지 모르겠다고 이해했어요."
+        if _question_asks_order_context(turn.originalQuestion):
+            return "외국인은 사용자가 무엇을 주문할지 모르겠다고 이해했어요."
+        return "외국인은 사용자가 질문에 대한 답을 모르겠다고 이해했어요."
+    return _native_understanding_override(turn.userUtterance)
+
+
+def _native_language_interpretation_override_for_turn(turn: FeedbackTurnRequest) -> str | None:
+    compact = _normalize_utterance(turn.userUtterance).replace("'", "")
+    if compact == "i dont know":
+        if _question_asks_baggage_context(turn.originalQuestion):
+            return "한국어로 비유하자면, '수하물에 무슨 일이 있었는지 모르겠어요'처럼 들려요."
+        if _question_asks_order_context(turn.originalQuestion):
+            return "한국어로 비유하자면, '무엇을 주문할지 모르겠어요'처럼 들려요."
+        return "한국어로 비유하자면, '그 질문에는 모르겠어요'처럼 들려요."
+    return _native_language_interpretation_override(turn.userUtterance)
+
+
+def _question_asks_baggage_context(original_question: str) -> bool:
+    compact = _normalize_utterance(original_question).replace("'", "")
+    return any([
+        "baggage" in compact,
+        "luggage" in compact,
+        "suitcase" in compact,
+        "checked bag" in compact,
+        re.search(r"\bbag\b", compact) is not None,
+        "수하물" in original_question,
+        "캐리어" in original_question,
+    ])
+
+
+def _question_asks_order_context(original_question: str) -> bool:
+    compact = _normalize_utterance(original_question).replace("'", "")
+    return any([
+        "order" in compact,
+        "drink" in compact,
+        "menu" in compact,
+        "coffee" in compact,
+        "latte" in compact,
+        "tea" in compact,
+        "what would you like" in compact,
+        "what can i get" in compact,
+        "주문" in original_question,
+        "음료" in original_question,
+        "메뉴" in original_question,
+    ])
 
 
 def _native_understanding_override(user_utterance: str) -> str | None:

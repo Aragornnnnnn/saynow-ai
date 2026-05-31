@@ -1,5 +1,21 @@
 # 작업 체크리스트
 
+## AI 슬롯명 노출과 피드백 문맥 오염 수정
+
+- [x] `missed_connection` fallback 질문/번역이 슬롯명이나 readable slot phrase를 노출하는 RED 테스트를 추가한다.
+- [x] 알 수 없는 semantic slot fallback이 raw slot key 대신 generic safe question을 쓰는 RED 테스트를 추가한다.
+- [x] `next-question` visible field self-check와 postprocess repair를 함께 적용한다.
+- [x] DB 수정 후 기준 `baggage_issue_detail` 회귀 테스트를 추가한다.
+- [x] baggage 질문의 `I don't know`가 주문 문맥으로 오염되는 RED 테스트를 추가한다.
+- [x] order 질문의 `I don't know`는 기존 주문 문맥을 유지하는 회귀 테스트를 추가한다.
+- [x] 동일 `originalQuestion + userUtterance` 입력의 `feedbackRequired` 혼합 판정을 repair 대상으로 감지한다.
+- [x] focused RED/GREEN 테스트를 실행한다.
+- [x] 전체 unittest, compileall, diff check를 실행한다.
+- [x] Obsidian 품질 회귀 문서에 변경 이유와 검증 결과를 정리한다.
+- [ ] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
+- [ ] GitHub Actions develop 배포와 `/health`를 확인한다.
+- [ ] 배포 후 direct AI smoke를 실행한다.
+
 ## AI 대화 턴 지연 3차 개선
 
 - [x] deterministic completion skip reason 로그를 추가한다.
