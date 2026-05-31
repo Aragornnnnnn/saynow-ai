@@ -2104,6 +2104,100 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
         self.assertEqual(store.save_calls[0][2], "retrieved")
 
+    def test_next_question_skips_rag_lookup_for_request_like_slot_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.find_calls = []
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                self.find_calls.append(request)
+                return "Retrieved context should not be used for a slot answer."
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like me to help you with next?",
+            "userUtterance": "Can you rebook me on the next flight?",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 놓쳤거나 환승편을 탈 수 없게 된 상황을 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "flight already left", "could not catch my connection"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "next_options_request",
+                    "description": "사용자가 다음 항공편이나 재예약 등 다음 선택지를 요청했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["next flight", "rebook", "another flight", "options"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        calls = []
+
+        def capture_chat(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 2:
+                return json.dumps({
+                    "results": [
+                        {"candidateId": "next_options_request#candidate", "supportsSlot": True},
+                    ],
+                })
+            return json.dumps({
+                "filledSlots": [{"slotName": "next_options_request"}],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "next_options_request",
+                        "evidenceText": "Can you rebook me on the next flight",
+                        "understoodMeaning": "The user asks to be rebooked on the next flight.",
+                    },
+                ],
+                "nextQuestion": None,
+                "translatedQuestion": None,
+                "nextQuestionTargetSlotName": None,
+                "turnClassification": "ANSWER",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(len(store.find_calls), 0)
+        self.assertNotIn("Retrieved context should not be used", calls[0][1])
+        self.assertEqual([slot.slotName for slot in result.filledSlots], ["next_options_request"])
+        self.assertEqual(result.turnClassification, "ANSWER")
+
     def test_next_question_stores_generated_assistance_answer_when_rag_has_no_match(self):
         from app.models.conversation import NextQuestionRequest
 

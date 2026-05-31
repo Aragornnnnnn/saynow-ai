@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AI RAG lookup 조건부 실행
+
+- [x] `ANSWER` 슬롯 답변에서 RAG lookup이 호출되지 않는 회귀 테스트를 RED로 확인한다.
+- [x] 메뉴, 추천, 부가 정보 질문은 기존처럼 RAG lookup을 유지하는 회귀 테스트를 확인한다.
+- [x] 슬롯 정책 기반으로 최신 발화가 미충족 슬롯 evidence에 가까우면 RAG lookup을 건너뛰도록 구현한다.
+- [x] 관련 focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] `SayNow 응답 시간 및 지연 측정` 하위 문서에 변경 이유, 구현 결과, direct 검증 결과를 정리한다.
+- [ ] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
+
 ## AI semantic evidence 지연 개선
 
 - [x] `trace-test-002`, `trace-test-01`, `trace-test-010` 로그에서 postprocess 병목 패턴을 정리한다.

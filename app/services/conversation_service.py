@@ -1848,6 +1848,8 @@ def _is_information_request(user_utterance: str) -> bool:
 
 
 def _is_actual_assistance_request(request: NextQuestionRequest) -> bool:
+    if _latest_utterance_likely_answers_unfilled_slot(request):
+        return False
     if _is_recommendation_request(request.userUtterance):
         return True
     if _is_information_request(request.userUtterance):
@@ -1869,6 +1871,8 @@ def _ensure_visible_information_response(
 
 def _find_reusable_assistance_answer(request: NextQuestionRequest) -> str | None:
     if not _should_attempt_assistance_rag(request.userUtterance):
+        return None
+    if _latest_utterance_likely_answers_unfilled_slot(request):
         return None
     return assistance_knowledge_store.find_reusable_answer(request)
 
@@ -1917,6 +1921,38 @@ def _should_attempt_assistance_rag(user_utterance: str) -> bool:
         "tell me ",
     )
     return user_utterance.strip().endswith("?") or compact.startswith(question_prefixes)
+
+
+def _latest_utterance_likely_answers_unfilled_slot(request: NextQuestionRequest) -> bool:
+    return any(
+        _latest_utterance_likely_answers_slot(slot, request)
+        for slot in request.slots
+        if not slot.filled
+    )
+
+
+def _latest_utterance_likely_answers_slot(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
+    if slot.evidencePolicy is None:
+        return False
+
+    fallback_candidate = {
+        "evidenceText": request.userUtterance,
+        "understoodMeaning": "",
+        "confidence": "fallback",
+    }
+    local_decision = _slot_evidence_policy_local_decision(slot, request, fallback_candidate)
+    if local_decision is True:
+        return True
+    if local_decision is False:
+        return False
+
+    if slot.evidencePolicy.mode != EvidencePolicyMode.SEMANTIC_EVIDENCE:
+        return False
+
+    if _slot_requires_request_act(slot):
+        return _question_targets_slot(request.userUtterance, slot)
+
+    return _question_targets_slot(request.originalQuestion, slot) and _question_targets_slot(request.userUtterance, slot)
 
 
 def _request_id_for_log() -> str:
