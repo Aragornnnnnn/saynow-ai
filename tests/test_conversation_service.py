@@ -143,6 +143,55 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.translatedQuestion, "다음에 무엇을 도와드릴까요?")
         self.assertEqual(result.nextQuestionTargetSlotName, "next_options_request")
 
+    def test_next_question_repeat_request_reuses_original_translation_when_provided(self):
+        from app.models.conversation import NextQuestionRequest
+
+        def fail_chat(*args, **kwargs):
+            self.fail("repeat request should be handled before calling the model")
+
+        self.service.chat = fail_chat
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Hi, what's the purpose of your visit?",
+            "originalTranslatedQuestion": "안녕하세요. 방문 목적이 어떻게 되시나요?",
+            "originalQuestionTargetSlotName": "visit_purpose",
+            "userUtterance": "Pardon, can you say that again?",
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황이에요. 심사관의 질문에 여행 계획을 차분히 설명해야 해요.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "visit_purpose",
+                    "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["travel", "business", "study"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "stay_duration",
+                    "description": "사용자가 미국에 머무를 기간이나 출국 예정 시점을 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["days", "weeks", "return"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "REPEAT_REQUEST")
+        self.assertEqual(result.nextQuestion, "Hi, what's the purpose of your visit?")
+        self.assertEqual(result.translatedQuestion, "안녕하세요. 방문 목적이 어떻게 되시나요?")
+        self.assertEqual(result.nextQuestionTargetSlotName, "visit_purpose")
+
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest
 

@@ -9,6 +9,14 @@
 - [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
+## repeat request 번역 원문 고정
+
+- [x] `originalTranslatedQuestion`이 있을 때 `REPEAT_REQUEST`가 직전 한국어 번역을 그대로 반환하는 RED 테스트를 추가한다.
+- [x] `NextQuestionRequest`에 optional `originalTranslatedQuestion`을 추가한다.
+- [x] 반복 요청 fast-path와 모델 분류 후처리에서 직전 번역을 우선 사용하도록 구현한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## AI RAG lookup 조건부 실행
 
 - [x] `ANSWER` 슬롯 답변에서 RAG lookup이 호출되지 않는 회귀 테스트를 RED로 확인한다.

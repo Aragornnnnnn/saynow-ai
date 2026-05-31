@@ -67,6 +67,7 @@ class SessionResult(StrEnum):
 
 class NextQuestionRequest(BaseModel):
     originalQuestion: str
+    originalTranslatedQuestion: str | None = None
     originalQuestionTargetSlotName: str | None = None
     userUtterance: str
     scenarioTitle: str
@@ -83,6 +84,13 @@ class NextQuestionRequest(BaseModel):
     @field_validator("originalQuestionTargetSlotName")
     @classmethod
     def optional_target_slot_name_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_not_blank(value)
+
+    @field_validator("originalTranslatedQuestion")
+    @classmethod
+    def optional_translated_question_must_not_be_blank(cls, value: str | None) -> str | None:
         if value is None:
             return value
         return _validate_not_blank(value)

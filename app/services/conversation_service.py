@@ -132,6 +132,9 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     remaining_slots = [slot_name for slot_name in unfilled_slot_names if slot_name not in {slot.slotName for slot in filled_slots}]
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
 
+    if turn_classification == NextQuestionTurnClassification.REPEAT_REQUEST:
+        return _repeat_previous_question(request, remaining_slots)
+
     if not remaining_slots:
         return NextQuestionResponse(
             nextQuestion=None,
@@ -925,10 +928,10 @@ def _repeat_previous_question(
     if target_slot_name not in unfilled_slot_names:
         target_slot_name = unfilled_slot_names[0]
 
-    translated_question = f"{target_slot_name} 정보를 알려주시겠어요?"
+    translated_question = request.originalTranslatedQuestion or f"{target_slot_name} 정보를 알려주시겠어요?"
     slot_by_name = {slot.slotName: slot for slot in request.slots}
     target_slot = slot_by_name.get(target_slot_name)
-    if target_slot is not None:
+    if request.originalTranslatedQuestion is None and target_slot is not None:
         _, translated_question = _fallback_follow_up_question_for_slot(target_slot)
 
     return NextQuestionResponse(
