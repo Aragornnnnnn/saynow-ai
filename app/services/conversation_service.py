@@ -84,6 +84,9 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         logger.info("안전 정책으로 꼬리 질문 입력 차단 | reason: %s", safety_decision.reason)
         return _retry_question_for_slot(unfilled_slot_names[0])
 
+    if _is_repeat_request(request.userUtterance):
+        return _repeat_previous_question(request, unfilled_slot_names)
+
     if _must_not_fill_slots(request.userUtterance):
         return _retry_question_for_slot(unfilled_slot_names[0])
 
@@ -436,15 +439,16 @@ def _next_question_system_prompt() -> str:
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"filledSlots":[{"slotName":"..."}],"candidateFilledSlots":[{"slotName":"...","evidenceText":"...","understoodMeaning":"...","confidence":"high|medium|low"}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","nextQuestionTargetSlotName":"<slotName or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|INVALID_RESPONSE"}.'
+            '{"filledSlots":[{"slotName":"..."}],"candidateFilledSlots":[{"slotName":"...","evidenceText":"...","understoodMeaning":"...","confidence":"high|medium|low"}],"nextQuestion":"<string or null>","translatedQuestion":"<string or null>","nextQuestionTargetSlotName":"<slotName or null>","turnClassification":"ANSWER|ASSISTANCE_REQUEST|REPEAT_REQUEST|INVALID_RESPONSE"}.'
         ),
         (
             "Decision Policy:\n"
-            "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, an assistance request, or a non-answer.\n"
+            "Decision Workflow: first identify whether the latest utterance is an answer to the current AI question, a scenario assistance request, a repeat request, or a non-answer.\n"
             "ANSWER means the user directly answers the current AI question. It includes concrete slot answers, clear choice or preference answers, and no-more option completions such as That's all, That's it, nothing else, or no more after an option or customization question.\n"
             "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value.\n"
+            "REPEAT_REQUEST means the user asks you to repeat or say the previous question again, such as Pardon?, Can you say that again?, or Can you tell me again?. It should not fill slots.\n"
             "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic.\n"
-            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for recommendation or information requests, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses."
+            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for scenario help, recommendation, menu, option, or information requests, REPEAT_REQUEST for asking to hear the previous question again, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses."
         ),
         (
             "Slot Policy:\n"
@@ -472,6 +476,7 @@ def _next_question_system_prompt() -> str:
             "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order.\n"
             "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value.\n"
             "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please.\n"
+            "A repeat-seeking utterance asks to hear the previous question again and should be REPEAT_REQUEST, not ASSISTANCE_REQUEST. Examples include Pardon?, Parden Can you tell again?, Can you say that again?, and One more time please.\n"
             "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything."
         ),
         (
@@ -501,6 +506,7 @@ def _next_question_system_prompt() -> str:
             'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
             'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
             'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"nextQuestionTargetSlotName":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=What drink would you like to order? User utterance=Pardon, can you say that again? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"REPEAT_REQUEST"}.\n'
             'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"INVALID_RESPONSE"}.'
         ),
     ])
@@ -909,6 +915,60 @@ def _retry_question_for_slot(slot_name: str) -> NextQuestionResponse:
         filledSlots=[],
         turnClassification=NextQuestionTurnClassification.INVALID_RESPONSE,
     )
+
+
+def _repeat_previous_question(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+) -> NextQuestionResponse:
+    target_slot_name = request.originalQuestionTargetSlotName
+    if target_slot_name not in unfilled_slot_names:
+        target_slot_name = unfilled_slot_names[0]
+
+    translated_question = f"{target_slot_name} 정보를 알려주시겠어요?"
+    slot_by_name = {slot.slotName: slot for slot in request.slots}
+    target_slot = slot_by_name.get(target_slot_name)
+    if target_slot is not None:
+        _, translated_question = _fallback_follow_up_question_for_slot(target_slot)
+
+    return NextQuestionResponse(
+        nextQuestion=request.originalQuestion,
+        translatedQuestion=translated_question,
+        nextQuestionTargetSlotName=target_slot_name,
+        filledSlots=[],
+        turnClassification=NextQuestionTurnClassification.REPEAT_REQUEST,
+    )
+
+
+def _is_repeat_request(user_utterance: str) -> bool:
+    compact = _normalize_utterance(user_utterance).replace("'", "")
+    exact_repeat_requests = {
+        "pardon",
+        "parden",
+        "sorry",
+        "again",
+        "again please",
+        "one more time",
+        "one more time please",
+        "say again",
+        "say it again",
+        "say that again",
+        "tell again",
+        "repeat please",
+        "repeat that please",
+        "what did you say",
+    }
+    if compact in exact_repeat_requests:
+        return True
+
+    repeat_patterns = [
+        r"^(?:pardon|parden|sorry|excuse me)(?: can you| could you| please)? (?:say|tell|repeat)(?: me)?(?: that| it)? again$",
+        r"^(?:can you|could you|would you|please) (?:say|tell|repeat)(?: me)?(?: that| it)? again$",
+        r"^(?:can you|could you|would you) repeat (?:that|it|the question)$",
+        r"^(?:please )?(?:say|tell|repeat) (?:that|it|the question) (?:again|one more time)$",
+        r"^(?:i didnt|i did not) (?:hear|understand)(?: that| it| the question)?$",
+    ]
+    return any(re.fullmatch(pattern, compact) for pattern in repeat_patterns)
 
 
 def _retarget_next_question_when_it_asks_completed_slot(
@@ -2071,6 +2131,8 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.INVALID_RESPONSE
     if filled_slots:
         return NextQuestionTurnClassification.ANSWER
+    if raw_classification == NextQuestionTurnClassification.REPEAT_REQUEST:
+        return NextQuestionTurnClassification.REPEAT_REQUEST
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         return NextQuestionTurnClassification.INVALID_RESPONSE
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):

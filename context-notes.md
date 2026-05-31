@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-05-31 `Parden Can you tell again?`는 자연어로는 요청이지만, SayNow의 기존 `ASSISTANCE_REQUEST` 의미인 시나리오 내부 도움, 메뉴, 추천, 선택지 요청과는 다르다. UX상 하트를 깎지 않고 직전 질문을 다시 보여주는 별도 `REPEAT_REQUEST`가 맞으며, AI 서버에서는 RAG와 LLM 호출 전에 deterministic fast-path로 끝내는 방향으로 잡는다.
+- 2026-05-31 사진의 baggage delay 문제는 AI가 완전히 없는 내용을 만든 것이라기보다 scenario 6의 DB 시나리오 전제가 `수하물 수령이 늦어져 환승편을 놓친 상황`이고 슬롯에 `baggage_delay_reason`이 있기 때문에 생긴다. 이 슬롯을 유지하려면 프론트가 상황 전제를 명확히 보여주고 AI 질문은 baggage delay를 단정하지 않는 열린 문장으로 바꿔야 한다. 일반 missed-flight 시나리오라면 이 슬롯은 `missed_connection_reason`처럼 넓히는 편이 자연스럽다.
+- 2026-05-31 구현 결과, `REPEAT_REQUEST`를 `NextQuestionTurnClassification`에 추가하고 반복 요청은 `generate_next_question()` 초반에서 직전 질문을 다시 반환한다. 이 경로는 RAG lookup, main LLM, semantic verifier, RAG save를 호출하지 않는다. 검증은 RED 후 GREEN, focused 회귀 5개, `tests.test_conversation_service` 109개, 전체 discover 137개, `compileall`, `git diff --check` 통과로 확인했다.
 - 2026-05-31 AI 병목 2차 개선은 `next_question` 시작부의 `rag_lookup`을 조건부 실행으로 바꾸는 것이다. 배포 후 direct AI 테스트에서 semantic evidence 반복 호출은 요청당 1회로 줄었지만, `rag_lookup`이 1.7초에서 3.4초까지 걸려 전체 응답 시간을 계속 밀어 올렸다.
 - 2026-05-31 방향은 slot-first, assistance-second다. 최신 발화가 현재 미충족 슬롯의 `evidencePolicy`를 채울 가능성이 높으면 RAG를 건너뛰고, 메뉴, 추천, 부가 정보 질문처럼 슬롯 답변이 아니라 역할극 assistance에 가까운 경우에만 RAG lookup을 실행한다.
 - 2026-05-31 캐싱은 2차 후속으로 둔다. 먼저 필요 없는 RAG lookup을 제거하고, 이후에도 남는 assistance request 경로에만 짧은 TTL의 lookup cache나 negative cache를 붙이는 순서가 안전하다.

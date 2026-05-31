@@ -72,6 +72,77 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.filledSlots, [])
         self.assertEqual(result.nextQuestion, "What drink would you like to order?")
 
+    def test_next_question_repeats_previous_question_without_model_or_rag_calls(self):
+        from app.models.conversation import NextQuestionRequest
+
+        test_case = self
+
+        class FailingAssistanceKnowledgeStore:
+            def find_reusable_answer(self, request):
+                test_case.fail("repeat request should not call RAG lookup")
+
+            def save_interaction(self, request, response, *, answer_source):
+                test_case.fail("repeat request should not save RAG interaction")
+
+        self.service.assistance_knowledge_store = FailingAssistanceKnowledgeStore()
+
+        def fail_chat(*args, **kwargs):
+            self.fail("repeat request should be handled before calling the model")
+
+        self.service.chat = fail_chat
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like me to help you with next?",
+            "originalQuestionTargetSlotName": "next_options_request",
+            "userUtterance": "Parden Can you tell again?",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 수령이 늦어져 환승편을 놓친 상황입니다. 공항 직원에게 도움을 요청해야 합니다.",
+            "aiRole": "공항 환승 안내 직원",
+            "scenarioGoal": "공항 직원에게 환승편을 놓친 상황과 이유를 설명하고 다음 선택지를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "missed_connection",
+                    "description": "사용자가 환승편을 놓쳤거나 환승편을 탈 수 없게 된 상황을 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["missed connecting flight", "missed my flight"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "baggage_delay_reason",
+                    "description": "사용자가 수하물 지연이나 수하물 문제 때문에 환승편을 놓쳤다고 설명했는지 여부",
+                    "filled": True,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "suitcase", "bag"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "next_options_request",
+                    "description": "사용자가 다음 항공편이나 재예약 등 다음 선택지를 요청했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["next flight", "rebook", "another flight", "options"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "REPEAT_REQUEST")
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.nextQuestion, "What would you like me to help you with next?")
+        self.assertEqual(result.translatedQuestion, "다음에 무엇을 도와드릴까요?")
+        self.assertEqual(result.nextQuestionTargetSlotName, "next_options_request")
+
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest
 
@@ -2561,6 +2632,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("ANSWER", prompt)
         self.assertIn("ASSISTANCE_REQUEST", prompt)
         self.assertIn("INVALID_RESPONSE", prompt)
+        self.assertIn("REPEAT_REQUEST", prompt)
         self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
         self.assertIn("If retrieved assistance context is provided", prompt)
         self.assertIn("generate a plausible role-play answer", prompt)

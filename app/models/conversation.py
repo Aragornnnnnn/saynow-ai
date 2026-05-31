@@ -56,6 +56,7 @@ class FilledSlotResponse(BaseModel):
 class NextQuestionTurnClassification(StrEnum):
     ANSWER = "ANSWER"
     ASSISTANCE_REQUEST = "ASSISTANCE_REQUEST"
+    REPEAT_REQUEST = "REPEAT_REQUEST"
     INVALID_RESPONSE = "INVALID_RESPONSE"
 
 

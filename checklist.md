@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## repeat request 별도 분류와 빠른 재질문
+
+- [x] `Parden Can you tell again?` 같은 반복 요청이 `REPEAT_REQUEST`가 되는 RED 테스트를 추가한다.
+- [x] 반복 요청에서는 RAG lookup, main LLM, semantic verifier, RAG save가 호출되지 않게 구현한다.
+- [x] 기존 `ASSISTANCE_REQUEST`, `INVALID_RESPONSE`, 슬롯 답변 회귀 테스트가 깨지지 않는지 확인한다.
+- [x] `SayNow AI 병목 제거 작업 2026-05-31` 하위 문서에 분류 결정과 지연 개선 이유를 정리한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## AI RAG lookup 조건부 실행
 
 - [x] `ANSWER` 슬롯 답변에서 RAG lookup이 호출되지 않는 회귀 테스트를 RED로 확인한다.
