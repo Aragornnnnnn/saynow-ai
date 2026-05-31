@@ -479,6 +479,7 @@ def _next_question_system_prompt() -> str:
             "Examples of incomplete order fragments: I want, I need, I'd like, I would like, Can I get, Can I get a, I want to order.\n"
             "Use this distinction: concrete slot values can fill slots, while generic order objects such as drink, something, item, or thing mean the user has not named a concrete value.\n"
             "A menu-seeking utterance asks for information and should be ASSISTANCE_REQUEST, not INVALID_RESPONSE. Examples include I need a menu, Can I get a menu, and Menu please.\n"
+            "An indirect option request such as I don't know what option I can do asks for available choices. Treat it as ANSWER only when the current target slot itself asks for an option or request; otherwise treat it as ASSISTANCE_REQUEST and return to the current target slot.\n"
             "A repeat-seeking utterance asks to hear the previous question again and should be REPEAT_REQUEST, not ASSISTANCE_REQUEST. Examples include Pardon?, Parden Can you tell again?, Can you say that again?, and One more time please.\n"
             "These utterances must never fill any slot: qwertyuiop asdfghjkl zxcvbnm, My shoes are swimming in the moon today, I don't know, No answer, I do not want to order anything."
         ),
@@ -509,6 +510,7 @@ def _next_question_system_prompt() -> str:
             'Input: Previous AI question=What drink would you like to order? User utterance=Can I see the menu? Unfilled slots=drink. Retrieved assistance context=We have iced Americano, latte, and tea. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"The drink options are iced Americano, latte, and tea. What would you like to order?","translatedQuestion":"음료 선택지는 아이스 아메리카노, 라떼, 차입니다. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
             'Input: Previous AI question=What drink would you like to order? User utterance=What beans do you use? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"We usually use medium-roasted Arabica beans. What would you like to order?","translatedQuestion":"보통 중간 로스팅 아라비카 원두를 사용해요. 무엇을 주문하시겠어요?","nextQuestionTargetSlotName":"drink","turnClassification":"ASSISTANCE_REQUEST"}.\n'
             'Input: Previous AI question=What custom options would you like for your drink? User utterance=That\'s all. Unfilled slots=customOptions. Retrieved assistance context=None. Output: {"filledSlots":[{"slotName":"customOptions"}],"candidateFilledSlots":[{"slotName":"customOptions","evidenceText":"That\'s all","understoodMeaning":"The user says there are no more custom options.","confidence":"high"}],"nextQuestion":null,"translatedQuestion":null,"nextQuestionTargetSlotName":null,"turnClassification":"ANSWER"}.\n'
+            'Input: Previous AI question=Could you explain what happened with your baggage? User utterance=I don\'t know what option I can do. Unfilled slots=baggage_issue_detail,next_options_request. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"You may be able to ask for rebooking or another available flight. Could you explain what happened with your baggage?","translatedQuestion":"재예약이나 다른 이용 가능한 항공편을 요청할 수 있어요. 수하물에 어떤 일이 있었는지 설명해 주시겠어요?","nextQuestionTargetSlotName":"baggage_issue_detail","turnClassification":"ASSISTANCE_REQUEST"}.\n'
             'Input: Previous AI question=What drink would you like to order? User utterance=Pardon, can you say that again? Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"REPEAT_REQUEST"}.\n'
             'Input: Previous AI question=What drink would you like to order? User utterance=I want drink. Unfilled slots=drink. Retrieved assistance context=None. Output: {"filledSlots":[],"candidateFilledSlots":[],"nextQuestion":"What drink would you like to order?","translatedQuestion":"어떤 음료를 주문하고 싶으신가요?","nextQuestionTargetSlotName":"drink","turnClassification":"INVALID_RESPONSE"}.'
         ),
@@ -1119,8 +1121,16 @@ def _candidate_terms_match_question(candidate: str, question_tokens: set[str]) -
     if len(candidate_tokens) == 1:
         if len(raw_candidate_tokens) > 1:
             return False
-        return candidate_tokens[0] in question_tokens
-    return all(token in question_tokens for token in candidate_tokens)
+        return _question_tokens_contain_candidate_token(candidate_tokens[0], question_tokens)
+    return all(_question_tokens_contain_candidate_token(token, question_tokens) for token in candidate_tokens)
+
+
+def _question_tokens_contain_candidate_token(candidate_token: str, question_tokens: set[str]) -> bool:
+    if candidate_token in question_tokens:
+        return True
+    if candidate_token.endswith("s") and candidate_token[:-1] in question_tokens:
+        return True
+    return f"{candidate_token}s" in question_tokens
 
 
 def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str]:
@@ -1893,6 +1903,8 @@ def _is_information_request(user_utterance: str) -> bool:
         r"(?:can i get|could i get|may i have) (?:a |the )?menu",
         r"menu please",
     ]
+    if _looks_like_indirect_option_request(compact):
+        return True
     return any([
         "can i see" in compact,
         "could i see" in compact,
@@ -1990,8 +2002,16 @@ def _latest_utterance_likely_answers_unfilled_slot(request: NextQuestionRequest)
     return any(
         _latest_utterance_likely_answers_slot(slot, request)
         for slot in request.slots
-        if not slot.filled
+        if not slot.filled and not _should_ignore_non_target_request_slot_for_slot_answer_guard(slot, request)
     )
+
+
+def _should_ignore_non_target_request_slot_for_slot_answer_guard(
+    slot: SlotStatusRequest,
+    request: NextQuestionRequest,
+) -> bool:
+    target_slot_name = request.originalQuestionTargetSlotName
+    return bool(target_slot_name) and slot.slotName != target_slot_name and _slot_requires_request_act(slot)
 
 
 def _latest_utterance_likely_answers_slot(slot: SlotStatusRequest, request: NextQuestionRequest) -> bool:
@@ -2136,8 +2156,6 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.ANSWER
     if raw_classification == NextQuestionTurnClassification.REPEAT_REQUEST:
         return NextQuestionTurnClassification.REPEAT_REQUEST
-    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
-        return NextQuestionTurnClassification.INVALID_RESPONSE
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
     if filled_slots and _fills_option_or_customization_slot(filled_slots):
@@ -2146,6 +2164,10 @@ def _resolve_next_question_turn_classification(
         return NextQuestionTurnClassification.ANSWER
     if raw_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST and _is_actual_assistance_request(request):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
+    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE and _is_actual_assistance_request(request):
+        return NextQuestionTurnClassification.ASSISTANCE_REQUEST
+    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
+        return NextQuestionTurnClassification.INVALID_RESPONSE
     if _is_recommendation_request(request.userUtterance):
         return NextQuestionTurnClassification.ASSISTANCE_REQUEST
     if _is_information_request(request.userUtterance):
@@ -2564,6 +2586,13 @@ def _apply_evidence_policies_to_slots(
             if slot_name is not None:
                 accepted_slot_names.add(slot_name)
 
+    accepted_slot_names = _filter_non_target_request_slots_without_target_answer(
+        request,
+        unfilled_slot_names,
+        accepted_slot_names,
+        slots_by_name,
+    )
+
     for slot_name in model_filled_slot_names:
         if slot_name not in accepted_slot_names:
             rejected.add(slot_name)
@@ -2609,9 +2638,34 @@ def _slot_accepts_deterministic_evidence(
 ) -> bool:
     if slot.evidencePolicy is None or slot.evidencePolicy.mode != EvidencePolicyMode.SEMANTIC_EVIDENCE:
         return False
+    if _slot_requires_request_act(slot) and slot.slotName == request.originalQuestionTargetSlotName:
+        return (
+            _evidence_text_contains_request_act(request.userUtterance)
+            and _question_targets_slot(request.userUtterance, slot)
+        )
     if _slot_describes_duration(slot) and _question_asks_duration(request.originalQuestion):
         return _utterance_contains_duration_expression(request.userUtterance)
     return False
+
+
+def _filter_non_target_request_slots_without_target_answer(
+    request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
+    accepted_slot_names: set[str],
+    slots_by_name: dict[str, SlotStatusRequest],
+) -> set[str]:
+    target_slot_name = request.originalQuestionTargetSlotName
+    if not target_slot_name or target_slot_name not in set(unfilled_slot_names):
+        return accepted_slot_names
+    if target_slot_name in accepted_slot_names:
+        return accepted_slot_names
+
+    filtered: set[str] = set()
+    for slot_name in accepted_slot_names:
+        slot = slots_by_name.get(slot_name)
+        if slot_name == target_slot_name or slot is None or not _slot_requires_request_act(slot):
+            filtered.add(slot_name)
+    return filtered
 
 
 def _slot_evidence_policy_local_decision(
@@ -2841,6 +2895,8 @@ def _evidence_text_contains_request_act(evidence_text: str) -> bool:
     normalized = _normalize_utterance(evidence_text)
     if _looks_like_unpunctuated_question(normalized):
         return True
+    if _looks_like_indirect_option_request(normalized.replace("'", "")):
+        return True
 
     request_patterns = (
         "what should i",
@@ -2917,6 +2973,26 @@ def _looks_like_unpunctuated_question(normalized: str) -> bool:
         r"^(?:have|has|had) (?:you|i|we|they)\b",
     )
     return any(re.search(pattern, normalized) for pattern in question_starter_patterns)
+
+
+def _looks_like_indirect_option_request(compact: str) -> bool:
+    if not compact:
+        return False
+
+    uncertainty_prefixes = (
+        "i dont know",
+        "i do not know",
+        "im not sure",
+        "i am not sure",
+        "i have no idea",
+    )
+    if not compact.startswith(uncertainty_prefixes):
+        return False
+
+    return bool(re.search(
+        r"\b(?:what|which|how)\b.*\b(?:can|could|should|do|have|has|options?|choices?|alternatives?)\b",
+        compact,
+    ))
 
 
 def _semantic_evidence_candidate_payload(

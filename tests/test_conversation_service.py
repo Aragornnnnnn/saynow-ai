@@ -1394,6 +1394,203 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertIsNone(result.nextQuestion)
                 self.assertIsNone(result.translatedQuestion)
 
+    def test_next_question_fills_target_request_slot_from_indirect_option_request(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FailingAssistanceKnowledgeStore:
+            def find_reusable_answer(self, request):
+                self.fail("target slot answer should not call RAG lookup")
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.fail("ANSWER should not save RAG interaction")
+
+        self.service.assistance_knowledge_store = FailingAssistanceKnowledgeStore()
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like me to help you with next?",
+            "originalQuestionTargetSlotName": "available_options_inquiry",
+            "userUtterance": "I don't know what option I can do",
+            "scenarioTitle": "대체 선택지 묻기",
+            "scenarioSituation": "사용자는 진행 중인 문제에 대해 가능한 다음 선택지를 물어봐야 합니다.",
+            "aiRole": "서비스 직원",
+            "scenarioGoal": "직원에게 가능한 다음 선택지를 물어볼 수 있다.",
+            "slots": [
+                {
+                    "slotName": "available_options_inquiry",
+                    "description": "사용자가 가능한 선택지나 대안이 있는지 직접 또는 간접적으로 물었는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["option", "options", "alternative", "what can I do"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "What would you like me to help you with next?",
+            "translatedQuestion": "다음에 무엇을 도와드릴까요?",
+            "nextQuestionTargetSlotName": "available_options_inquiry",
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertEqual(
+            [slot.slotName for slot in result.filledSlots],
+            ["available_options_inquiry"],
+        )
+        self.assertIsNone(result.nextQuestion)
+        self.assertIsNone(result.translatedQuestion)
+
+    def test_next_question_treats_indirect_option_request_as_assistance_when_target_is_different(self):
+        from app.models.conversation import NextQuestionRequest
+
+        class FakeAssistanceKnowledgeStore:
+            def __init__(self):
+                self.find_calls = []
+                self.save_calls = []
+
+            def find_reusable_answer(self, request):
+                self.find_calls.append(request)
+                return None
+
+            def save_interaction(self, request, response, *, answer_source):
+                self.save_calls.append((request, response, answer_source))
+
+        store = FakeAssistanceKnowledgeStore()
+        self.service.assistance_knowledge_store = store
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please specify what exactly happened with your baggage?",
+            "originalQuestionTargetSlotName": "baggage_issue_detail",
+            "userUtterance": "I don't know what option I can do",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 문제를 해결하느라 환승편을 놓친 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "상황과 수하물 문제를 설명하고 다음 조치를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_issue_detail",
+                    "description": "사용자가 수하물에 정확히 어떤 문제가 있었는지 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "broken", "delayed", "damaged"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "available_options_inquiry",
+                    "description": "사용자가 가능한 선택지나 대안이 있는지 직접 또는 간접적으로 물었는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["option", "options", "alternative", "what can I do"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "You may be able to ask for another available option. Could you tell me what exactly happened with your baggage?",
+            "translatedQuestion": "다른 가능한 선택지를 요청할 수 있어요. 수하물에 정확히 어떤 문제가 있었는지 말씀해 주시겠어요?",
+            "nextQuestionTargetSlotName": "baggage_issue_detail",
+            "turnClassification": "INVALID_RESPONSE",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.nextQuestionTargetSlotName, "baggage_issue_detail")
+        self.assertEqual(len(store.find_calls), 1)
+        self.assertEqual(len(store.save_calls), 1)
+
+    def test_next_question_allows_compound_target_answer_and_indirect_request_slot(self):
+        from app.models.conversation import NextQuestionRequest
+
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Could you please specify what exactly happened with your baggage?",
+            "originalQuestionTargetSlotName": "baggage_issue_detail",
+            "userUtterance": "My baggage was broken, and I don't know what option I can do",
+            "scenarioTitle": "환승편을 놓친 뒤 도움 요청하기",
+            "scenarioSituation": "수하물 문제를 해결하느라 환승편을 놓친 상황입니다.",
+            "aiRole": "항공사 환승 데스크 직원",
+            "scenarioGoal": "상황과 수하물 문제를 설명하고 다음 조치를 요청할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "baggage_issue_detail",
+                    "description": "사용자가 수하물에 정확히 어떤 문제가 있었는지 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["baggage", "luggage", "broken", "delayed", "damaged"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+                {
+                    "slotName": "available_options_inquiry",
+                    "description": "사용자가 가능한 선택지나 대안이 있는지 직접 또는 간접적으로 물었는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["option", "options", "alternative", "what can I do"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+        responses = iter([
+            json.dumps({
+                "filledSlots": [
+                    {"slotName": "baggage_issue_detail"},
+                    {"slotName": "available_options_inquiry"},
+                ],
+                "candidateFilledSlots": [
+                    {
+                        "slotName": "baggage_issue_detail",
+                        "evidenceText": "My baggage was broken",
+                        "understoodMeaning": "The user's baggage was broken.",
+                    },
+                    {
+                        "slotName": "available_options_inquiry",
+                        "evidenceText": "I don't know what option I can do",
+                        "understoodMeaning": "The user indirectly asks what options are available.",
+                    },
+                ],
+                "nextQuestion": None,
+                "translatedQuestion": None,
+                "nextQuestionTargetSlotName": None,
+                "turnClassification": "ANSWER",
+            }),
+            json.dumps({
+                "results": [
+                    {"candidateId": "baggage_issue_detail#candidate", "supportsSlot": True},
+                    {"candidateId": "available_options_inquiry#candidate", "supportsSlot": True},
+                ],
+            }),
+        ])
+        self.service.chat = lambda *args, **kwargs: next(responses)
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ANSWER")
+        self.assertEqual(
+            [slot.slotName for slot in result.filledSlots],
+            ["baggage_issue_detail", "available_options_inquiry"],
+        )
+        self.assertIsNone(result.nextQuestion)
+        self.assertIsNone(result.translatedQuestion)
+
     def test_next_question_retargets_follow_up_when_model_asks_newly_filled_slot(self):
         from app.models.conversation import NextQuestionRequest
 
