@@ -10,6 +10,14 @@
 - [x] 관련 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] Obsidian 병목 제거 문서에 변경 이유와 검증 결과를 이어서 정리한다.
 
+## fallback 질문/번역 슬롯명 노출 제거
+
+- [x] baggage 계열 fallback 질문/번역이 슬롯명을 그대로 노출하는 RED 테스트를 추가한다.
+- [x] 슬롯명 대신 slot description/hints 기반 자연스러운 질문을 반환하도록 수정한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] Obsidian 병목 제거 문서에 원인과 배포 후 확인 결과를 정리한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
+
 ## Assistance RAG 기본 비활성화
 
 - [x] `assistance_rag_enabled` 기본값이 false인 RED 테스트를 추가한다.

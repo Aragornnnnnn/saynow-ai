@@ -190,6 +190,12 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         next_question,
         translated_question,
     )
+    next_question, translated_question = _repair_slot_name_fallback_question(
+        request,
+        next_question_target_slot_name,
+        next_question,
+        translated_question,
+    )
     next_question, translated_question = _ensure_visible_information_response(
         request,
         next_question,
@@ -1268,6 +1274,39 @@ def _question_tokens_contain_candidate_token(candidate_token: str, question_toke
 
 
 def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str]:
+    natural_question = _natural_follow_up_question_for_slot(slot)
+    if natural_question is not None:
+        return natural_question
+
+    readable_slot = slot.slotName.replace("_", " ")
+    return f"Could you tell me your {readable_slot}?", f"{slot.slotName} 정보를 알려주시겠어요?"
+
+
+def _repair_slot_name_fallback_question(
+    request: NextQuestionRequest,
+    next_question_target_slot_name: str | None,
+    next_question: str,
+    translated_question: str,
+) -> tuple[str, str]:
+    if next_question_target_slot_name is None:
+        return next_question, translated_question
+
+    target_slot = next(
+        (slot for slot in request.slots if slot.slotName == next_question_target_slot_name),
+        None,
+    )
+    if target_slot is None:
+        return next_question, translated_question
+
+    natural_question = _natural_follow_up_question_for_slot(target_slot)
+    if natural_question is None:
+        return next_question, translated_question
+    if not _question_or_translation_exposes_slot_name(target_slot, next_question, translated_question):
+        return next_question, translated_question
+    return natural_question
+
+
+def _natural_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str, str] | None:
     if _slot_requires_request_act(slot):
         return "What would you like me to help you with next?", "다음에 무엇을 도와드릴까요?"
 
@@ -1277,13 +1316,28 @@ def _fallback_follow_up_question_for_slot(slot: SlotStatusRequest) -> tuple[str,
         return "How long do you plan to stay in the United States?", "미국에 얼마나 머무를 계획인가요?"
     if _slot_describes_visit_purpose(slot):
         return "What is the purpose of your visit to the United States?", "미국 방문 목적이 무엇인가요?"
+    if _slot_describes_baggage_issue(slot):
+        return "Could you explain what happened with your baggage?", "수하물에 어떤 일이 있었는지 설명해 주시겠어요?"
 
     slot_key = slot.slotName.lower()
     if slot_key == "contact_info":
         return "Could you provide your email address or phone number?", "이메일 주소나 전화번호를 알려주시겠어요?"
 
-    readable_slot = slot.slotName.replace("_", " ")
-    return f"Could you tell me your {readable_slot}?", f"{slot.slotName} 정보를 알려주시겠어요?"
+    return None
+
+
+def _question_or_translation_exposes_slot_name(
+    slot: SlotStatusRequest,
+    next_question: str,
+    translated_question: str,
+) -> bool:
+    combined_text = f"{next_question}\n{translated_question}".lower()
+    if slot.slotName.lower() in combined_text:
+        return True
+
+    readable_slot = _normalize_utterance(slot.slotName.replace("_", " "))
+    normalized_combined_text = _normalize_utterance(combined_text)
+    return bool(readable_slot) and f" {readable_slot} " in f" {normalized_combined_text} "
 
 
 def _enforce_feedback_consistency(
@@ -2951,6 +3005,22 @@ def _slot_describes_visit_purpose(slot: SlotStatusRequest) -> bool:
         "study",
         "vacation",
         "visit",
+    )
+    return any(marker in compact for marker in markers)
+
+
+def _slot_describes_baggage_issue(slot: SlotStatusRequest) -> bool:
+    compact = _slot_intent_text(slot)
+    markers = (
+        "수하물",
+        "캐리어",
+        "위탁 수하물",
+        "baggage",
+        "luggage",
+        "suitcase",
+        "checked bag",
+        "baggage claim",
+        "items came out",
     )
     return any(marker in compact for marker in markers)
 
