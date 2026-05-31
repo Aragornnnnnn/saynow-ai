@@ -7,7 +7,7 @@
 - [x] 슬롯 정책 기반으로 최신 발화가 미충족 슬롯 evidence에 가까우면 RAG lookup을 건너뛰도록 구현한다.
 - [x] 관련 focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
 - [x] `SayNow 응답 시간 및 지연 측정` 하위 문서에 변경 이유, 구현 결과, direct 검증 결과를 정리한다.
-- [ ] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
 
 ## AI semantic evidence 지연 개선
 
