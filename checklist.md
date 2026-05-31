@@ -12,9 +12,9 @@
 - [x] focused RED/GREEN 테스트를 실행한다.
 - [x] 전체 unittest, compileall, diff check를 실행한다.
 - [x] Obsidian 품질 회귀 문서에 변경 이유와 검증 결과를 정리한다.
-- [ ] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
-- [ ] GitHub Actions develop 배포와 `/health`를 확인한다.
-- [ ] 배포 후 direct AI smoke를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋하고 develop에 push한다.
+- [x] GitHub Actions develop 배포와 `/health`를 확인한다.
+- [x] 배포 후 direct AI smoke를 실행한다.
 
 ## AI 대화 턴 지연 3차 개선
 
