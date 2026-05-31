@@ -1,6 +1,5 @@
 # 2차 MVP 대화 API의 LLM 호출과 응답 정규화를 담당한다.
 from functools import wraps
-import inspect
 import json
 import re
 import time
@@ -8,7 +7,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.config import settings
 from app.core.llm import chat
 from app.core.logger import get_logger
 from app.core.request_context import get_request_id
@@ -2571,41 +2569,19 @@ def _call_chat(
     temperature: float,
     *,
     workflow: str | None = None,
-    timeout_seconds: float | None = None,
 ) -> str:
     try:
-        kwargs: dict[str, Any] = {
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        if timeout_seconds is not None and _callable_accepts_keyword(chat, "timeout"):
-            kwargs["timeout"] = timeout_seconds
-        return chat(system, user, **kwargs)
+        return chat(system, user, max_tokens=max_tokens, temperature=temperature)
     except Exception as exc:
         logger.error(
-            "LLM 호출 실패 | workflow=%s max_tokens=%s temperature=%s timeout_seconds=%s error=%s",
+            "LLM 호출 실패 | workflow=%s max_tokens=%s temperature=%s error=%s",
             workflow or "unknown",
             max_tokens,
             temperature,
-            timeout_seconds,
             exc,
             exc_info=(type(exc), exc, exc.__traceback__),
         )
         raise ConversationGenerationError("model call failed") from exc
-
-
-def _callable_accepts_keyword(func: Any, keyword: str) -> bool:
-    try:
-        signature = inspect.signature(func)
-    except (TypeError, ValueError):
-        return True
-
-    for parameter in signature.parameters.values():
-        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
-            return True
-        if parameter.name == keyword:
-            return True
-    return False
 
 
 def _log_preview(value: str, limit: int = 240) -> str:
@@ -3218,7 +3194,6 @@ def _semantic_evidence_supports_candidates(
             max_tokens=max_tokens,
             temperature=0,
             workflow=workflow,
-            timeout_seconds=settings.semantic_evidence_timeout_seconds,
         )
         _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
         stage_started_at = time.perf_counter()

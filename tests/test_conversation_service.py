@@ -5583,16 +5583,20 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("LLM 호출 실패", messages)
         self.assertIn("max_tokens=128", messages)
 
-    def test_semantic_evidence_uses_timeout_and_fails_closed(self):
+    def test_semantic_evidence_does_not_pass_timeout_to_avoid_penalizing_slow_verification(self):
         from app.models.conversation import NextQuestionRequest
 
-        seen_timeouts = []
+        seen_kwargs = []
 
-        def timeout_chat(system, user, max_tokens, temperature, timeout=None):
-            seen_timeouts.append(timeout)
-            raise TimeoutError("semantic verifier timed out")
+        def semantic_chat(system, user, max_tokens, temperature, **kwargs):
+            seen_kwargs.append(kwargs)
+            return json.dumps({
+                "results": [
+                    {"candidateId": "baggage_delay_reason#utterance", "supportsSlot": True},
+                ],
+            })
 
-        self.service.chat = timeout_chat
+        self.service.chat = semantic_chat
         request = NextQuestionRequest.model_validate({
             "originalQuestion": "What happened with your baggage?",
             "originalQuestionTargetSlotName": "baggage_delay_reason",
@@ -5628,8 +5632,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service._semantic_evidence_supports_candidates(request, candidates)
 
-        self.assertEqual(seen_timeouts, [3.0])
-        self.assertEqual(result, {"baggage_delay_reason#utterance": False})
+        self.assertEqual(seen_kwargs, [{}])
+        self.assertEqual(result, {"baggage_delay_reason#utterance": True})
 
 
 if __name__ == "__main__":
