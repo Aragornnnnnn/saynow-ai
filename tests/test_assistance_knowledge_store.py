@@ -43,6 +43,23 @@ class AssistanceKnowledgeStoreTest(unittest.TestCase):
 
         self.assertIsInstance(store, NullAssistanceKnowledgeStore)
 
+    def test_build_store_returns_pgvector_store_only_when_explicitly_enabled(self):
+        from app.config import Settings
+        from app.services.assistance_knowledge_store import (
+            PgvectorAssistanceKnowledgeStore,
+            build_assistance_knowledge_store,
+        )
+
+        settings = Settings(
+            openai_api_key="test-key",
+            db_url="postgresql://example",
+            assistance_rag_enabled=True,
+        )
+
+        store = build_assistance_knowledge_store(settings)
+
+        self.assertIsInstance(store, PgvectorAssistanceKnowledgeStore)
+
     def test_pgvector_store_normalizes_jdbc_database_url(self):
         from app.config import Settings
         from app.services.assistance_knowledge_store import PgvectorAssistanceKnowledgeStore

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     db_url: str | None = None
     db_username: str | None = None
     db_password: str | None = None
-    assistance_rag_enabled: bool = True
+    assistance_rag_enabled: bool = False
     assistance_rag_database_url: str | None = None
     assistance_rag_database_username: str | None = None
     assistance_rag_database_password: str | None = None

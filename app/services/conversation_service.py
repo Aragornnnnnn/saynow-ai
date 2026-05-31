@@ -99,9 +99,11 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         _log_workflow_stage_duration(workflow, "deterministic_completion", stage_started_at)
         return deterministic_completion_response
 
-    stage_started_at = time.perf_counter()
-    retrieved_assistance_answer = _find_reusable_assistance_answer(request)
-    _log_workflow_stage_duration(workflow, "rag_lookup", stage_started_at)
+    retrieved_assistance_answer = None
+    if _assistance_rag_is_enabled():
+        stage_started_at = time.perf_counter()
+        retrieved_assistance_answer = _find_reusable_assistance_answer(request)
+        _log_workflow_stage_duration(workflow, "rag_lookup", stage_started_at)
     stage_started_at = time.perf_counter()
     raw = _call_chat(
         _next_question_system_prompt(),
@@ -193,7 +195,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
         filledSlots=filled_slots,
         turnClassification=turn_classification,
     )
-    if turn_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST:
+    if turn_classification == NextQuestionTurnClassification.ASSISTANCE_REQUEST and _assistance_rag_is_enabled():
         stage_started_at = time.perf_counter()
         _save_assistance_interaction(request, response, retrieved_assistance_answer)
         _log_workflow_stage_duration(workflow, "rag_save", stage_started_at)
@@ -1985,6 +1987,13 @@ def _find_reusable_assistance_answer(request: NextQuestionRequest) -> str | None
     if _latest_utterance_likely_answers_unfilled_slot(request):
         return None
     return assistance_knowledge_store.find_reusable_answer(request)
+
+
+def _assistance_rag_is_enabled() -> bool:
+    explicit_enabled = getattr(assistance_knowledge_store, "enabled", None)
+    if explicit_enabled is not None:
+        return bool(explicit_enabled)
+    return True
 
 
 def _save_assistance_interaction(

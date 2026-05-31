@@ -18,6 +18,8 @@ UNSUPPORTED_DATABASE_QUERY_PARAMS = {
 
 
 class NullAssistanceKnowledgeStore:
+    enabled = False
+
     def find_reusable_answer(self, request: Any) -> str | None:
         return None
 
@@ -26,6 +28,8 @@ class NullAssistanceKnowledgeStore:
 
 
 class PgvectorAssistanceKnowledgeStore:
+    enabled = True
+
     def __init__(self, config=settings):
         self.config = config
         self.database_url = _normalize_database_url(

@@ -2490,6 +2490,8 @@ class ConversationServiceTest(unittest.TestCase):
         from app.models.conversation import NextQuestionRequest
 
         class FakeAssistanceKnowledgeStore:
+            enabled = True
+
             def __init__(self):
                 self.find_calls = []
                 self.save_calls = []
@@ -2536,10 +2538,52 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
         self.assertEqual(store.save_calls[0][2], "retrieved")
 
+    def test_next_question_skips_rag_lookup_and_save_when_rag_disabled(self):
+        from app.models.conversation import NextQuestionRequest
+
+        test_case = self
+
+        class DisabledAssistanceKnowledgeStore:
+            enabled = False
+
+            def find_reusable_answer(self, request):
+                test_case.fail("disabled RAG should not call lookup")
+
+            def save_interaction(self, request, response, *, answer_source):
+                test_case.fail("disabled RAG should not save interaction")
+
+        self.service.assistance_knowledge_store = DisabledAssistanceKnowledgeStore()
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "What would you like to order?",
+            "userUtterance": "What beans do you use?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 주어진 시나리오 상황에서 상대방과 영어로 대화한다.",
+            "aiRole": "상대방 역할",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+            "slots": [
+                {"slotName": "drink", "description": "테스트 슬롯 채움 기준", "filled": False},
+            ],
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "filledSlots": [],
+            "candidateFilledSlots": [],
+            "nextQuestion": "We usually use medium-roasted Arabica beans. What drink would you like to order?",
+            "translatedQuestion": "보통 중간 로스팅 아라비카 원두를 사용해요. 어떤 음료를 주문하시겠어요?",
+            "nextQuestionTargetSlotName": "drink",
+            "turnClassification": "ASSISTANCE_REQUEST",
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "ASSISTANCE_REQUEST")
+        self.assertIn("medium-roasted Arabica beans", result.nextQuestion)
+
     def test_next_question_skips_rag_lookup_for_request_like_slot_answer(self):
         from app.models.conversation import NextQuestionRequest
 
         class FakeAssistanceKnowledgeStore:
+            enabled = True
+
             def __init__(self):
                 self.find_calls = []
                 self.save_calls = []
@@ -5182,8 +5226,7 @@ class ConversationServiceTest(unittest.TestCase):
             self.service.generate_next_question(request)
 
         messages = "\n".join(logs.output)
-        self.assertIn("requestId=- workflow=next_question stage=rag_lookup", messages)
-        self.assertIn("workflow=next_question stage=rag_lookup", messages)
+        self.assertNotIn("workflow=next_question stage=rag_lookup", messages)
         self.assertIn("workflow=next_question stage=llm_chat", messages)
         self.assertIn("workflow=next_question stage=parse_validate", messages)
         self.assertIn("workflow=next_question stage=postprocess", messages)

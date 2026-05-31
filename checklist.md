@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## Assistance RAG 기본 비활성화
+
+- [x] `assistance_rag_enabled` 기본값이 false인 RED 테스트를 추가한다.
+- [x] 명시적으로 `assistance_rag_enabled=true`와 DB URL을 줄 때만 pgvector store를 만드는 테스트를 추가한다.
+- [x] 설정 기본값을 false로 바꾸고 기존 RAG 구현은 rollback용으로 유지한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] `SayNow AI 병목 제거 작업 2026-05-31` 하위 문서에 RAG 비활성화 이유와 확인 방법을 정리한다.
+- [ ] 변경 사항을 커밋하고 develop에 push한다.
+- [ ] 재배포 후 direct AI 또는 BE 재현으로 지연 변화를 확인한다.
+
 ## AI deterministic completion fast-path
 
 - [x] 남은 요청형 슬롯 하나를 로컬 정책으로 채울 수 있는데도 main LLM을 호출하는 RED 테스트를 추가한다.
