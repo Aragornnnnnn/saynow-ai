@@ -17,6 +17,14 @@
 - [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
+## STT 의문문 request act 판정 확장
+
+- [x] `?`가 없는 `Are there...`, `Is there...` 발화가 요청형 슬롯을 채우는 RED 테스트를 추가한다.
+- [x] 슬롯명이나 airport 도메인에 의존하지 않는 공통 request-act 판정으로 구현한다.
+- [x] 세션 271 반복 질문 원인과 개선 이유를 문서에 정리한다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## AI RAG lookup 조건부 실행
 
 - [x] `ANSWER` 슬롯 답변에서 RAG lookup이 호출되지 않는 회귀 테스트를 RED로 확인한다.

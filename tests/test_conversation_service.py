@@ -1329,6 +1329,71 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.turnClassification, "ANSWER")
         self.assertEqual(result.nextQuestion, "What should I help you with next?")
 
+    def test_next_question_accepts_stt_auxiliary_questions_for_request_slots(self):
+        from app.models.conversation import NextQuestionRequest
+
+        utterances = [
+            "Are there any other flights that I can take",
+            "Is there an alternative flight",
+            "Do you have another option for me",
+        ]
+        for utterance in utterances:
+            with self.subTest(utterance=utterance):
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "What would you like me to help you with next?",
+                    "originalQuestionTargetSlotName": "available_options_inquiry",
+                    "userUtterance": utterance,
+                    "scenarioTitle": "대체 선택지 묻기",
+                    "scenarioSituation": "사용자는 진행 중인 문제에 대해 가능한 다음 선택지를 물어봐야 합니다.",
+                    "aiRole": "서비스 직원",
+                    "scenarioGoal": "직원에게 가능한 다음 선택지를 물어볼 수 있다.",
+                    "slots": [
+                        {
+                            "slotName": "available_options_inquiry",
+                            "description": "사용자가 가능한 선택지나 대안이 있는지 물었는지 여부",
+                            "filled": False,
+                            "evidencePolicy": {
+                                "mode": "semantic_evidence",
+                                "hints": ["option", "alternative", "another", "available"],
+                                "requiresEvidenceText": True,
+                                "mustBeGroundedIn": "latest_user_utterance",
+                            },
+                        },
+                    ],
+                })
+                responses = iter([
+                    json.dumps({
+                        "filledSlots": [{"slotName": "available_options_inquiry"}],
+                        "candidateFilledSlots": [
+                            {
+                                "slotName": "available_options_inquiry",
+                                "evidenceText": utterance,
+                                "understoodMeaning": "The user asks whether another option is available.",
+                            },
+                        ],
+                        "nextQuestion": None,
+                        "translatedQuestion": None,
+                        "nextQuestionTargetSlotName": None,
+                        "turnClassification": "ANSWER",
+                    }),
+                    json.dumps({
+                        "results": [
+                            {"candidateId": "available_options_inquiry#candidate", "supportsSlot": True},
+                        ],
+                    }),
+                ])
+                self.service.chat = lambda *args, **kwargs: next(responses)
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.turnClassification, "ANSWER")
+                self.assertEqual(
+                    [slot.slotName for slot in result.filledSlots],
+                    ["available_options_inquiry"],
+                )
+                self.assertIsNone(result.nextQuestion)
+                self.assertIsNone(result.translatedQuestion)
+
     def test_next_question_retargets_follow_up_when_model_asks_newly_filled_slot(self):
         from app.models.conversation import NextQuestionRequest
 

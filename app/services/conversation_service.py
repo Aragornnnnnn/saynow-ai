@@ -460,7 +460,7 @@ def _next_question_system_prompt() -> str:
             "For every filled slot, also include candidateFilledSlots with the exact evidenceText copied from the latest user utterance and a short understoodMeaning.\n"
             "Use evidencePolicy.mode and hints as guidance. Hints are representative expressions, not a complete required keyword list.\n"
             "For semantic_evidence slots, accept awkward or non-hint wording when the evidenceText still communicates the slot meaning.\n"
-            "If a slot description says the user asks, requests, checks, confirms, inquires, or wants to know something, only fill it when the evidenceText itself contains an explicit request act such as a question, can you, can I, please, help me, tell me, rebook me, or what should I do.\n"
+            "If a slot description says the user asks, requests, checks, confirms, inquires, or wants to know something, only fill it when the evidenceText itself contains an explicit request act such as a question, can you, can I, please, help me, tell me, rebook me, what should I do, or STT text that starts like a question such as Is there, Are there, or Do you have.\n"
             "Do not fill ask/request/check/confirm slots from a situation statement alone, even when the situation implies the user may need that help.\n"
             "For explicit_pattern slots, fill only when the latest utterance contains the required format such as phone number, email, date, or reservation code.\n"
             "For explicit_keyword slots, fill only when the latest utterance contains the required expression.\n"
@@ -2839,6 +2839,9 @@ def _evidence_text_contains_request_act(evidence_text: str) -> bool:
         return True
 
     normalized = _normalize_utterance(evidence_text)
+    if _looks_like_unpunctuated_question(normalized):
+        return True
+
     request_patterns = (
         "what should i",
         "what can i",
@@ -2899,6 +2902,21 @@ def _evidence_text_contains_request_act(evidence_text: str) -> bool:
         "get another",
     )
     return any(pattern in normalized for pattern in request_patterns)
+
+
+def _looks_like_unpunctuated_question(normalized: str) -> bool:
+    if not normalized:
+        return False
+
+    question_starter_patterns = (
+        r"^(?:what|when|where|which|who|why|how)\b",
+        r"^(?:is|are|was|were) there\b",
+        r"^(?:is|are|was|were) (?:any|another|a|an|the|this|that|it)\b",
+        r"^(?:do|does|did) (?:you|i|we|they|it|this|that)\b",
+        r"^(?:can|could|would|will|may|should) (?:you|i|we|they|it|this|that|there)\b",
+        r"^(?:have|has|had) (?:you|i|we|they)\b",
+    )
+    return any(re.search(pattern, normalized) for pattern in question_starter_patterns)
 
 
 def _semantic_evidence_candidate_payload(
