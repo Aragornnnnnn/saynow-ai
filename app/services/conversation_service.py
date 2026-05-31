@@ -110,12 +110,12 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         filled_slots = []
     else:
-        filled_slots, rejected_evidence_slot_names = _filter_filled_slots_with_user_evidence(
+        filled_slots, rejected_evidence_slot_names = _apply_evidence_policies_to_slots(
             request,
+            unfilled_slot_names,
             filled_slots,
             candidate_evidence_by_slot,
         )
-        filled_slots = _add_policy_defined_evidence_slots(request, unfilled_slot_names, filled_slots)
     filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
@@ -2401,51 +2401,84 @@ def _normalize_candidate_filled_slot_evidence(
     return normalized
 
 
-def _filter_filled_slots_with_user_evidence(
+def _apply_evidence_policies_to_slots(
     request: NextQuestionRequest,
+    unfilled_slot_names: list[str],
     filled_slots: list[FilledSlotResponse],
     candidate_evidence_by_slot: dict[str, dict[str, str]] | None = None,
 ) -> tuple[list[FilledSlotResponse], set[str]]:
     candidate_evidence_by_slot = candidate_evidence_by_slot or {}
     slots_by_name = {slot.slotName: slot for slot in request.slots}
-    filtered: list[FilledSlotResponse] = []
+    model_filled_slot_names = [slot.slotName for slot in filled_slots]
+    model_filled_slot_set = set(model_filled_slot_names)
+    accepted_slot_names: set[str] = set()
     rejected: set[str] = set()
-    for filled_slot in filled_slots:
-        slot = slots_by_name.get(filled_slot.slotName)
-        if slot is None:
-            continue
-        if _slot_has_user_evidence(slot, request, candidate_evidence_by_slot.get(filled_slot.slotName)):
-            filtered.append(filled_slot)
-        else:
-            rejected.add(filled_slot.slotName)
-    return filtered, rejected
+    semantic_candidates: list[dict[str, Any]] = []
+    semantic_candidate_slot_by_id: dict[str, str] = {}
 
-
-def _add_policy_defined_evidence_slots(
-    request: NextQuestionRequest,
-    unfilled_slot_names: list[str],
-    filled_slots: list[FilledSlotResponse],
-) -> list[FilledSlotResponse]:
-    filled_slot_names = {slot.slotName for slot in filled_slots}
-    slots_by_name = {slot.slotName: slot for slot in request.slots}
-    additions: list[FilledSlotResponse] = []
-    fallback_candidate = {
-        "evidenceText": request.userUtterance,
-        "understoodMeaning": "",
-        "confidence": "fallback",
-    }
     for slot_name in unfilled_slot_names:
-        if slot_name in filled_slot_names:
-            continue
-
         slot = slots_by_name.get(slot_name)
         if slot is None or slot.evidencePolicy is None:
+            if slot_name in model_filled_slot_set:
+                rejected.add(slot_name)
             continue
 
-        if _slot_evidence_policy_accepts_candidate(slot, request, fallback_candidate):
-            additions.append(FilledSlotResponse(slotName=slot_name))
+        candidate_inputs: list[tuple[str, dict[str, str]]] = []
+        model_candidate = candidate_evidence_by_slot.get(slot_name)
+        if slot_name in model_filled_slot_set and model_candidate is not None:
+            candidate_inputs.append(("candidate", model_candidate))
 
-    return [*filled_slots, *additions]
+        if slot_name not in model_filled_slot_set or model_candidate is None:
+            fallback_candidate = {
+                "evidenceText": request.userUtterance,
+                "understoodMeaning": "",
+                "confidence": "fallback",
+            }
+            candidate_inputs.append(("utterance", fallback_candidate))
+
+        for candidate_source, candidate_evidence in candidate_inputs:
+            decision = _slot_evidence_policy_local_decision(slot, request, candidate_evidence)
+            if decision is True:
+                accepted_slot_names.add(slot_name)
+                break
+            if decision is False:
+                continue
+
+            candidate_id = f"{slot_name}#{candidate_source}"
+            semantic_candidates.append(_semantic_evidence_candidate_payload(
+                candidate_id,
+                slot,
+                candidate_evidence,
+            ))
+            semantic_candidate_slot_by_id[candidate_id] = slot_name
+
+    semantic_results = (
+        _semantic_evidence_supports_candidates(request, semantic_candidates)
+        if semantic_candidates
+        else {}
+    )
+    for candidate_id, supports_slot in semantic_results.items():
+        if supports_slot:
+            slot_name = semantic_candidate_slot_by_id.get(candidate_id)
+            if slot_name is not None:
+                accepted_slot_names.add(slot_name)
+
+    for slot_name in model_filled_slot_names:
+        if slot_name not in accepted_slot_names:
+            rejected.add(slot_name)
+
+    accepted: list[FilledSlotResponse] = []
+    appended_slot_names: set[str] = set()
+    for slot_name in model_filled_slot_names:
+        if slot_name in accepted_slot_names and slot_name not in appended_slot_names:
+            accepted.append(FilledSlotResponse(slotName=slot_name))
+            appended_slot_names.add(slot_name)
+    for slot_name in unfilled_slot_names:
+        if slot_name in accepted_slot_names and slot_name not in appended_slot_names:
+            accepted.append(FilledSlotResponse(slotName=slot_name))
+            appended_slot_names.add(slot_name)
+
+    return accepted, rejected
 
 
 def _add_deterministic_evidence_slots(
@@ -2480,21 +2513,11 @@ def _slot_accepts_deterministic_evidence(
     return False
 
 
-def _slot_has_user_evidence(
-    slot: SlotStatusRequest,
-    request: NextQuestionRequest,
-    candidate_evidence: dict[str, str] | None = None,
-) -> bool:
-    if slot.evidencePolicy is None:
-        return False
-    return _slot_evidence_policy_accepts_candidate(slot, request, candidate_evidence)
-
-
-def _slot_evidence_policy_accepts_candidate(
+def _slot_evidence_policy_local_decision(
     slot: SlotStatusRequest,
     request: NextQuestionRequest,
     candidate_evidence: dict[str, str] | None,
-) -> bool:
+) -> bool | None:
     policy = slot.evidencePolicy
     if policy is None:
         return False
@@ -2516,7 +2539,7 @@ def _slot_evidence_policy_accepts_candidate(
         semantic_evidence_text = evidence_text or request.userUtterance
         if _slot_requires_request_act(slot) and not _evidence_text_contains_request_act(semantic_evidence_text):
             return False
-        return _semantic_evidence_supports_slot(slot, request, semantic_evidence_text, candidate_evidence or {})
+        return None
 
     return False
 
@@ -2777,18 +2800,36 @@ def _evidence_text_contains_request_act(evidence_text: str) -> bool:
     return any(pattern in normalized for pattern in request_patterns)
 
 
-@_record_workflow_duration("next_question_semantic_evidence")
-def _semantic_evidence_supports_slot(
+def _semantic_evidence_candidate_payload(
+    candidate_id: str,
     slot: SlotStatusRequest,
-    request: NextQuestionRequest,
-    evidence_text: str,
     candidate_evidence: dict[str, str],
-) -> bool:
+) -> dict[str, Any]:
+    return {
+        "candidateId": candidate_id,
+        "slotName": slot.slotName,
+        "slotDescription": slot.description,
+        "policyHints": slot.evidencePolicy.hints if slot.evidencePolicy else [],
+        "evidenceText": candidate_evidence.get("evidenceText", ""),
+        "understoodMeaning": candidate_evidence.get("understoodMeaning", ""),
+    }
+
+
+@_record_workflow_duration("next_question_semantic_evidence")
+def _semantic_evidence_supports_candidates(
+    request: NextQuestionRequest,
+    candidates: list[dict[str, Any]],
+) -> dict[str, bool]:
+    if not candidates:
+        return {}
+
     workflow = "next_question_semantic_evidence"
-    hints = ", ".join(slot.evidencePolicy.hints) if slot.evidencePolicy else ""
     system = (
-        "You verify whether a candidate evidence text from the latest user utterance supports one scenario slot. "
-        "Return ONLY valid JSON matching this schema: {\"supportsSlot\":true|false}. "
+        "You verify whether candidate evidence texts from the latest user utterance support scenario slots. "
+        "Return ONLY valid JSON matching this schema: "
+        "{\"results\":[{\"candidateId\":\"...\",\"supportsSlot\":true|false}]}. "
+        "Return exactly one result for each candidateId from the input. "
+        "Evaluate each candidate independently. "
         "Use the scenario only to interpret vague nouns in the evidence text. "
         "Do not use the previous AI question or scenario background to invent missing facts. "
         "Return true when the evidence text provides the core evidence needed to fill this slot. "
@@ -2802,28 +2843,49 @@ def _semantic_evidence_supports_slot(
         f"Scenario title: {request.scenarioTitle}\n"
         f"Scenario situation: {request.scenarioSituation}\n"
         f"Current slot state:\n{slot_state}\n"
-        f"Slot name: {slot.slotName}\n"
-        f"Slot description: {slot.description}\n"
-        f"Policy hints: {hints or 'None'}\n"
         f"Latest user utterance: {request.userUtterance}\n"
-        f"Candidate evidence text: {evidence_text}\n"
-        f"Candidate understood meaning: {candidate_evidence.get('understoodMeaning') or 'None'}"
+        "Candidate evidence checks:\n"
+        f"{json.dumps(candidates, ensure_ascii=False)}"
     )
     try:
         stage_started_at = time.perf_counter()
-        raw = _call_chat(system, user, max_tokens=80, temperature=0, workflow=workflow)
+        max_tokens = min(512, 80 + 60 * len(candidates))
+        raw = _call_chat(system, user, max_tokens=max_tokens, temperature=0, workflow=workflow)
         _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
         stage_started_at = time.perf_counter()
         data = _parse_json_object(raw, workflow=workflow)
         _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
     except ConversationGenerationError as exc:
         logger.warning(
-            "semantic evidence 검증 실패로 슬롯 후보 제거 | slot=%s error=%s",
-            slot.slotName,
+            "semantic evidence batch 검증 실패로 슬롯 후보 제거 | candidate_count=%s error=%s",
+            len(candidates),
             exc,
         )
-        return False
-    return data.get("supportsSlot") is True
+        return {str(candidate.get("candidateId")): False for candidate in candidates}
+
+    candidate_ids = {str(candidate.get("candidateId")) for candidate in candidates}
+    if len(candidates) == 1 and isinstance(data.get("supportsSlot"), bool):
+        candidate_id = str(candidates[0].get("candidateId"))
+        return {candidate_id: data.get("supportsSlot") is True}
+
+    raw_results = data.get("results")
+    if not isinstance(raw_results, list):
+        logger.warning(
+            "semantic evidence batch 응답 계약 불일치 | candidate_count=%s preview=%s",
+            len(candidates),
+            _log_preview(json.dumps(data, ensure_ascii=False)),
+        )
+        return {str(candidate.get("candidateId")): False for candidate in candidates}
+
+    results: dict[str, bool] = {str(candidate.get("candidateId")): False for candidate in candidates}
+    for raw_result in raw_results:
+        if not isinstance(raw_result, dict):
+            continue
+        candidate_id = raw_result.get("candidateId")
+        if not isinstance(candidate_id, str) or candidate_id not in candidate_ids:
+            continue
+        results[candidate_id] = raw_result.get("supportsSlot") is True
+    return results
 
 
 def _utterance_contains_contact_info(user_utterance: str) -> bool:

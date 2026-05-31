@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AI semantic evidence 지연 개선
+
+- [x] `trace-test-002`, `trace-test-01`, `trace-test-010` 로그에서 postprocess 병목 패턴을 정리한다.
+- [x] prompt-engineering-patterns 기준으로 marker 기반 fast-path의 확장성 한계를 재검토한다.
+- [x] semantic evidence verifier를 슬롯별 N회 호출하지 않고 요청당 1회 batch 검증하도록 테스트로 고정한다.
+- [x] 도메인 marker fast-path를 제거하고 구조화 JSON batch verifier로 `next_question_semantic_evidence` LLM 호출 수를 줄인다.
+- [x] 기존 semantic evidence 회귀 테스트와 focused 테스트를 실행한다.
+- [x] `SayNow 응답 시간 및 지연 측정` 하위 문서에 변경 과정과 검증 결과를 정리한다.
+
 ## AI 응답 시간 및 지연 측정
 
 - [x] 요청 ID 전달과 workflow latency 로그 범위를 현재 코드에서 확인한다.

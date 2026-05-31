@@ -1,5 +1,10 @@
 # 작업 맥락 기록
 
+- 2026-05-31 AI 병목 개선은 BE의 `totalMs - aiCallMs` 구간을 제외하고, AI 서버 내부 `next_question` workflow만 대상으로 한다. 첫 개선 축은 `postprocess`에서 여러 번 발생하는 `next_question_semantic_evidence` LLM 호출을 줄이는 것이다.
+- 2026-05-31 운영 로그 기준 `trace-test-01` 2번째 호출과 `trace-test-010` 2번째 호출은 semantic evidence 내부 LLM 호출이 각각 약 3.82초, 4.20초까지 튀면서 `postprocess`가 4초대가 됐다. 반면 `trace-test-002` 2번째 호출은 본 `next_question` `llm_chat`이 약 6.89초라 별도 축으로 남긴다.
+- 2026-05-31 prompt-engineering-patterns 기준으로 재검토한 결과, missed connection, baggage delay, next flight 같은 도메인 marker를 Python 코드에 늘리는 방식은 시나리오 확장성에 맞지 않다. 해당 fast-path는 제거하고, 슬롯 description, hints, evidenceText를 입력으로 받는 구조화 JSON batch verifier로 전환한다.
+- 2026-05-31 batch verifier는 semantic evidence 후보들을 `candidateId` 단위로 모아 `next_question_semantic_evidence` LLM을 요청당 최대 1회 호출한다. 명확한 airport 3-slot 케이스는 main `next_question` 1회와 batch verifier 1회로 끝나며, 도메인 지식은 코드가 아니라 슬롯 정책 데이터와 verifier prompt가 해석한다.
+- 2026-05-31 기존 context-only overfill, vague items, assistance misclassification 회귀 테스트는 batch 응답 계약에 맞게 유지했다. 검증은 RED 확인 후 focused semantic evidence 테스트, `tests.test_conversation_service` 107개, 전체 `unittest discover` 135개, `compileall`, `git diff --check` 통과로 확인했다.
 - 2026-05-31 AI 응답 시간 및 지연 측정은 BE 전체 latency 계측과 연결될 수 있도록 `X-Request-Id`를 AI 서버 요청 컨텍스트에 저장하는 방향으로 시작한다. AI 쪽 책임은 사용자 체감 전체 시간을 단독 판단하는 것이 아니라, 같은 요청 안에서 `llm_chat`, `rag_lookup`, `parse_validate`, `postprocess` 같은 내부 단계 중 어디가 느린지 분해해 주는 것이다.
 - 2026-05-31 이번 변경은 새 저장소나 DB 테이블을 만들지 않고 구조화 로그만 확장한다. 기존 `AI workflow 단계 소요 시간` 로그를 유지하되 `requestId`를 추가하고, workflow 전체 소요 시간 로그를 별도로 남겨 BE의 `aiCallMs`와 대조할 수 있게 한다.
 - 2026-05-31 구현은 `app.core.request_context`의 `ContextVar`와 FastAPI middleware로 처리한다. BE가 `X-Request-Id`를 보내면 AI 응답 헤더에도 같은 값을 돌려주고, 헤더가 없으면 AI 서버가 UUID hex를 생성한다. 단계별 로그와 workflow 전체 로그는 context에 저장된 값을 `requestId`로 남긴다.
