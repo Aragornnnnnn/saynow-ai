@@ -1,6 +1,7 @@
 # 작업 맥락 기록
 
 - 2026-05-31 RAG는 현재 운영 구조에서 품질 이득보다 지연 비용이 커서 기본 비활성화로 전환한다. 삭제하지 않는 이유는 이미 `NullAssistanceKnowledgeStore`와 `assistance_rag_enabled` 플래그가 있고, 이후 `approved` 지식 전용이나 실험 재개가 필요할 때 명시적으로 다시 켤 수 있기 때문이다. develop 배포 후에는 실제 `rag_lookup`, `rag_save` stage가 사라지는지 로그로 확인해야 한다.
+- 2026-05-31 RAG OFF와 deterministic completion 배포 후 direct AI 측정 결과는 `ai-rag-off-deterministic-001` 20ms, `ai-rag-off-menu-001` 3.42초, `ai-rag-off-slot-answer-001` 2.81초, `ai-rag-off-assistance-001` 5.11초였다. RAG 제거와 최종 슬롯 fast-path는 효과가 있지만, assistance request와 일반 슬롯 답변에는 main LLM과 semantic verifier 시간이 남아 있다. 로컬 AWS 자격 증명 오류로 SSM의 `ASSISTANCE_RAG_ENABLED` 직접 확인은 실패했다.
 - 2026-05-31 응답 지연 추가 개선은 main `next_question` LLM 호출 자체를 줄이는 방향으로 진행한다. BE 재현 `duplicate-question-repro-002`의 4턴은 `I don't know what option I can do`가 최종적으로 `ANSWER`가 됐지만, 보정이 main LLM 이후에 적용되어 `aiCallMs=5717ms`가 남았다. 남은 슬롯이 요청형 semantic slot 하나이고 최신 발화가 target slot의 request act를 명확히 만족하면 RAG, main LLM, semantic verifier 없이 `ANSWER`와 `nextQuestion=null`을 반환할 수 있다.
 - 2026-05-31 구현은 `generate_next_question()`의 안전 정책, repeat fast-path, invalid fragment guard 이후에 `_try_complete_with_deterministic_evidence()`를 둔다. 이 함수는 기존 `_add_deterministic_evidence_slots()` 결과가 모든 미충족 슬롯을 채울 때만 조기 종료한다. 남은 슬롯이 있으면 기존 LLM 경로를 유지하므로 compound answer나 다음 질문 생성이 필요한 케이스를 과감하게 생략하지 않는다.
 - 2026-05-31 `Parden Can you tell again?`는 자연어로는 요청이지만, SayNow의 기존 `ASSISTANCE_REQUEST` 의미인 시나리오 내부 도움, 메뉴, 추천, 선택지 요청과는 다르다. UX상 하트를 깎지 않고 직전 질문을 다시 보여주는 별도 `REPEAT_REQUEST`가 맞으며, AI 서버에서는 RAG와 LLM 호출 전에 deterministic fast-path로 끝내는 방향으로 잡는다.

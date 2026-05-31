@@ -7,8 +7,8 @@
 - [x] 설정 기본값을 false로 바꾸고 기존 RAG 구현은 rollback용으로 유지한다.
 - [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
 - [x] `SayNow AI 병목 제거 작업 2026-05-31` 하위 문서에 RAG 비활성화 이유와 확인 방법을 정리한다.
-- [ ] 변경 사항을 커밋하고 develop에 push한다.
-- [ ] 재배포 후 direct AI 또는 BE 재현으로 지연 변화를 확인한다.
+- [x] 변경 사항을 커밋하고 develop에 push한다.
+- [x] 재배포 후 direct AI 또는 BE 재현으로 지연 변화를 확인한다.
 
 ## AI deterministic completion fast-path
 
