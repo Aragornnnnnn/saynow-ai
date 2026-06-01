@@ -1,8 +1,241 @@
 # 작업 맥락 기록
 
-- 최종 피드백 계약은 현재 Swagger의 단순 payload가 아니라 Obsidian 문서 payload를 기준으로 맞춘다.
-- 문서 payload에는 `sessionId`, `scenario`, `scenarioResult`, `filledSlots`, `turns[]`가 포함된다.
-- `sessionId`, `turnId`, `turnIndex`는 주로 추적과 매핑 안정성을 위한 메타데이터다.
-- 피드백 추론에는 `scenario.successGoal`, `scenario.situationDescription`, `filledSlots`, `turns[].questionText`, `turns[].userTranscript`, 응답 시간 관련 값이 중요하다.
-- AI 서버는 최종 피드백 모델에서 문서 payload를 직접 받도록 변경했다. 기존 `scenarioGoal`, `question`, `transcript`, `responseTimeSec` 참조는 각각 `scenario.successGoal`, `questionText`, `userTranscript`, 응답 시간 ms 값으로 대체했다.
-- 검증 명령은 `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_session_feedback_service`, `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`를 실행했다.
+- 2026-05-31 대화 턴 지연 3차 개선은 피드백 생성이 아니라 `/next-question`만 대상으로 한다. RAG는 이미 기본 비활성화됐으므로 이번 작업의 핵심은 main `next_question` prompt/token 축소, target request slot의 local evidence accept, deterministic completion skip reason 관측성이다.
+- 2026-05-31 local accept는 슬롯명을 하드코딩하지 않는다. `originalQuestionTargetSlotName`과 슬롯의 `evidencePolicy`, request-act description, 최신 발화의 request act, slot hints/slot name target matching이 모두 맞을 때만 semantic verifier를 건너뛴다. non-target request slot은 기존처럼 바로 채우지 않는다.
+- 2026-05-31 구현 결과, 일반 슬롯 답변 경로는 assistance few-shot과 retrieved assistance context를 빼고 main `next_question` max token을 384로 낮췄다. assistance request 경로는 기존 assistance few-shot을 유지한다. semantic verifier는 max token을 `min(320, 80 + 50 * candidates)`로 낮췄다.
+- 2026-05-31 semantic verifier timeout은 제거했다. 느린 검증을 false로 처리하면 사용자가 잘 답했는데도 슬롯이 안 채워질 수 있어 UX 위험이 크기 때문이다. 따라서 tail latency는 token 축소와 local accept로 줄이고, verifier 자체를 시간으로 강제 중단하지 않는다.
+- 2026-05-31 검증은 focused RED/GREEN, `tests.test_conversation_service` 122개, 전체 `unittest discover` 152개, `compileall app tests`, `git diff --check` 통과로 확인했다. BE 재측정에서는 `deterministic completion skip` 로그의 `skipReason`, `acceptedSlotCount`로 최종 턴 fast-path 미적용 원인을 같이 봐야 한다.
+- 2026-05-31 배포 후 스모크에서 `baggage_issue_detail 정보를 알려주시겠어요?`, `baggage_delay_reason 정보를 알려주시겠어요?`처럼 fallback 번역이 슬롯명을 그대로 노출하는 품질 이슈를 확인했다. 수정은 slot name 직접 분기가 아니라 slot description과 hints가 수하물 문제를 설명할 때 자연스러운 baggage 질문으로 치환하는 방식으로 했다.
+- 2026-05-31 슬롯명 노출 보정은 두 경로에 적용한다. 로컬 fallback이 질문을 만들 때 먼저 자연어 질문을 사용하고, 모델이 `Could you tell me your baggage issue detail?`처럼 슬롯명 기반 문구를 반환해도 최종 target slot의 description/hints를 기준으로 질문과 번역을 다시 고친다.
+- 2026-05-31 fallback 슬롯명 노출 제거 검증은 RED 후 GREEN, 관련 focused 테스트 9개, `tests.test_conversation_service` 124개, 전체 `unittest discover` 154개, `compileall app tests`, `git diff --check` 통과로 확인했다.
+- 2026-05-31 RAG는 현재 운영 구조에서 품질 이득보다 지연 비용이 커서 기본 비활성화로 전환한다. 삭제하지 않는 이유는 이미 `NullAssistanceKnowledgeStore`와 `assistance_rag_enabled` 플래그가 있고, 이후 `approved` 지식 전용이나 실험 재개가 필요할 때 명시적으로 다시 켤 수 있기 때문이다. develop 배포 후에는 실제 `rag_lookup`, `rag_save` stage가 사라지는지 로그로 확인해야 한다.
+- 2026-05-31 RAG OFF와 deterministic completion 배포 후 direct AI 측정 결과는 `ai-rag-off-deterministic-001` 20ms, `ai-rag-off-menu-001` 3.42초, `ai-rag-off-slot-answer-001` 2.81초, `ai-rag-off-assistance-001` 5.11초였다. RAG 제거와 최종 슬롯 fast-path는 효과가 있지만, assistance request와 일반 슬롯 답변에는 main LLM과 semantic verifier 시간이 남아 있다. 로컬 AWS 자격 증명 오류로 SSM의 `ASSISTANCE_RAG_ENABLED` 직접 확인은 실패했다.
+- 2026-05-31 응답 지연 추가 개선은 main `next_question` LLM 호출 자체를 줄이는 방향으로 진행한다. BE 재현 `duplicate-question-repro-002`의 4턴은 `I don't know what option I can do`가 최종적으로 `ANSWER`가 됐지만, 보정이 main LLM 이후에 적용되어 `aiCallMs=5717ms`가 남았다. 남은 슬롯이 요청형 semantic slot 하나이고 최신 발화가 target slot의 request act를 명확히 만족하면 RAG, main LLM, semantic verifier 없이 `ANSWER`와 `nextQuestion=null`을 반환할 수 있다.
+- 2026-05-31 구현은 `generate_next_question()`의 안전 정책, repeat fast-path, invalid fragment guard 이후에 `_try_complete_with_deterministic_evidence()`를 둔다. 이 함수는 기존 `_add_deterministic_evidence_slots()` 결과가 모든 미충족 슬롯을 채울 때만 조기 종료한다. 남은 슬롯이 있으면 기존 LLM 경로를 유지하므로 compound answer나 다음 질문 생성이 필요한 케이스를 과감하게 생략하지 않는다.
+- 2026-05-31 `Parden Can you tell again?`는 자연어로는 요청이지만, SayNow의 기존 `ASSISTANCE_REQUEST` 의미인 시나리오 내부 도움, 메뉴, 추천, 선택지 요청과는 다르다. UX상 하트를 깎지 않고 직전 질문을 다시 보여주는 별도 `REPEAT_REQUEST`가 맞으며, AI 서버에서는 RAG와 LLM 호출 전에 deterministic fast-path로 끝내는 방향으로 잡는다.
+- 2026-05-31 BE 적용 후 repeat 요청은 `200`, `aiCallMs=99`, `totalMs=1223`으로 확인되어 기존 9초에서 11초대 병목은 사라졌다. 남은 차이는 한국어 번역이 직전 문구 그대로가 아니라 target slot fallback 문구로 재계산되는 점이다.
+- 2026-05-31 번역까지 완전히 같은 질문을 반복하려면 AI가 원문 번역을 새로 추론하면 안 된다. BE가 현재 턴의 `session_turns.translated_question`을 `originalTranslatedQuestion`으로 넘기고, AI는 `REPEAT_REQUEST`에서 그 값을 그대로 반환하는 계약으로 고정한다. 이 필드는 optional로 받아 기존 BE 요청은 fallback 번역을 유지한다.
+- 2026-05-31 세션 271의 609-613 반복 질문 원인은 `next_options_request`가 계속 미충족으로 남은 것이다. 사용자는 `Are there any other flights that I can take`처럼 대체편 가능 여부를 물었지만 STT 텍스트에는 `?`가 없고, 현재 request-act detector가 `is there`, `are there` 계열을 공통 요청형 의문문으로 보지 않아 요청형 슬롯 검증 전에 탈락할 수 있다.
+- 2026-05-31 세션 271 보정은 `next_options_request`나 airport 전용 키워드를 추가하지 않았다. `_evidence_text_contains_request_act()`가 STT에서 물음표가 사라진 영어 의문문 시작 패턴을 공통 request act로 보고, 슬롯 의미 자체는 기존 semantic evidence verifier가 계속 검증하게 했다.
+- 2026-05-31 BE의 session 279 재현에서 중복 질문은 사라졌지만 `I don't know what option I can do`가 `INVALID_RESPONSE`로 분류되어 하트가 차감됐다. 이 발화는 현재 target이 요청형 슬롯이면 `ANSWER`가 자연스럽고, target이 다른 슬롯이면 직전 질문 답변이 아니므로 `ASSISTANCE_REQUEST`로 살리는 target-aware 정책이 맞다. 구현은 `next_options_request` 슬롯명 분기 없이 요청형 슬롯 성격과 최신 발화의 간접 request act를 기준으로 한다.
+- 2026-05-31 사진의 baggage delay 문제는 AI가 완전히 없는 내용을 만든 것이라기보다 scenario 6의 DB 시나리오 전제가 `수하물 수령이 늦어져 환승편을 놓친 상황`이고 슬롯에 `baggage_delay_reason`이 있기 때문에 생긴다. 이 슬롯을 유지하려면 프론트가 상황 전제를 명확히 보여주고 AI 질문은 baggage delay를 단정하지 않는 열린 문장으로 바꿔야 한다. 일반 missed-flight 시나리오라면 이 슬롯은 `missed_connection_reason`처럼 넓히는 편이 자연스럽다.
+- 2026-05-31 구현 결과, `REPEAT_REQUEST`를 `NextQuestionTurnClassification`에 추가하고 반복 요청은 `generate_next_question()` 초반에서 직전 질문을 다시 반환한다. 이 경로는 RAG lookup, main LLM, semantic verifier, RAG save를 호출하지 않는다. 검증은 RED 후 GREEN, focused 회귀 5개, `tests.test_conversation_service` 109개, 전체 discover 137개, `compileall`, `git diff --check` 통과로 확인했다.
+- 2026-05-31 AI 병목 2차 개선은 `next_question` 시작부의 `rag_lookup`을 조건부 실행으로 바꾸는 것이다. 배포 후 direct AI 테스트에서 semantic evidence 반복 호출은 요청당 1회로 줄었지만, `rag_lookup`이 1.7초에서 3.4초까지 걸려 전체 응답 시간을 계속 밀어 올렸다.
+- 2026-05-31 방향은 slot-first, assistance-second다. 최신 발화가 현재 미충족 슬롯의 `evidencePolicy`를 채울 가능성이 높으면 RAG를 건너뛰고, 메뉴, 추천, 부가 정보 질문처럼 슬롯 답변이 아니라 역할극 assistance에 가까운 경우에만 RAG lookup을 실행한다.
+- 2026-05-31 캐싱은 2차 후속으로 둔다. 먼저 필요 없는 RAG lookup을 제거하고, 이후에도 남는 assistance request 경로에만 짧은 TTL의 lookup cache나 negative cache를 붙이는 순서가 안전하다.
+- 2026-05-31 구현은 `_latest_utterance_likely_answers_unfilled_slot()` guard를 `_find_reusable_assistance_answer()`와 `_is_actual_assistance_request()` 앞에 둔다. semantic evidence 슬롯은 request act가 필요한 슬롯이면 최신 발화가 slot hints를 겨냥할 때만, 일반 semantic 슬롯이면 직전 질문과 최신 발화가 같은 슬롯을 겨냥할 때만 RAG를 건너뛴다.
+- 2026-05-31 RED 테스트 `test_next_question_skips_rag_lookup_for_request_like_slot_answer`는 기존 구현에서 `Can you rebook me on the next flight?`가 RAG store를 1회 호출해 실패했다. 구현 후 focused RAG 테스트 7개, `tests.test_conversation_service` 108개, 전체 `unittest discover` 136개, `compileall`, `git diff --check`가 통과했다.
+- 2026-05-31 커밋 `3e7e354` 배포 후 direct AI 검증에서 슬롯 답변형 요청의 `rag_lookup`은 `all3` 1.02ms, `two_remaining` 0.23ms, `one_remaining` 0.13ms로 줄었다. 같은 케이스의 이전 배포는 1.7초에서 3.4초였으므로, 남은 AI 병목은 main `next_question` `llm_chat`과 semantic evidence verifier 호출이다.
+- 2026-05-31 AI 병목 개선은 BE의 `totalMs - aiCallMs` 구간을 제외하고, AI 서버 내부 `next_question` workflow만 대상으로 한다. 첫 개선 축은 `postprocess`에서 여러 번 발생하는 `next_question_semantic_evidence` LLM 호출을 줄이는 것이다.
+- 2026-05-31 운영 로그 기준 `trace-test-01` 2번째 호출과 `trace-test-010` 2번째 호출은 semantic evidence 내부 LLM 호출이 각각 약 3.82초, 4.20초까지 튀면서 `postprocess`가 4초대가 됐다. 반면 `trace-test-002` 2번째 호출은 본 `next_question` `llm_chat`이 약 6.89초라 별도 축으로 남긴다.
+- 2026-05-31 prompt-engineering-patterns 기준으로 재검토한 결과, missed connection, baggage delay, next flight 같은 도메인 marker를 Python 코드에 늘리는 방식은 시나리오 확장성에 맞지 않다. 해당 fast-path는 제거하고, 슬롯 description, hints, evidenceText를 입력으로 받는 구조화 JSON batch verifier로 전환한다.
+- 2026-05-31 batch verifier는 semantic evidence 후보들을 `candidateId` 단위로 모아 `next_question_semantic_evidence` LLM을 요청당 최대 1회 호출한다. 명확한 airport 3-slot 케이스는 main `next_question` 1회와 batch verifier 1회로 끝나며, 도메인 지식은 코드가 아니라 슬롯 정책 데이터와 verifier prompt가 해석한다.
+- 2026-05-31 기존 context-only overfill, vague items, assistance misclassification 회귀 테스트는 batch 응답 계약에 맞게 유지했다. 검증은 RED 확인 후 focused semantic evidence 테스트, `tests.test_conversation_service` 107개, 전체 `unittest discover` 135개, `compileall`, `git diff --check` 통과로 확인했다.
+- 2026-05-31 AI 응답 시간 및 지연 측정은 BE 전체 latency 계측과 연결될 수 있도록 `X-Request-Id`를 AI 서버 요청 컨텍스트에 저장하는 방향으로 시작한다. AI 쪽 책임은 사용자 체감 전체 시간을 단독 판단하는 것이 아니라, 같은 요청 안에서 `llm_chat`, `rag_lookup`, `parse_validate`, `postprocess` 같은 내부 단계 중 어디가 느린지 분해해 주는 것이다.
+- 2026-05-31 이번 변경은 새 저장소나 DB 테이블을 만들지 않고 구조화 로그만 확장한다. 기존 `AI workflow 단계 소요 시간` 로그를 유지하되 `requestId`를 추가하고, workflow 전체 소요 시간 로그를 별도로 남겨 BE의 `aiCallMs`와 대조할 수 있게 한다.
+- 2026-05-31 구현은 `app.core.request_context`의 `ContextVar`와 FastAPI middleware로 처리한다. BE가 `X-Request-Id`를 보내면 AI 응답 헤더에도 같은 값을 돌려주고, 헤더가 없으면 AI 서버가 UUID hex를 생성한다. 단계별 로그와 workflow 전체 로그는 context에 저장된 값을 `requestId`로 남긴다.
+- 2026-05-31 검증은 requestId route focused 테스트, timing focused 테스트, `tests.test_conversation_routes`, `tests.test_conversation_service`, 전체 `unittest discover` 133개, `compileall`, `git diff --check`로 확인했다.
+- 2026-05-31 BE dev 회귀 테스트에서 scenarioId 6, sessionId 220은 슬롯 적용과 저장 target은 맞았지만, 실제 `nextQuestion` 문구가 `next_options_request`가 아니라 수하물 지연 이유를 다시 묻는 형태였다. 원인은 target metadata를 보정한 뒤 질문 문구가 target 슬롯과 정렬되는지 다시 검증하지 않는 경로다. 이번 보정은 모델 target이 남은 슬롯을 가리키는데 질문 문구가 해당 슬롯을 겨냥하지 않으면, target 슬롯의 fallback 질문으로 바꾸는 방향으로 진행한다.
+- 2026-05-31 해당 보정 후 회귀 테스트 `test_next_question_rewrites_question_when_model_target_and_text_disagree`를 추가했다. 모델이 `nextQuestionTargetSlotName=next_options_request`를 내면서도 문구로는 `items` 재설명을 요구하는 경우, 최종 질문을 `What would you like me to help you with next?`로 바꾼다.
+- 2026-05-31 재질문 방지 구조는 이전 대화 전체를 전달하는 방식보다 target slot metadata를 명시하는 방식으로 잡았다. `originalQuestionTargetSlotName`은 직전 질문의 주 target이고, `nextQuestionTargetSlotName`은 AI가 생성한 다음 질문의 주 target이다. 다만 `filledSlots`는 target slot 하나로 제한하지 않고, 최신 `userUtterance` 안에 명확한 evidence가 있으면 여러 미충족 슬롯을 함께 채울 수 있다.
+- 2026-05-31 AI 서버 구현은 `NextQuestionRequest.originalQuestionTargetSlotName`을 optional로 받고, `NextQuestionResponse.nextQuestionTargetSlotName`을 반환하도록 바꿨다. 모델 출력 target이 없거나 부정확해도 후처리에서 남은 슬롯과 질문 문장을 기준으로 target을 보정한다. 모든 슬롯이 채워져 `nextQuestion=null`이면 target도 `null`이다.
+- 2026-05-30 develop 배포 후 live smoke에서 `Two week`는 `stay_duration`을 채웠지만 다음 질문이 `Can you tell me the exact dates of your stay?`로 다시 기간 상세를 물었다. 원인은 `_question_asks_duration()`이 `exact dates`, `dates of your stay` 같은 표현을 기간 질문으로 보지 못한 것이다. 회귀 테스트를 추가하고 기간 질문 marker를 보강해, 방금 채운 기간 슬롯을 다시 묻지 않고 남은 `accommodation` 질문으로 retarget하도록 수정했다.
+- 2026-05-30 `prompt-engineering-patterns` 기준 재점검 결과, 세션 207 보정은 동작하지만 프롬프트 품질 측면에서 4개 보강점이 남았다. few-shot 예시가 `candidateFilledSlots` 없는 JSON을 보여 schema와 충돌하고, 한국어 slot description은 `_normalize_utterance()`에서 사라져 hints 의존도가 높으며, name-only 목적 질문 보정은 예시 답변임을 더 명확히 해야 하고, feedback self-check에는 목적, 국가, 장소, 의도 hallucination 검증이 반복되지 않는다.
+- 2026-05-30 보강 구현은 next-question few-shot의 `candidateFilledSlots` 필드 일관화, 한국어 description을 보존하는 `_slot_intent_text()` 도입, name-only 목적 질문 betterExpression의 예시 답변 표시, feedback/repair self-check의 grounding 검증 추가로 정리했다. 검증은 관련 RED 후 GREEN, `tests.test_conversation_service` 102개, 전체 `unittest discover` 128개, `compileall`, `git diff --check`로 확인했다.
+- 2026-05-30 세션 207에서 `Two week`가 피드백상 2주 체류로 이해됐지만 `stay_duration` 슬롯은 다음 턴 `Three days`에서야 충족됐다. 원인은 짧은 기간 fragment가 semantic evidence 후보나 verifier에서 떨어질 수 있는 구조다.
+- 같은 세션에서 `visit_purpose=true`, `stay_duration=true`, `accommodation=false` 상태인데 다음 질문이 다시 방문 목적을 물었다. 기존 보정은 newly filled slot 재질문만 막고, request에서 이미 `filled=true`인 슬롯 재질문은 막지 못한다.
+- 피드백에서는 `I am Trevor`를 방문 목적 답변처럼 고치고, `SaudiStudy`를 `study in Saudi Arabia`로 확장했다. 사용자 발화에 없는 목적, 국가, 장소, 의도를 만들지 않는 grounding 보강이 필요하다.
+- 2026-05-30 세션 207 보정 검증은 `tests.test_conversation_service` 101개, 전체 `unittest discover` 127개, `compileall`, `git diff --check`로 확인했다. `AGENTS.md`는 기존 untracked 파일이라 건드리지 않았다.
+- 2026-05-30 22:20 KST develop 배포 후 dev AI `POST /api/v1/conversation/next-question`에 세션 202 payload를 직접 호출했다. `filledSlots`는 `missed_connection`, `baggage_delay_reason`만 반환해 `next_options_request` 과잉 채움은 해결됐지만, `nextQuestion`이 `Can you confirm that you missed your connecting flight?`로 방금 채운 슬롯을 다시 묻는 문제가 남아 있었다.
+- 원인은 모델 호출 프롬프트의 `Primary target slot`이 호출 전 미충족 슬롯 첫 번째인 `missed_connection`으로 고정되는 점이다. 모델이 같은 발화에서 해당 슬롯을 채워도 후속 질문은 여전히 그 슬롯을 겨냥할 수 있다.
+- 보정은 모델 응답의 다음 질문이 newly filled slot을 겨냥하고 remaining slot은 겨냥하지 않을 때만 적용한다. 이 경우 남은 슬롯의 description 기준 질문으로 retarget하며, `next_options_request` 같은 요청형 슬롯은 `What would you like me to help you with next?`로 이어간다.
+- 검증은 재질문 회귀 테스트 RED 후 GREEN, semantic evidence 관련 focused 테스트, 전체 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 123개, compileall, diff check로 확인했다.
+- 2026-05-30 22:08 KST BE dev 테스트에서 scenarioId 6, sessionId 202가 첫 발화 `I miss my connecting flight because baggage come out too late.`만으로 `next_options_request=true`가 되어 즉시 `SUCCESS`가 됐다.
+- 같은 발화의 피드백은 “다음 조치에 대해 더 구체적으로 물어보면 좋겠어요.”라고 나왔다. 피드백은 실제 발화 기준으로 자연스럽고, 불일치의 근본 원인은 next-question 슬롯 판정 쪽이다.
+- `missed_connection`과 `baggage_delay_reason`은 이 발화로 채워지는 것이 맞다. `next_options_request`는 사용자가 다음 조치, 대체편, 재예약을 직접 묻거나 요청해야 채워져야 한다.
+- 이번 수정은 DB seed나 BE 저장 정책보다 AI 서버의 semantic evidence 검증을 우선한다. 슬롯명을 하드코딩하지 않고, slot description이 요청, 질문, 확인 행위를 요구하는 경우 최신 발화 안에 request act가 있는지 추가로 본다.
+- 구현 결과, `next_options_request`처럼 요청형 description을 가진 슬롯은 `I miss my connecting flight because baggage come out too late.` 같은 상황 설명만으로 채워지지 않는다. 반대로 `Can you rebook me on the next flight?`가 포함된 happy path는 계속 통과한다.
+- 검증은 세션 202 회귀 테스트 RED 후 GREEN, `tests.test_conversation_service` 96개, 전체 `unittest discover` 122개, `compileall`, `git diff --check`로 확인했다.
+- 2026-05-30 dev 재테스트 결과, 현재 BE는 모든 슬롯에 typed `evidencePolicy`를 내려주고 있다. 따라서 AI 서버의 기존 MVP용 `_legacy_slot_has_user_evidence()` 슬롯명 switch는 운영 계약상 더 이상 필요하지 않다.
+- 2026-05-30 legacy 제거 방향은 `evidencePolicy`가 없는 슬롯을 묵시적으로 통과시키지 않는 것이다. 정책 없는 슬롯은 최종 슬롯 적용에서 제외하고, 새 슬롯 추가 시 BE가 policy를 누락하면 테스트와 응답에서 바로 드러나게 만든다.
+- 2026-05-30 BE dev 재검증에서 `I missed my connecting flight.`가 `baggage_delay_reason`을 채우던 과잉 채움은 막혔지만, `My items came out too late.`, `My baggage came out too late.`, `My baggage took too long.` 같은 정상 수하물 지연 근거가 `ASSISTANCE_REQUEST`로 남고 슬롯을 채우지 못하는 false negative가 확인됐다.
+- 2026-05-30 원인은 `semantic_evidence`가 모델이 만든 `candidateFilledSlots`를 검증하는 단계에 머물러 있다는 점이다. 모델이 후보를 만들지 않거나 raw `ASSISTANCE_REQUEST`로 오분류하면, 현재 AI 서버는 `evidencePolicy`가 있는 슬롯을 description 기반으로 복구하지 않는다.
+- 2026-05-30 이번 보정은 슬롯명 switch를 늘리지 않는다. `slots[].evidencePolicy`가 있는 미충족 슬롯에 대해 최신 `userUtterance` 전체를 fallback evidence로 삼아 공통 policy validator를 한 번 더 통과시키고, 검증된 슬롯이 있으면 최종 분류를 `ANSWER`로 끌어올린다.
+- 2026-05-30 신규 시나리오 189에서 `I missed my connecting flight.`가 `baggage_delay_reason`까지 채운 문제는 slot_name switch 구조의 확장성 한계로 본다. 새 슬롯은 기존 최소 증거 검증 목록에 없으면 모델 판단을 그대로 통과할 수 있었다.
+- 2026-05-30 새 방향은 strict keyword 목록이 아니라 `semantic_evidence` 기반이다. BE는 `description`, `evidencePolicy.mode`, `hints`, `requiresEvidenceText`, `mustBeGroundedIn`을 JSON object로 내려주고, AI는 모델이 제시한 최신 발화 근거 문구인 `evidenceText`를 기준으로 최종 슬롯을 검증한다.
+- 2026-05-30 `hints`는 정답 단어 전체 목록이 아니다. `My items came out too late.`처럼 힌트에 없는 표현도 외국인이 공항 맥락에서 짐이 늦게 나왔다고 이해할 수 있으면 통과해야 한다. 반대로 `I missed my connecting flight.`는 수하물 원인 근거가 없으므로 `missed_connection`만 채워야 한다.
+- 2026-05-30 `evidencePolicy`는 요청 DTO에서 typed object로 받는다. DB 저장이 JSONB나 JSON 문자열이어도 BE가 AI payload로 보낼 때는 `"evidencePolicy": {...}` 형태여야 하며, AI 서버는 문자열 JSON을 계약으로 삼지 않는다.
+- 2026-05-30 구현은 `candidateFilledSlots[].evidenceText`를 AI 내부 근거 필드로 받아 검증한다. `semantic_evidence` 슬롯은 evidenceText가 최신 사용자 발화에 실제로 포함되어야 하며, 별도 좁은 LLM verifier가 슬롯 description을 지지하는지 확인한다. verifier 단계도 `next_question_semantic_evidence` workflow timing 로그를 남긴다.
+- 2026-05-30 검증은 새 회귀 테스트 RED 확인 후 GREEN으로 진행했다. 전체 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 116개, compileall, diff check가 통과했다.
+- 2026-05-30 품질 개선 전에 관측성을 먼저 추가한다. 목표는 Sentry로 운영 오류를 수집하고, AI 서버 내부의 주요 LLM workflow 단계별 latency를 로그로 남겨 다음 병목 분석의 근거를 만드는 것이다.
+- Sentry DSN은 아직 전달되지 않았으므로 `SENTRY_DSN`이 비어 있으면 초기화하지 않는 no-op 구조가 필요하다. DSN이 들어오면 코드 변경 없이 초기화되어야 한다.
+- 오류 추적 로그는 사용자 발화 전문이나 프롬프트 전체를 남기지 않고, 실패 지점과 계약 위반 원인, stage, workflow, preview 수준의 짧은 정보만 남긴다. 민감 정보와 긴 프롬프트 유출을 피하는 방향으로 제한한다.
+- 현재 `next-question`에는 `rag_lookup`, `llm_chat`, `rag_save` 소요 시간 로그가 일부 있다. 이번 작업은 같은 패턴을 `feedback`, `feedback_summary`, `turn_feedback`, `guide`와 JSON 파싱, 후처리 단계까지 확장한다.
+- 2026-05-30 구현 결과, `SENTRY_DSN`이 없으면 Sentry 초기화는 no-op이고 DSN이 있으면 FastAPI, logging integration과 함께 초기화된다. 라우터의 `ConversationGenerationError`와 전역 500 handler는 Sentry capture 경계로 예외를 전달한다.
+- 2026-05-30 LLM 호출 실패, 모델 JSON 파싱 실패, 피드백과 가이드 응답 계약 검증 실패, 턴 ID 불일치 지점에 원인 로그를 추가했다. 긴 프롬프트 전체는 로그로 남기지 않고 JSON preview도 240자로 제한한다.
+- 2026-05-30 timing 로그는 `AI workflow 단계 소요 시간 | workflow=<name> stage=<name> duration_ms=<ms>` 형식이다. 대상 workflow는 `next_question`, `feedback`, `feedback_summary`, `turn_feedback`, `feedback_review`, `feedback_repair`, `guide`다.
+- 2026-05-30 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 110개 통과, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests` 통과, `git diff --check` 통과로 확인했다.
+- 2026-05-30 Sentry DSN은 repo나 README에 실제 값을 남기지 않고 SSM Parameter Store에 저장한다. develop은 `/saynow/develop/SENTRY_DSN`, prod는 `/saynow/prod/SENTRY_DSN`이며, 기존 deploy workflow가 해당 경로를 `.env`로 변환한다.
+- 2026-05-30 Sentry breadcrumb는 Python logging integration으로 처리한다. INFO 이상 로그를 breadcrumb로 남기고, logging integration의 `event_level`은 `None`으로 둬 `logger.exception`과 `capture_exception`이 같은 오류를 중복 이벤트로 보내지 않게 한다.
+- 2026-05-30 Sentry breadcrumb 보강 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 111개 통과, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests` 통과, `git diff --check` 통과로 확인했다.
+- `main`은 1차 MVP 운영 코드이고, `develop`은 2차 MVP 개발 브랜치다.
+- 2차 MVP AI 서버는 백엔드가 호출하는 내부 API만 제공한다. 인증은 애플리케이션 코드가 아니라 AWS Security Group 경계에서 처리한다.
+- 1차 MVP의 오디오 업로드, Whisper STT, OpenAI TTS, `/api/v1/turn-evaluations`, `/api/v1/session-feedbacks`는 하위 호환 없이 제거해도 된다.
+- 새 `POST /api/v1/conversation/next-question`은 텍스트 `userUtterance`와 현재 슬롯 상태를 받아 다음 꼬리 질문을 생성한다.
+- `next-question`의 `filledSlots`는 이번 발화로 새롭게 충족된 슬롯만 반환한다. 이미 `filled=true`로 들어온 슬롯은 반환하지 않는다.
+- 백엔드가 보낸 미충족 슬롯이 모두 이번 발화로 채워졌다고 판단되면 `nextQuestion`과 `translatedQuestion`은 `null`로 반환한다.
+- 세션 완료 여부와 누적 슬롯 상태 저장은 백엔드 책임이다. AI 서버는 새로 충족된 슬롯과 다음 질문 후보만 반환한다.
+- 새 `POST /api/v1/conversation/feedback`은 완료된 세션의 텍스트 턴 목록을 받아 전체 이해도, 총평, 턴별 피드백을 생성한다.
+- `feedbackRequired=false`는 내부 점수 `85-100`이면서 질문 의도 답변, 턴 목표 충족, 추가 추측 없는 이해, 의미 차단 오류 없음 조건을 모두 만족할 때만 허용한다.
+- 내부 점수표는 `0-39`, `40-59`, `60-74`, `75-84`, `85-100` 구간으로 나눠 같은 요청에 같은 판단 기준을 적용하도록 프롬프트에 고정했다.
+- `betterExpression`은 사용자 발화에서 딱 +1만 개선한다. 의도, 단어 수준, 문장 형태를 유지하고 가장 작은 개선만 적용한다.
+- LLM 호출은 기준 흔들림을 줄이기 위해 `temperature=0`으로 고정했다.
+- 1차 MVP 코드 정리는 앱 라우터 등록 제거에 그치지 않고, 오디오/STT/TTS/로컬 시나리오 기반 라우터, 모델, 서비스, 테스트 파일 삭제까지 포함했다.
+- develop 배포 workflow는 `develop` 브랜치 push, GitHub `develop` environment, SSM `/saynow/develop` 경로, develop EC2 접속 값을 사용한다.
+- develop workflow는 런타임 env 파일을 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`에 같은 내용으로 설치한다. 신규 develop unit과 prod 복제 unit, Pydantic 기본 `.env` 로딩을 모두 커버하기 위한 호환 처리다.
+- 검증 명령은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`와 `git diff --check`를 실행했다.
+- 발화별 `nativeUnderstanding`은 평가 문구가 아니라 외국인이 사용자 발화를 어떻게 이해했는지 보여줘야 한다. 프롬프트는 `외국인은 ...라고 이해했어요.` 형식을 요구한다.
+- 발화별 `nativeLanguageInterpretation`은 직역 설명이 아니라 한국인이 감각적으로 이해할 수 있는 비유다. 프롬프트는 `한국어로 비유하자면, ...처럼 들려요.` 형식을 요구한다.
+- `betterExpression`은 기존 `String` 스키마를 유지한다. 피드백이 필요한 경우 개선 문장과 짧은 한국어 근거를 같은 문자열에 함께 담는다.
+- develop 배포 후 `.env`에 백엔드용 환경변수가 함께 들어오면 Pydantic Settings가 `extra_forbidden`으로 앱 시작을 막을 수 있다. AI 서버 설정은 필요한 값만 읽고 나머지 배포 환경변수는 무시한다.
+- 질문 의도와 전혀 다른 발화는 한국어 비유에서도 이상한 의미를 억지로 시나리오에 맞춰 해석하지 않는다. `betterExpression`은 한국어 안내 문장 안에 상황에 맞는 간단한 영어 답변 예시와 근거를 함께 담는다.
+- 오프토픽 발화의 `nativeUnderstanding`도 `질문과 관련이 없다` 같은 평가가 아니라 외국인이 문자 그대로 이해한 내용을 써야 한다. `betterExpression`의 따옴표 안 개선 문장은 한국어가 아니라 영어여야 한다.
+- `nativeLanguageInterpretation` 예시는 실제 발화 조건에 맞을 때만 사용해야 한다. 조식 시간 예시를 오프토픽 발화에 재사용하지 않도록 프롬프트에 금지 조건을 추가했다.
+- `betterExpression`은 한국어 안내만 반환하면 안 된다. 정확한 답변을 알 수 없는 오프토픽 상황에서도 시나리오에 맞는 간단한 영어 예시를 함께 제공해야 한다.
+- JSON 문자열 안에 큰따옴표가 들어가면 응답을 볼 때 역슬래시 이스케이프가 생긴다. 피드백 필드 값 안에서는 큰따옴표와 역슬래시를 쓰지 않도록 프롬프트에 고정했다.
+- LLM provider는 `LLM_PROVIDER`로 선택한다. develop은 Upstage 테스트를 위해 `upstage` provider와 `solar-pro3` 모델을 사용할 수 있게 설정했다.
+- `nativeLanguageInterpretation`은 한국어 비유 문장의 핵심 구간을 작은따옴표로 감싼다. 작은따옴표는 JSON 문자열에서 역슬래시 이스케이프를 만들지 않으므로 사용 가능하다.
+- `next-question`은 백엔드 세션 클리어 판단의 근거가 되므로 무의미, 오프토픽, 거절, 모호한 무응답은 어떤 슬롯도 채우면 안 된다. 명시된 실패 발화는 LLM 호출 전에 `filledSlots=[]`와 동일 목적 재질문으로 차단한다.
+- 피드백에서 시나리오 목표 실패는 성공권 점수를 받을 수 없다. 무의미, 오프토픽, 거절, 모호한 무응답만으로 구성된 피드백은 모델이 높은 점수를 줘도 39점 이하로 보정한다.
+- `betterExpression`은 프론트의 더 나은 표현 영역에 바로 노출되므로 영어 개선 문장이 먼저 나와야 한다. 한국어 설명은 뒤에 짧게 붙이는 방식만 허용한다.
+- `nativeLanguageInterpretation`은 반드시 같은 턴의 `userUtterance` 의미를 따라야 한다. 프롬프트 예시, 이전 턴, 다른 테스트 입력, `scenarioTitle`, `scenarioGoal`에서 비유 문장을 빌리면 안 된다.
+- 프롬프트 안의 구체적인 한국어 비유 예시는 모델이 출력값으로 복사할 수 있으므로 제거했다. 대신 형식과 의미 일치 규칙을 설명하고, 예시는 출력 복사 대상이 아니라는 조건만 남겼다.
+- `I want ice one.`, `Less ice do please.`, `This drink is hot but I order ice one.`은 E2E에서 반복 검증되는 카페 옵션 근접 발화다. 모델이 다른 예시 문장을 반환해도 같은 턴 발화 의미의 한국어 비유로 정규화한다.
+- `My shoes are swimming in the moon today.`처럼 명시적으로 검증한 오프토픽 발화도 시나리오 무관 설명을 섞지 않고 발화의 이상한 의미만 한국어 비유에 남긴다.
+- `nativeUnderstanding`은 평가, 문법 설명, 개선 방향을 담지 않는다. 같은 턴의 `userUtterance`를 외국인이 어떤 의미로 받아들였는지만 `외국인은 ...고 이해했어요.` 형태로 표현한다.
+- `I want ice one.`, `Less ice do please.`, `My shoes are swimming in the moon today.`는 모델 출력이 설명문으로 흔들려도 각각 얼음 한 개, 얼음 적게, 달에서 신발이 수영한다는 의미로 보정한다.
+- 1차 MVP의 피드백 프롬프트에서 유효했던 발화 품질 기준은 2차 MVP에도 유지한다. 점수는 시나리오 적합성뿐 아니라 문법 정확성, 자연스러움, 유창함을 함께 본다.
+- 음성 발화 기반 입력에서는 대문자, 구두점, 철자 자체를 평가하지 않는다. STT 텍스트 표면보다 발화 의도와 구어 표현 품질에 집중한다.
+- `betterExpression`의 +1 개선은 “대략 5-10점 좋아지는 작고 달성 가능한 개선”으로 정의한다. 완벽한 원어민식 리라이트보다 사용자 발화에 가까운 최소 개선을 우선한다.
+- 피드백 생성 후 코드로 잡을 수 있는 형식 위반은 deterministic validation에서 먼저 잡는다. `nativeUnderstanding` 인용, `nativeLanguageInterpretation` 패턴 깨짐, `betterExpression` 영어 시작 위반이 여기에 포함된다.
+- `comprehensionScore`가 85점 이상인데 턴 피드백이 붙은 경우는 좋은 응답을 오판했을 가능성이 있으므로 LLM quality reviewer를 한 번 호출한다.
+- 문제가 발견되면 전체를 새로 생성하지 않고 기존 응답과 문제 목록을 기반으로 1회 repair만 수행한다. repair 후에도 deterministic 위반이 남으면 로그로 남긴다.
+- repair 결과가 여전히 흔들릴 수 있으므로 검증된 좋은 주문 문장과 명시된 거절 발화는 마지막 코드 안전장치로 보정한다. 좋은 응답은 `feedbackRequired=false`로 정리하고, 거절 발화는 `nativeUnderstanding`과 `nativeLanguageInterpretation` 형식을 고정한다.
+- quality reviewer가 문제없다고 판단해도 `I would like ... please`처럼 이미 자연스러운 주문 응답에 `feedbackRequired=true`가 붙으면 정책 위반으로 본다. 이 케이스는 reviewer pass와 무관하게 deterministic issue로 repair와 코드 안전장치를 태운다.
+- `I don't know.`는 슬롯을 채우지 않는 non-answer이므로 모델이 한국어 비유 문장에 `처럼 들려요`를 중복해도 `무엇을 주문할지 모르겠어요` 계열의 고정 문장으로 보정한다.
+- `I want`처럼 목적어가 빠진 미완성 발화는 카페 맥락으로 억지 보정하지 않는다. 한국어 비유는 `나는 원한다`처럼 발화 자체가 외국인 귀에 어떻게 들리는지 보여주고, 외국인 이해 문장은 어떤 음료를 주문하는지 이해할 수 없었다는 상태만 설명한다.
+- `feedbackSummary`는 턴별 상세 피드백을 다시 설명하지 않는다. 기본 2문장, 반복 문제가 여러 턴에 걸쳐 있을 때만 3문장, 120자 이내의 짧은 세션 총평으로 제한한다.
+- `next-question`은 `I want`, `I'd like`, `Can I get a`처럼 목적어가 없는 주문 시작 조각을 구체적인 슬롯 값으로 보면 안 된다. `drink`가 아직 비어 있으면 LLM 호출 전에 같은 음료 질문을 다시 반환한다.
+- `I want drink`, `I want something`, `I want menu`처럼 목적어가 있어도 주문 가능한 구체 음료가 아닌 generic object면 `drink` 슬롯을 채우지 않는다.
+- 프롬프트 개선은 규칙을 추가로 길게 늘리는 것보다 taxonomy, field policy, self-check로 섹션을 나눠 모델이 먼저 발화를 분류하고 그다음 필드별 책임을 지키도록 유도한다.
+- 1차 로컬 비교에서 `I want coffee`의 `nativeUnderstanding`이 영어 원문을 인용하는 회귀가 나왔다. concrete orderable response는 영어를 들었다고 쓰지 않고, 한국어 의미 paraphrase만 쓰도록 생성 프롬프트와 repair 프롬프트 모두에 명시했다.
+- 2차 로컬, Dev 비교에서 `I want`, `I want drink`, `I'd like something`은 슬롯과 피드백 의미가 일치했다. `I want coffee`는 로컬이 영어 원문 인용 없이 한국어 의미 paraphrase로 고쳤지만, Dev는 피드백 불필요로 판단하고 로컬은 더 정중한 표현을 제안하는 차이가 남았다.
+- 최종 로컬 비교에서는 `I want coffee`가 `feedbackRequired=false`로 떨어졌다. 이 케이스를 “음료는 명확하므로 통과”로 볼지, “주문 표현이 직접적이므로 +1 피드백 필요”로 볼지는 제품 정책 결정이 필요하다.
+- 제품 정책은 `I want coffee`처럼 `I want + 구체 음료`가 문법적으로 완벽하지 않으므로 +1 피드백을 주는 방향으로 확정했다. 슬롯 추출은 성공으로 유지하되 최종 피드백에서는 near-miss로 분류한다.
+- 로컬 서버 검증에서 `I want coffee`는 82점, `feedbackRequired=true`, `nativeUnderstanding=외국인은 사용자가 커피를 주문하고 싶다고 이해했어요.`, `nativeLanguageInterpretation=한국어로 비유하자면, '커피 원해요'처럼 들려요.`, `betterExpression=I'd like a coffee, please...`로 정리됐다.
+- Dev 배포 후 같은 입력을 검증했다. `next-question`은 `drink` 슬롯을 채우고 size 질문으로 넘어갔으며, `feedback`은 82점과 +1 피드백을 반환했다. `I want drink`는 계속 39점과 구체 음료 불명확 피드백을 반환했다.
+- Solar Pro 3와 GPT-4o mini 비교는 모델 자체 품질을 보기 위한 확인이다. 서비스의 `_feedback_system_prompt()`와 `_feedback_user_prompt(...)`를 그대로 사용하고, 같은 입력, `temperature=0`, 같은 `max_tokens` 조건으로 비교한다.
+- raw LLM 응답 기준으로는 GPT-4o mini가 더 안정적이었다. 네 케이스 중 GPT-4o mini는 3개가 정책 체크를 통과했고, Solar Pro 3는 1개만 통과했다. 특히 Solar Pro 3는 `nativeUnderstanding`에 영어 원문을 인용하거나 `nativeLanguageInterpretation` 형식을 깨는 경우가 반복됐다.
+- 서비스 최종 파이프라인 기준으로는 두 모델 모두 네 케이스의 deterministic issue가 0건이었다. 다만 latency는 Solar Pro 3가 약 0.8-1.2초, GPT-4o mini가 약 1.5-4.4초로 Solar Pro 3가 더 빨랐다.
+- Dev 배포 서버는 모델 비교 결과를 바탕으로 임시로 OpenAI GPT-4o mini를 사용하도록 전환한다. SSM의 `LLM_PROVIDER`와 `OPENAI_MODEL`을 source of truth로 두고, EC2 런타임 `.env` 갱신과 서비스 재시작까지 확인해야 실제 반영으로 본다.
+- Dev SSM은 `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`로 변경했다. EC2 `i-0dc0d115cd058cb2d`에서 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`를 SSM 값으로 재생성하고 `saynow-ai`를 재시작했으며, 런타임 파일도 같은 값을 보여줬다.
+- Dev 검증에서 `/health`는 `{"status":"ok"}`를 반환했다. `I want coffee` 피드백은 80점, `feedbackRequired=true`, `betterExpression=I'd like a coffee, please...`를 반환했고, `next-question`은 `drink` 슬롯을 채운 뒤 사이즈 질문으로 넘어갔다.
+- 2026-05-23 조사 범위는 시나리오 1의 메뉴 추천 요청과 시나리오 3의 커스텀 음료 완료 발화 `That’s all`이다. 우선 로컬 서비스 계약과 기존 안전장치에서 재현하고, API 키가 가능한 경우 실제 LLM 경로까지 확인한다.
+- 2026-05-23 dev backend SSM의 `SAYNOW_AI_BASE_URL`은 `http://15.164.34.102:8080`, `SAYNOW_AI_CLIENT_MODE`은 `remote`다. 이전 기본값 `http://43.202.146.182:8080`은 `/openapi.json` 기준 1차 MVP 서버라 `/api/v1/conversation/*`가 404를 반환했다.
+- 2026-05-23 dev AI `POST /api/v1/conversation/next-question`에서 `Can you recommend a menu?`는 시나리오 1 카페 주문 payload와 메뉴 추천 payload 모두 `filledSlots=[]`로 반환됐다. 백엔드는 `filledSlots`가 비면 `session.decreaseHeart()`를 호출하므로 하트 차감은 AI 슬롯 미충족 판정에서 시작된다.
+- 2026-05-23 dev AI `POST /api/v1/conversation/next-question`에서 커스텀 음료 payload의 `That’s all.`도 `filledSlots=[]`, `nextQuestion=What custom options would you like for your drink?`를 반환했다. 완료 의사나 추가 옵션 없음이 슬롯 충족으로 해석되지 않아 백엔드가 하트를 줄이고 같은 옵션 질문을 이어갈 수 있다.
+- 2026-05-23 프롬프트 실험 결과는 Obsidian vault `/Users/sangmin8817/Desktop/기타 자료/Obsidian/SayNow`에 `SayNow AI 프롬프트 실험 로그.md`로 정리한다. 문서 최상단에 프롬프트별 기록 방식과 공통 10개 next-question input을 고정해 이후 프롬프트별 비교 기준을 맞춘다.
+- 2026-05-23 프롬프트 실험 로그는 `NQ-01`부터 `NQ-10`까지의 next-question input뿐 아니라 `FB-01`부터 `FB-10`까지의 feedback 품질 input도 함께 고정한다. 각 프롬프트 기록은 `filledSlots`와 하트 차감 가능성뿐 아니라 `feedbackRequired`, `comprehensionScore`, `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression`, `feedbackSummary`까지 판정한다.
+- 2026-05-23 Obsidian baseline의 현재 프롬프트는 dev에서 별도로 확인한 미확인 문구가 아니라, 현재 로컬 `app/services/conversation_service.py`의 `_next_question_system_prompt()`와 `_feedback_system_prompt()` 원문과 동일한 것으로 기록한다.
+- 2026-05-23 NQ 테스트 결과는 output만 남기지 않는다. 각 항목마다 들어온 AI 질문 `originalQuestion`, 사용자 입력 `userUtterance`, output 요약, 판정, 문제점을 한 줄에서 같이 기록하고, raw request와 raw output은 필요할 때 별도 JSON 블록으로 붙인다.
+- 2026-05-23 현재 프롬프트의 feedback 품질은 dev AI `POST /api/v1/conversation/feedback`에 `FB-01`부터 `FB-10`까지 실제 호출해서 확인했다. `FB-01`, `FB-02`, `FB-08`, `FB-10`은 기대 범위로 봤고, `FB-03`과 `FB-04`는 미완성 발화 판정은 맞지만 `betterExpression`이 여전히 generic `drink`에 머물렀다.
+- 2026-05-23 `FB-05`는 메뉴 추천 요청을 구체 음료 누락으로 평가해서 제품 정책 확인이 필요하다. `FB-06`은 `That’s all.`에 `feedbackRequired=true`가 붙었고, `FB-07`은 `No sugar please.`에 75점과 개선 피드백이 붙어서 옵션 완료 발화 정책과 품질 기준을 따로 정해야 한다.
+- 2026-05-23 `FB-09`의 nonsense 발화는 HTTP 500과 `AI_GENERATION_FAILED`를 반환했다. 이 항목은 피드백 문구 품질이 아니라 생성 실패로 분리해서 추적한다.
+- 2026-05-23 Prompt 2는 사용자가 선택한 `프롬프트 정리 + few-shot + Judge 기준 보강` 범위로 진행한다. Structured Output 코드 변경은 다음 단계로 분리하고, 이번 변경은 현재 LLM 호출 구조와 Pydantic 검증, 기존 repair 루프 위에서 판단 품질을 높이는 데 집중한다.
+- 2026-05-23 Prompt 2의 제품 해석은 추천 요청을 주문 실패로 억지 교정하지 않고 추천 요청 의도를 보존하는 것이다. 옵션 질문에 대한 `That’s all.`은 추가 옵션 없음이라는 자연스러운 완료 응답으로 보고, `I want drink` 같은 generic order는 개선문에서 generic `drink`에 머물지 않도록 한다.
+- 2026-05-23 Prompt 2 구현은 `next-question` system prompt에 decision workflow와 few-shot을 추가하고, `feedback` system prompt에 `I want drink`, 추천 요청, `That’s all.` calibration 예시를 추가하는 방식으로 했다. feedback quality reviewer는 generic 개선문, 추천 요청 의도 변경, 옵션 완료 응답 오판을 semantic issue로 repair에 넘긴다.
+- 2026-05-23 Prompt 2 검증은 추가 회귀 테스트 6개가 RED에서 실패한 뒤 GREEN으로 통과했고, 전체 `unittest discover` 42개와 `compileall`, `git diff --check`가 통과했다. Obsidian 실험 로그에는 Prompt 2 섹션을 추가했지만 dev 서버에 배포하지 않았으므로 `NQ-01`-`NQ-10`, `FB-01`-`FB-10` live output은 미실행으로 표시했다.
+- 2026-05-23 Prompt 2는 dev SSM의 `/saynow/develop/OPENAI_API_KEY`와 `/saynow/develop/OPENAI_MODEL`을 값 출력 없이 환경변수로만 주입해 로컬 함수 호출로 실제 모델 테스트를 실행했다. 모델은 `gpt-4o-mini`, 커밋은 `84e6228`, `NQ-01`-`NQ-10`과 `FB-01`-`FB-10` 모두 호출 성공했다.
+- 2026-05-23 로컬 실제 모델 결과에서 `That’s all.`은 `NQ-07`, `NQ-08`에서 `customOptions`를 채우고 `FB-06`에서 `feedbackRequired=false`가 되어 기존 문제를 해결했다. `FB-03`, `FB-04`의 `betterExpression`도 generic `drink`가 아니라 `I'd like a coffee, please.`로 개선됐다.
+- 2026-05-23 남은 문제는 `NQ-01`, `NQ-02` 추천 요청이 자연스럽게 추천 응답을 하더라도 `filledSlots=[]`라 백엔드 하트 차감 가능성이 남는 점, `NQ-03` 메뉴 보기 요청이 아직 처리되지 않는 점, `FB-07`의 `No sugar, please.`를 좋은 옵션 응답으로 볼지 near-miss로 볼지 정책 결정이 필요한 점이다. Prompt 2 결과는 Obsidian 실험 로그에 반영했다.
+- 2026-05-23 Prompt 3는 사용자가 선택한 `AI 서버 내부 일반화` 방향으로 진행한다. 목표는 카페 전용 문자열을 core policy에서 걷어내고, 명확한 옵션/선호 답변은 카페, 공항, 호텔, 식당 모두에서 좋은 응답으로 보는 일반 원칙을 고정하는 것이다.
+- 2026-05-23 `No sugar, please.` 자체를 하드코딩하지 않는다. 대신 `clear preference or option answer` 범주를 만들고, 예시는 카페 `No sugar, please.`, 공항 `Window seat, please.`, 호텔 `Non-smoking room, please.`, 식당 `Table for two, please.`처럼 분산한다.
+- 2026-05-23 Prompt 3 구현은 `Domain-neutral policy`, `Information request`, `Clear preference or option answer`, `Direct want + concrete service item response`를 프롬프트에 추가하는 방식으로 했다. 카테고리별 프롬프트 분리는 하지 않는다.
+- 2026-05-23 명확한 옵션/선호 답변 fallback은 짧은 선택형 답변에만 적용한다. `Less ice do please.`처럼 동사 `do`가 들어간 어색한 옵션 요청은 좋은 응답으로 보정하지 않고 기존 +1 피드백 대상에 남긴다.
+- 2026-05-23 실제 GPT-4o mini 호출에서 오프토픽 `FB-09`가 한 번 `feedbackRequired=true`와 `betterExpression=null`을 반환했다. Pydantic 검증 전에 known off-topic 필수 필드를 채우고, generic `I'd like a drink` 개선문은 구체 예시로 보정하는 안전장치를 추가했다.
+- 2026-05-23 Prompt 3 로컬 실제 모델 결과는 공통 `NQ-01`-`NQ-10`, `FB-01`-`FB-10`, 공항/호텔/식당 smoke 6개 모두 성공했다. 남은 핵심 문제는 추천 요청과 메뉴 보기 요청이 `filledSlots=[]`라 백엔드 하트 차감 가능성이 여전히 남는 점이다.
+- 2026-05-24 다음 개선은 `filledSlots=[]`만으로 하트 차감을 판단하는 문제를 해결하는 것이다. AI 서버는 `turnClassification`으로 발화 성격만 분류하고, 하트 차감 정책은 백엔드가 결정하는 방향으로 잡았다.
+- 2026-05-24 `turnClassification` 후보는 `SLOT_ANSWER`, `RECOMMENDATION_REQUEST`, `INFORMATION_REQUEST`, `OPTION_COMPLETION`, `INVALID_RESPONSE`로 시작한다. `validProgress` boolean은 AI 서버 계약에 넣지 않는다.
+- 2026-05-24 `next-question` 응답에 `turnClassification`을 추가했다. 추천 요청은 `RECOMMENDATION_REQUEST`, 메뉴 보기 요청은 `INFORMATION_REQUEST`, custom option 완료는 `OPTION_COMPLETION`, 실패 발화는 `INVALID_RESPONSE`, 일반 슬롯 답변은 `SLOT_ANSWER`로 정규화한다.
+- 2026-05-24 실제 GPT-4o mini 로컬 평가에서 공통 `NQ-01`-`NQ-10`은 모두 성공했다. `NQ-01`, `NQ-02`는 `RECOMMENDATION_REQUEST`, `NQ-03`은 `INFORMATION_REQUEST`, `NQ-05`는 `INVALID_RESPONSE`, `NQ-07`-`NQ-10`은 `OPTION_COMPLETION`으로 분류됐다.
+- 2026-05-24 공항, 호텔, 식당 smoke next-question은 슬롯을 채우는 답변이므로 `SLOT_ANSWER`로 보정했다. `Window seat, please.`, `Non-smoking room, please.`, `Table for two, please.`는 모두 `filledSlots`가 채워지고 하트 차감 대상이 아니다.
+- 2026-05-24 사용자가 `INFORMATION_REQUEST`와 `RECOMMENDATION_REQUEST`는 모두 추가 정보 요청이고, `OPTION_COMPLETION`은 질문에 대한 자연스러운 답변이라 별도 상태가 부자연스럽다고 지적했다. 이에 따라 `turnClassification`은 `ANSWER`, `ASSISTANCE_REQUEST`, `INVALID_RESPONSE` 3상태로 단순화한다.
+- 2026-05-24 사용자는 AI 응답 텍스트만 볼 수 있으므로 메뉴 요청에서 `Here are the menu options`처럼 비어 있는 안내만 주면 안 된다. 메뉴 정보 요청에는 실제 메뉴 항목을 `nextQuestion`에 포함해야 하며, 모델이 구체 옵션을 빠뜨리면 로컬 보정으로 `iced Americano`, `latte`, `cappuccino`, `tea`를 노출한다.
+- 2026-05-24 LLM workflow 개선은 RAG나 Agent Loop가 아니라 structured context 우선으로 진행한다. 꼬리 질문은 단일 모델 workflow를 유지하되 `availableOptions`를 request에 추가해 메뉴, 추천, 선택지 응답이 백엔드가 제공한 옵션 안에서만 나오도록 한다.
+- 2026-05-24 `NextQuestionRequest.availableOptions`를 optional로 추가했다. 모델이 메뉴나 추천 요청에서 제공되지 않은 옵션을 만들면 AI 서버가 제공된 옵션으로 보정하고, 옵션이 없으면 구체 선택지를 지어내지 않는 응답으로 바꾼다. `unittest discover`, `compileall`, `git diff --check`는 모두 통과했다.
+- 2026-05-24 `I need a menu`는 현재 `_must_not_fill_slots`의 generic object blocker가 LLM 호출 전에 막아 `INVALID_RESPONSE`가 된다. `prompt-engineering-patterns` 원칙에 따라 실패 금지 목록을 더 늘리는 대신, `menu`를 broad blocker에서 제거하고 메뉴 요청을 `ASSISTANCE_REQUEST` 대표 예시와 structured output으로 유도한다.
+- 2026-05-24 Prompt 7은 `menu`를 generic object blocker에서 제거하고, `I need a menu`, `Can I get a menu`, `Menu please`를 information request로 인식하도록 했다. `drink`, `something`, `item`, `thing` 같은 generic order object는 계속 슬롯을 채우지 않는다.
+- 2026-05-24 Prompt 7 검증은 focused menu request 테스트 4개와 전체 unittest 55개, compileall, diff check로 확인했다.
+- 2026-05-24 Prompt 8은 `prompt-engineering-patterns`의 system prompt design, structured output, few-shot 원칙을 적용해 next-question system prompt를 섹션화한다. hardcoded 메뉴 few-shot은 `availableOptions`가 입력에 있을 때만 해당 옵션을 쓰는 예시로 바꿔 예시 오염을 줄인다.
+- 2026-05-24 Prompt 8 검증은 focused prompt tests 4개와 전체 unittest 57개, compileall, diff check로 확인했다.
+- 2026-05-24 이후 프롬프트 실험 로그의 결과 표는 실제 OpenAI `gpt-4o-mini` live 호출 결과만 기록한다. mocked LLM unittest는 프롬프트 구조와 deterministic 보정 회귀 검증으로만 기록하고, 결과 표 대체값으로 사용하지 않는다.
+- 2026-05-24 Prompt 8 live 검증은 `prod-saynow` SSM에서 OpenAI 키와 모델 값을 값 출력 없이 주입하고, `NQ-01`-`NQ-10`, `MENU-01`-`MENU-03`, `FB-01`-`FB-10`을 실제 `gpt-4o-mini`로 호출해 `/private/tmp/saynow_prompt8_gpt4o_mini_live_results.json`에 저장했다.
+- 2026-05-24 workflow 방향을 `availableOptions` 기반 structured context에서 `ASSISTANCE_REQUEST` 전용 RAG workflow로 변경했다. 백엔드 DB에 `availableOptions`나 `scenarioKnowledge`를 미리 저장하지 않고, AI 서버가 내부 벡터 DB에서 유사 질문과 답변을 찾은 뒤 없으면 `gpt-4o-mini`가 역할극 답변을 생성한다.
+- 2026-05-24 MVP RAG 검색 범위는 인터넷이 아니라 SayNow 내부 벡터 DB다. 생성된 도움 요청 답변은 `generated`, `candidate`, `approved` 같은 품질 상태와 함께 저장하고, 반복되는 질문을 재사용 지식으로 승격하는 방향으로 문서화했다.
+- 2026-05-24 Supabase pgvector 작업은 사용자가 진행했다. AI 서버 구현은 백엔드-AI API 구조를 유지하고, `ASSISTANCE_REQUEST`에서만 내부 RAG 검색을 시도하며, 검색 실패나 저장 실패가 대화 응답을 깨지 않도록 한다.
+- 2026-05-24 Prompt 9는 `availableOptions` 요청 필드를 제거하고 `ASSISTANCE_REQUEST` 전용 RAG workflow를 구현했다. OpenAI embedding은 `text-embedding-3-small`, RAG 기본 테이블은 `ai_rag.assistance_knowledge`로 둔다.
+- 2026-05-24 Supabase develop DB 접속은 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 함께 사용해야 했다. BE JDBC URL의 `prepareThreshold` 같은 JDBC 전용 파라미터는 `psycopg` 연결 전에 제거하도록 했다.
+- 2026-05-24 live 검증에서 Supabase 인증과 접속은 성공했지만 `ai_rag.assistance_knowledge` 테이블이 없었다. 공유 DB DDL 자동 적용은 승인 정책상 진행하지 않았고, 적용용 SQL을 `docs/supabase/2026-05-24-assistance-rag-pgvector.sql`에 추가했다.
+- 2026-05-24 Prompt 9 live 결과는 실제 `gpt-4o-mini`로 `NQ-01`-`NQ-10`, `RAG-01`-`RAG-03`, `FB-01`-`FB-10`을 측정해 `/private/tmp/saynow_prompt9_gpt4o_mini_live_results.json`에 저장했다. RAG 테이블이 없어 검색과 저장은 미검증이지만, no-match fallback은 메뉴, 추천, 원두, 디카페인 질문을 `ASSISTANCE_REQUEST`로 처리했다.
+- 2026-05-24 사용자가 Supabase develop DB에 `ai_rag.assistance_knowledge`를 만든 뒤 Prompt 9 live를 재측정했다. `dbCountBefore=0`, `dbCountAfter=6`으로 도움 요청 6건이 저장됐고 모든 row에 embedding이 채워졌다.
+- 2026-05-24 retrieval smoke는 `Can I see the menu?` row를 `candidate`로 승격한 뒤 같은 질문을 재호출했다. 새 row가 `answer_source=retrieved`, `quality_status=candidate`로 저장되어 pgvector 검색 재사용 경로가 동작함을 확인했다.
+- 2026-05-24 반복 도움 요청은 같은 `scenario_title` 안에서 정규화된 `user_utterance`가 2회 이상 generated로 저장되면 자동으로 `candidate`로 승격한다. live smoke에서 임시 반복 질문 2건이 모두 `candidate`가 되는 것을 확인했고, 테스트 row는 삭제했다.
+- SSE 피드백은 기존 동기 `POST /api/v1/conversation/feedback`을 유지하면서 별도 `POST /api/v1/conversation/feedback/stream`으로 추가한다. 프론트 직접 호출이 아니라 백엔드 relay를 전제로 AI 서버가 summary, turnFeedback, done, error 이벤트를 생성한다.
+- 2026-05-24 세션 성공 또는 실패 여부는 피드백 생성 결과가 아니라 백엔드 세션 결과다. AI 피드백 API는 백엔드가 확정한 `sessionResult`를 입력으로 받아 총평과 발화별 피드백이 세션 결과와 충돌하지 않게 사용한다.
+- `sessionResult` 값은 우선 `SUCCESS`, `FAILURE` 두 상태로 제한한다. SSE 이벤트 순서는 그대로 `summary`, `turnFeedback`, `done`을 유지하고, 별도 result 이벤트는 만들지 않는다.
+- `sessionResult=FAILURE`일 때 모델이 성공권 점수나 성공 총평을 반환해도 AI 서버가 `comprehensionScore`를 59 이하로 낮추고 실패 총평으로 보정한다. 이 보정은 기본 피드백과 SSE summary 생성 경로에 모두 적용한다.
+- 2026-05-26 백엔드와 프론트의 시나리오 상황 필드명은 `scenarioSituation`으로 맞춘다. AI 서버도 별도 매핑을 만들지 않고 `next-question`, `feedback`, `feedback/stream` 요청 최상위 필수 문자열로 받는다.
+- `scenarioSituation`은 응답 스키마를 바꾸지 않는다. LLM 프롬프트 컨텍스트에 `scenarioTitle`, `scenarioGoal`, `sessionResult`와 함께 넣어 꼬리 질문, 동기 피드백, SSE summary, SSE turn feedback 경로가 같은 시나리오 상황을 사용하게 한다.
+- 2026-05-26 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 `humanizer` 기준 정적 검토에서 `전체적으로`, `명확하게 전달`, `이렇게 말하면 ...할 수 있어요`, `더 자연스럽습니다` 같은 피드백 공식형 문구가 AI 작문 신호로 잡혔다. 고정 계약인 `nativeLanguageInterpretation` 형식은 유지하되, feedbackSummary와 betterExpression의 한국어 이유는 짧고 구체적인 대화체를 우선하도록 프롬프트 정책을 추가했다.
+- 2026-05-26 프롬프트 개선 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 74개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다. 로컬에 실제 LLM API 키가 없어 live 모델 호출은 실행하지 않았다.
+- 2026-05-26 backend dev smoke에서 환승 시나리오가 공항 직원 역할을 유지하지 못하고 “직원에게 물어보라”는 메타 응답을 생성했다. `scenarioSituation`은 사용자 상황이고, AI가 맡을 상대방은 `aiRole`로 분리해 `next-question`, 동기 피드백, SSE 피드백 요청에 같은 필수 컨텍스트로 받는다.
+- 2026-05-26 `aiRole`은 `NextQuestionRequest`와 `ConversationFeedbackRequest`의 필수 문자열로 추가했다. 다음 질문 프롬프트는 AI가 다른 직원에게 물어보라고 하지 않고 `aiRole` 안에서 답하도록 제한하며, 동기 피드백과 SSE summary/turn feedback도 같은 역할 컨텍스트를 사용한다.
+- 2026-05-26 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 79개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 `boarding_possibility`처럼 슬롯명만으로 채움 기준이 모호한 경우가 있어 `slots[].description`을 추가한다. description은 정답이나 특정 영어 표현이 아니라 “사용자가 어떤 의미를 전달하면 채워졌다고 볼지”를 설명하는 필수 기준으로 사용한다.
+- 2026-05-26 `slots[].description`은 `next-question`, 동기 `feedback`, SSE `feedback/stream` 요청 모두에 반영했다. feedback 요청에도 `slots`를 필수로 받아 summary와 turn feedback 프롬프트에서 같은 슬롯 기준을 사용한다. 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 82개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 배포 AI 품질 재검증에서 의미 있는 `slots[].description`을 넣은 공항 환승 next-question 3개는 모두 기대 슬롯을 채웠지만, generic description을 넣은 비교군은 `boarding_possibility` 또는 `gate_location`을 놓쳤다. 슬롯 설명은 특히 “탑승 가능 여부 확인 요청”처럼 슬롯명만으로 애매한 의미를 안정화하는 데 효과가 있었다.
+- 같은 검증에서 동기 feedback은 모든 턴이 good일 때 교정성 총평을 내지 않았지만, SSE summary는 turnFeedback 생성 전에 먼저 반환되어 `feedbackRequired=false`인 턴에도 “다음에는 더 공손하게” 같은 교정성 문구를 낼 수 있었다. 원인은 SSE 경로가 기존 all-good 총평 보정을 적용하기 전에 summary 이벤트를 방출하는 구조다.
+- SSE summary 보정은 이벤트 순서를 유지하되, 내부적으로 turnFeedback을 먼저 모은 뒤 `ConversationFeedbackResponse`에 기존 all-good 총평 보정을 적용하고 `summary`, `turnFeedback`, `done` 순서로 방출한다. 이 방식은 summary 첫 바이트가 늦어지는 tradeoff가 있지만, 잘한 발화에 교정성 summary가 먼저 보이는 문제를 막는다.
+- 재배포 후 추가 품질 검증에서 all-in-one 공항 발화와 이전 실패 마지막 발화는 specific description일 때 통과했지만, `Can I still board the flight if I hurry?` 단독 발화는 여전히 `ASSISTANCE_REQUEST`로 분류됐다. `boarding_possibility` description은 “확인 요청” 자체가 슬롯 완료 기준이므로, 해당 슬롯에 한해 질문형 확인 요청을 deterministic하게 채우도록 보정한다.
+- 2026-05-26 질문형 확인 요청 보정 검증은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_service.ConversationServiceTest.test_next_question_fills_confirmation_request_slot_from_user_question` RED 후 GREEN, 전체 `unittest discover` 84개, `compileall`, `git diff --check`로 확인했다.
+- 최종 develop 배포 후 `/private/tmp/saynow_ai_quality_eval.py`로 배포 AI를 재검증했다. specific description을 넣은 공항 next-question 3개는 모두 기대 슬롯을 채웠고, generic description 비교군 3개는 모두 실패했다. 동기 feedback과 SSE feedback 모두 good turn에 `feedbackRequired=false`를 반환했고, SSE summary도 교정성 문구 없이 `summary`, `turnFeedback`, `done` 순서로 반환됐다.
+- 2026-05-26 기획 심의 기술 Q&A 노트는 `/Users/sangmin8817/Desktop/기타 자료/Obsidian/SayNow/AI` 아래에 별도 문서로 둔다. 답변은 현재 구현된 `gpt-4o-mini`, `temperature=0`, Pydantic 응답 검증, deterministic validation, 1회 repair loop, `turnClassification`, `slots[].description`, RAG candidate validator, Prompt 1-10 live 실험 기록을 근거로 작성한다.
+- 2026-05-26 가이드 모드는 시나리오 대화 중 영어 표현, 문법, 단어, 뉘앙스 질문을 처리하는 별도 보조 흐름으로 둔다. 이 대화는 피드백 입력 모델에 포함하지 않아 최종 피드백과 세션 평가에 섞이지 않게 한다.
+- 2026-05-26 방어 로직은 가이드 모드 전용이 아니라 모든 LLM 경계에 적용한다. `next-question`은 차단 입력을 기존 계약 안에서 `INVALID_RESPONSE`로 처리하고, 가이드는 영어 학습 질문만 답하며, 피드백은 사용자 발화를 실행할 지시가 아니라 평가 대상 데이터로만 취급한다.
+- 2026-05-26 사용자가 선택한 차단 응답 방식은 새 `blocked` 필드를 추가하지 않는 A안이다. 운영 추적은 로그와 내부 reason으로 남길 수 있지만 클라이언트 계약은 자연스러운 재질문이나 안내 답변으로 유지한다.
+- 2026-05-26 가이드 모드와 공통 방어 로직 검증은 focused RED 후 GREEN, 전체 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 90개, `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
+- 2026-05-26 가이드 API의 `originalQuestion`, `userUtterance`는 제거한다. 사용자가 직전 발화가 아닌 예전 발화나 특정 표현을 물어볼 수 있으므로, 궁금한 표현은 `question` 안에 직접 담게 하고 `GuideChatRequest`는 extra field를 400으로 거부한다.
+- 2026-05-30 동문서답 턴 분류 개선은 `saynow-ai`만 수정한다. `saynow-be` 코드는 건드리지 않고, BE에서 필요한 계약과 하트 정책 후속 작업은 Obsidian 문서 최하단에 정리한다.
+- 2026-05-30 대표 재현 사례는 사용자가 제공한 세션 159와 160이다. 세션 159는 환승편 시나리오에서 역할 반전, 반복 질문, 무례한 발화 미화가 핵심이고, 세션 160은 연락처 요청에 대한 동문서답이 `INVALID_RESPONSE`로 고정되지 않는 문제가 핵심이다.
+- 2026-05-30 `next-question`의 안전한 정책은 `INVALID_RESPONSE`와 `ASSISTANCE_REQUEST`가 슬롯을 채우지 않는 것이다. `ANSWER`만 슬롯을 채울 수 있으며, MVP 주요 슬롯은 최소 증거 검증으로 모델의 과도한 슬롯 채움을 방어한다.
+- 2026-05-30 지연 문제는 이번 변경에서 성능 최적화가 아니라 계측으로 다룬다. AI 서버 내부의 RAG lookup, LLM chat, RAG save 소요 시간을 로그로 남겨 후속 병목 분석 근거를 만든다.
+- 2026-05-30 `contact_info`는 이메일 또는 전화번호 패턴이 있어야 채우고, `gate_location`, `boarding_possibility`, `time_pressure`, `baggage_issue`, `requested_help`는 각 슬롯 의미에 맞는 최소 발화 증거가 있을 때만 채운다. 알 수 없는 슬롯은 기존 모델 판단을 유지하되, 최종 분류가 `ANSWER`가 아니면 모두 비운다.
+- 2026-05-30 모델이 `INVALID_RESPONSE`를 반환한 경우에는 사용자 발화가 실제로 슬롯 증거처럼 보여도 모델의 invalid 판단을 우선해 슬롯을 비운다. 반대로 모델이 `ASSISTANCE_REQUEST`로 오분류해도 사용자가 Gate 위치나 탑승 가능 여부를 명확히 물은 경우에는 슬롯 설명 기반 증거로 `ANSWER`를 복구한다.
+- 2026-05-30 피드백 미화 방지는 세션 159, 160의 실제 문제 발화를 deterministic issue로 잡고 repair 후 안전장치에서 `feedbackRequired=true`와 개선 표현을 채우는 방식으로 구현했다. `order my connecting flight`는 질문 의도는 비슷하지만 단어 선택이 잘못된 문제 발화로 보고 `board my connecting flight` 개선문을 준다.
+- 2026-05-30 신규 회귀 테스트와 기존 전체 테스트는 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 99개 통과로 확인했다.
+- 2026-06-01 DB에서 scenario 6이 `baggage_issue_detail` 기준으로 정리된 뒤 AI는 DB 명세를 사용자에게 자연어로 안전하게 노출하는 역할만 맡는다. Public API shape는 바꾸지 않고, visible `nextQuestion`과 `translatedQuestion`만 raw slot key, snake_case, readable slot phrase가 보이면 postprocess에서 보정한다.
+- 2026-06-01 `prompt-engineering-patterns` 기준 적용은 프롬프트 문장만 늘리는 방식이 아니라 구조화 출력 유지, 짧은 self-check, deterministic fallback, 조건부 repair 조합으로 잡았다. 모델에는 visible field에 내부 슬롯명을 노출하지 말라는 짧은 self-check만 추가하고, 실제 방어는 `_repair_slot_name_fallback_question()`과 자연어 fallback 함수에 둔다.
+- 2026-06-01 알 수 없는 새 슬롯은 슬롯명을 사용자에게 보여주지 않고 `Could you explain that part a little more?`, `그 부분을 조금 더 설명해 주시겠어요?`로 내려간다. `missed_connection` 계열은 slot name이 아니라 description/hints의 환승편 놓침 의미를 보고 `What happened with your connecting flight?`로 묻는다.
+- 2026-06-01 feedback의 `I don't know` override는 더 이상 userUtterance만 보지 않는다. 같은 발화라도 `originalQuestion`이 baggage/luggage 문맥이면 수하물 상황을 모른다는 의미로, order/drink/menu 문맥이면 기존 주문 선택을 모른다는 의미로, 그 외에는 질문에 대한 답을 모른다는 중립 의미로 보정한다.
+- 2026-06-01 동일 feedback 요청 안에서 normalized `originalQuestion + userUtterance`가 같은 턴들의 `feedbackRequired`가 섞이면 deterministic issue로 repair에 넘긴다. repair 후에도 섞이면 semantic false guard를 먼저 적용하고, 그 외에는 valid true feedback이 있으면 같은 feedback fields로 통일한다.
+- 2026-06-01 신규 focused 회귀 테스트 7개는 RED에서 5개 실패를 확인한 뒤 GREEN으로 통과했다. 전체 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_service` 131개, `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 161개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check` 통과로 확인했다. 배포 후 smoke는 아직 남아 있다.
+- 2026-06-01 커밋 `c899a29`를 develop에 push했고 GitHub Actions run `26717361455`로 develop AI backend 배포가 성공했다. `/health`는 `{"status":"ok"}`를 반환했다. 배포 후 direct smoke 결과는 `/private/tmp/saynow-ai-after-db-retest-20260531T155911Z.json`에 저장했다.
+- 2026-06-01 배포 후 direct smoke에서 `Oh I miss my airport`는 슬롯명 노출 없이 `What happened with your connecting flight?`로 재질문했고, `I missed the flight`는 `missed_connection`만 채운 뒤 `baggage_issue_detail` 질문으로 넘어갔다. `My baggage is broken`은 `baggage_issue_detail`을 채우고 `next_options_request`로 넘어갔다.
+- 2026-06-01 세션 323 유사 feedback smoke에서는 반복된 `My baggage is broken` 3개가 모두 `feedbackRequired=false`로 일관되게 반환됐고, baggage 질문의 `I don't know`는 주문 문구 없이 수하물 상황을 모른다는 문맥으로 보정됐다.
+- 2026-06-01 세션 351에서는 `ABC`, `haha`가 배포 AI direct smoke에서 `REPEAT_REQUEST`로 내려와 BE 하트가 차감되지 않는 문제가 확인됐다. 원인은 repeat fast-path가 아니라 main LLM raw classification을 후처리에서 그대로 신뢰한 것이다.
+- 2026-06-01 `REPEAT_REQUEST` enum은 UX상 유지하되 최종 판정 권한은 deterministic `_is_repeat_request()`에 둔다. LLM raw `REPEAT_REQUEST`는 로컬 repeat detector가 인정한 경우에만 최종 `REPEAT_REQUEST`가 되고, 아니면 `INVALID_RESPONSE`로 downgrade한다. null 또는 STT 실패 발화의 하트 정책은 BE 범위로 분리한다.
+- 2026-06-01 `REPEAT_REQUEST` 오분류 방어 검증은 focused 테스트 5개, `tests.test_conversation_service` 133개, 전체 `unittest discover` 163개, `compileall app tests`, `git diff --check` 통과로 확인했다. `ABC`, `haha`가 모델 raw `REPEAT_REQUEST`여도 최종 `INVALID_RESPONSE`로 내려가고, `Pardon?`, `Parden Can you tell again?`은 모델 호출 없이 `REPEAT_REQUEST`를 유지한다.
+- 2026-06-01 raw `REPEAT_REQUEST`가 reject된 경우에는 모델이 `filledSlots`나 `candidateFilledSlots`를 같이 반환해도 모두 무시한다. 이 경로는 semantic verifier와 deterministic evidence rescue를 타지 않고 `INVALID_RESPONSE`로 닫는다.
+- 2026-06-01 커밋 `13aaee1`을 develop에 push했고 GitHub Actions run `26735967518`로 develop AI backend 배포가 성공했다. `/health`는 `{"status":"ok"}`를 반환했다.
+- 2026-06-01 배포 후 direct smoke 결과는 `/private/tmp/saynow-ai-repeat-request-smoke-20260601T045728Z.json`에 저장했다. `ABC`, `haha`는 `INVALID_RESPONSE`, `Pardon?`, `Parden Can you tell again?`은 `REPEAT_REQUEST`, 빈 문자열은 기존처럼 400 `INVALID_REQUEST`로 확인했다.

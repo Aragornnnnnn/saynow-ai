@@ -1,76 +1,38 @@
-# SayNow AI 서버 — 백엔드 API 명세 대응 TODO
+# SayNow AI 서버 — 2차 MVP TODO
 
-## 1. 엔드포인트 재설계
+## 1. API 전환
 
-- [x] `POST /conversation/start` 제거
-- [x] `POST /conversation/next` 제거
-- [x] `GET /feedback/{session_id}` 제거
-- [x] `POST /api/v1/turn-evaluations` 신규 생성
-- [x] `POST /api/v1/session-feedbacks` 신규 생성
+- [x] `POST /api/v1/conversation/next-question` 추가.
+- [x] `POST /api/v1/conversation/feedback` 추가.
+- [x] 1차 MVP `turn-evaluations`, `session-feedbacks`, `stt`, `tts`, `scenarios` 라우터 제거.
 
-## 2. 세션 관리 제거
+## 2. 책임 분리
 
-- [x] `conversation_service.py`의 `_sessions` in-memory 딕셔너리 제거
-- [x] `start_session`, `next_turn`, `get_session` 함수 제거
-- [x] AI 서버를 stateless하게 재설계 (요청마다 컨텍스트를 받아 처리)
+- [x] AI 서버에서 오디오 업로드 제거.
+- [x] AI 서버에서 Whisper STT 호출 제거.
+- [x] AI 서버에서 OpenAI TTS 호출 제거.
+- [x] 세션 완료 판정과 누적 슬롯 저장을 백엔드 책임으로 분리.
 
-## 3. STT 통합
+## 3. 꼬리 질문 생성
 
-- [x] `/turn-evaluations`에서 audio 파일(multipart) 직접 수신
-- [x] 요청 내에서 Whisper STT 호출 후 `transcript` + `sttConfidence` 생성
-- [ ] 기존 `POST /stt` 별도 엔드포인트 제거 (또는 유지 여부 백엔드와 협의)
+- [x] 백엔드가 넘긴 `slots` 기준으로 미충족 슬롯만 판단.
+- [x] 이번 발화로 새롭게 충족된 슬롯만 `filledSlots`에 반환.
+- [x] 이미 채워진 슬롯은 응답에서 제외.
+- [x] 남은 미충족 슬롯이 없으면 `nextQuestion`, `translatedQuestion`을 `null`로 반환.
 
-## 4. 턴 평가 요청 모델 변경
+## 4. 대화 피드백 생성
 
-- [x] 요청 필드 추가: `scenarioSituation`, `scenarioGoal`, `currentQuestion`
-- [x] 요청 필드 추가: `filledSlots: [{slotKey, slotValue}]` (Spring이 누적 관리해서 전달)
-- [x] 요청 필드 추가: `conversationHistory: [{role, content}]`
+- [x] 완료된 세션의 `turns[]` 텍스트 목록을 직접 수신.
+- [x] 전체 이해도와 총평 반환.
+- [x] 턴별 `turnId`, `feedbackRequired`, `nativeUnderstanding`, `nativeLanguageInterpretation`, `betterExpression` 반환.
+- [x] `turnId`가 요청과 동일한 순서로 보존되는지 검증.
+- [x] `feedbackRequired=false` 판단을 위한 내부 점수표와 조건 정의.
+- [x] `betterExpression`을 사용자 발화 기준 +1 개선으로 제한.
+- [x] LLM 호출에 `temperature=0` 적용.
 
-## 5. 턴 평가 응답 모델 변경
+## 5. 검증
 
-- [x] 응답 필드 추가: `transcript` (STT 결과)
-- [x] 응답 필드 추가: `sttConfidence` (float, 0~1)
-- [x] 응답 필드 추가: `scenarioStatus` (IN_PROGRESS | SUCCESS | FAILURE)
-- [x] 응답 필드 변경: `filledSlots: [{slotKey, slotValue}]` (이번 턴에 새로 채워진 슬롯)
-- [x] 응답 필드 변경: `nextQuestion: {questionText, ttsAudio}` (객체로 변경)
-- [x] 응답 필드 변경: `resultMessage: {messageText, ttsAudio}` (SUCCESS/FAILURE 시 반환)
-
-## 6. 슬롯 기반 클리어 판단 로직 변경
-
-- [x] 기존 `_check_cleared` (required_info 문자열 리스트 평가) 제거
-- [x] 신규: 이번 턴 발화에서 새로 채워진 slotKey/slotValue 추출하는 LLM 프롬프트 작성
-- [x] 신규: 모든 슬롯이 채워졌는지 판단해 `scenarioStatus` 결정하는 로직 작성
-
-## 7. 피드백 요청 모델 변경
-
-- [x] 요청 구조 변경: `session_id` 기반 조회 → `turns[]` 배열 직접 수신
-- [x] 요청 필드: `scenarioId`, `scenarioGoal`, `turns: [{transcript, question, responseTimeSec}]`
-
-## 8. 피드백 응답 모델 변경
-
-- [x] 응답 필드 추가: `summary` (한글 전체 요약)
-- [x] 응답 필드 추가 (turn별): `scoreDelta` (이전 턴 대비 점수 변화)
-- [x] 응답 필드 추가 (turn별): `improvedUnderstoodScore` (betterExpression 사용 시 예상 점수)
-- [x] 응답 필드 추가 (turn별): `reason` (한글 피드백 이유)
-- [x] 기존 `fail_reason` 제거 (turn별 `reason`으로 대체)
-
-## 9. TTS 필드명 변경
-
-- [x] 응답의 `audio_base64` → `ttsAudio` 로 필드명 통일
-
-## 11. 피드백 점수 보정
-
-- [x] `improvedUnderstoodScore`가 `understoodScore`보다 낮게 나오는 버그 수정
-  - 프롬프트에 "개선된 표현의 점수는 원래 점수 이상이어야 한다" 명시
-  - 코드에서 `max(original_score, improved_score)`로 클램프 처리
-- [x] `betterExpression` 생성 시 유저 수준에 맞는 표현으로 제한
-  - 현재 understoodScore 대비 5~10점 향상되는 수준의 표현만 생성하도록 프롬프트 수정
-  - 너무 높은 수준의 표현 제안 시 유저가 따라하기 어렵고 피드백이 괴리감을 줌
-
-## 10. Pydantic 모델 정리
-
-- [x] `StartRequest`, `StartResponse`, `StartResponseData` 제거
-- [x] `NextRequest`, `NextResponse`, `NextResponseData` 제거
-- [x] `TurnEvaluationRequest`, `TurnEvaluationResponse` 신규 작성
-- [x] `SessionFeedbackRequest`, `SessionFeedbackResponse` 신규 작성
-- [x] `FeedbackData`, `Utterance` 모델 신규 필드에 맞게 수정
+- [x] 새 서비스 계약 테스트 추가.
+- [x] 새 라우터 계약 테스트 추가.
+- [x] 기존 1차 MVP 테스트 제거.
+- [x] 전체 테스트 실행.

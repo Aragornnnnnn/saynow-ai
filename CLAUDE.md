@@ -1,80 +1,83 @@
-# SayNow — English Speaking Practice App (MVP)
+# SayNow AI Server — 2차 MVP
 
 ## Project Overview
-영어 스피킹 연습 앱. 시나리오 기반 롤플레이 → AI 실시간 대화 → 피드백의 3단계 흐름.
+
+SayNow 백엔드가 호출하는 내부 AI 서버입니다. 2차 MVP에서는 오디오, STT, TTS, 세션 상태 저장을 담당하지 않고, 백엔드가 전달한 텍스트와 슬롯 상태를 바탕으로 꼬리 질문과 최종 피드백만 생성합니다.
 
 ## Tech Stack
-- **Backend**: FastAPI (Python)
-- **LLM**: Anthropic Claude API (claude-sonnet-4-6)
-- **STT**: OpenAI Whisper API
-- **TTS**: OpenAI TTS API
-- **Data**: JSON 기반 시나리오 파일 (MVP, DB 없음)
+
+- **Framework**: FastAPI.
+- **LLM**: OpenAI Chat Completions.
+- **Validation**: Pydantic v2.
+- **Runtime State**: 없음. 요청마다 필요한 컨텍스트를 백엔드가 전달합니다.
 
 ## Project Structure
-```
-saynow/
+
+```text
+saynow-ai/
 ├── app/
-│   ├── main.py              # FastAPI app entry point
-│   ├── config.py            # env vars & settings
+│   ├── main.py
+│   ├── config.py
 │   ├── api/
 │   │   └── routes/
-│   │       ├── scenario.py      # GET /scenarios, GET /scenarios/{id}
-│   │       ├── conversation.py  # POST /conversation/start, /next, /evaluate
-│   │       ├── stt.py           # POST /stt  (audio → text)
-│   │       ├── tts.py           # POST /tts  (text → audio)
-│   │       └── feedback.py      # GET /feedback/{session_id}
+│   │       └── conversation.py
 │   ├── services/
-│   │   ├── scenario_service.py   # 시나리오 데이터 로드 & 조회
-│   │   ├── conversation_service.py # 대화 흐름 관리, 클리어 판단
-│   │   ├── stt_service.py        # Whisper 호출
-│   │   ├── tts_service.py        # OpenAI TTS 호출
-│   │   └── feedback_service.py   # 이해도 분석, 피드백 생성
+│   │   └── conversation_service.py
 │   ├── core/
-│   │   └── llm.py               # Anthropic client 초기화 & 공통 호출
-│   ├── models/
-│   │   ├── scenario.py          # Pydantic models
-│   │   ├── conversation.py
-│   │   └── feedback.py
-│   └── data/
-│       └── scenarios.json       # 5개 카테고리 × 2개 시나리오
+│   │   ├── llm.py
+│   │   └── logger.py
+│   └── models/
+│       └── conversation.py
+├── tests/
+│   ├── test_conversation_routes.py
+│   └── test_conversation_service.py
 ├── requirements.txt
-├── .env.example
 └── readme.md
 ```
 
-## Core Business Logic
+## API
 
-### 시나리오 구조
-- 카테고리: airport / hotel / cafe / restaurant / taxi (각 2개)
-- 각 시나리오: id, category, title, situation, goal, required_info[], max_questions(5)
+### `POST /api/v1/conversation/next-question`
 
-### 대화 흐름 (conversation_service)
-1. `start`: 세션 생성, 첫 AI 발화 생성 (TTS 포함)
-2. `next`: 유저 STT 결과 받아 → 이해도 분석 → 꼬리질문 생성 → 클리어 여부 판단
-3. 클리어 조건: required_info 모두 충족 OR 질문 5회 소진(실패)
-4. 세션 상태는 인메모리 dict로 관리 (MVP)
+- 백엔드가 직전 질문, 직전 질문의 target slot, 사용자 텍스트 발화, 시나리오 제목, 상황, AI 역할, 목표, 현재 슬롯 상태와 슬롯별 설명을 전달합니다.
+- `slots[].description`은 슬롯을 채웠다고 판단하는 의미 기준이며, 특정 영어 표현을 강제하는 문구가 아닙니다.
+- AI 서버는 이번 발화로 새롭게 충족된 슬롯만 `filledSlots`에 반환합니다.
+- `originalQuestionTargetSlotName`은 직전 질문의 주 target일 뿐이며, 최신 발화 근거가 있으면 여러 슬롯을 함께 채울 수 있습니다.
+- AI 서버는 다음 질문의 주 target을 `nextQuestionTargetSlotName`으로 반환합니다.
+- 이미 `filled=true`인 슬롯은 `filledSlots`에 다시 넣지 않습니다.
+- 모든 미충족 슬롯이 이번 발화로 채워졌다면 `nextQuestion`, `translatedQuestion`, `nextQuestionTargetSlotName`은 `null`입니다.
+- 세션 완료 여부와 누적 슬롯 상태 갱신은 백엔드 책임입니다.
 
-### 이해도 분석 (LLM 프롬프트)
-- 입력: 유저 발화(STT 텍스트), 시나리오 컨텍스트
-- 출력: comprehension_score(0~100), native_perception(미국인 귀에 들린 내용), better_expression
+### `POST /api/v1/conversation/feedback`
 
-### 피드백 구조
-- total_comprehension: 전체 평균
-- utterances[]: { text, response_time_sec, comprehension_score, native_perception, better_expression }
+- 백엔드가 시나리오 제목, 상황, AI 역할, 목표, 세션 결과, 슬롯 상태와 설명, 완료된 세션의 턴 목록을 텍스트로 전달합니다.
+- AI 서버는 전체 이해도, 총평, 턴별 피드백을 반환합니다.
+- `turnId`는 백엔드 매핑을 위해 요청값과 동일하게 보존해야 합니다.
+- 잘한 응답은 내부 점수 `85-100`이면서 질문 의도 답변, 턴 목표 충족, 추가 추측 없는 이해, 의미 차단 오류 없음 조건을 모두 만족할 때만 `feedbackRequired=false`로 반환합니다.
+- `betterExpression`은 사용자 발화의 의도, 단어 수준, 문장 형태를 유지하면서 딱 한 단계만 개선해야 합니다.
+- LLM 호출은 같은 입력에 같은 기준을 적용하기 위해 `temperature=0`을 사용합니다.
 
-## API Conventions
-- 모든 응답: `{ success: bool, data: ..., error: str | null }`
-- 오디오 업로드: multipart/form-data
-- 오디오 반환: base64 encoded string (MVP)
+## Error Policy
+
+- 잘못된 요청은 HTTP 400과 `{"code": "INVALID_REQUEST", "message": "잘못된 요청입니다."}`를 반환합니다.
+- LLM 호출 실패나 계약에 맞지 않는 LLM 응답은 HTTP 500과 `AI_GENERATION_FAILED`를 반환합니다.
 
 ## Environment Variables
-```
-ANTHROPIC_API_KEY=
+
+```bash
 OPENAI_API_KEY=
+LOG_LEVEL=INFO
 ```
 
 ## Development
+
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+```
+
+## Verification
+
+```bash
+OPENAI_API_KEY=test-key python -m unittest discover -s tests -p 'test*.py'
 ```
