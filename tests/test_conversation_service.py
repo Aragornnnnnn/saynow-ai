@@ -192,6 +192,112 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.translatedQuestion, "안녕하세요. 방문 목적이 어떻게 되시나요?")
         self.assertEqual(result.nextQuestionTargetSlotName, "visit_purpose")
 
+    def test_next_question_exact_repeat_request_reuses_previous_question_without_model_call(self):
+        from app.models.conversation import NextQuestionRequest
+
+        def fail_chat(*args, **kwargs):
+            self.fail("exact repeat request should be handled before calling the model")
+
+        self.service.chat = fail_chat
+        request = NextQuestionRequest.model_validate({
+            "originalQuestion": "Hi, what's the purpose of your visit?",
+            "originalTranslatedQuestion": "안녕하세요. 방문 목적이 어떻게 되시나요?",
+            "originalQuestionTargetSlotName": "visit_purpose",
+            "userUtterance": "Pardon?",
+            "scenarioTitle": "입국심사 받기",
+            "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황이에요. 심사관의 질문에 여행 계획을 차분히 설명해야 해요.",
+            "aiRole": "미국 공항 입국심사관",
+            "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+            "slots": [
+                {
+                    "slotName": "visit_purpose",
+                    "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부",
+                    "filled": False,
+                    "evidencePolicy": {
+                        "mode": "semantic_evidence",
+                        "hints": ["travel", "business", "study"],
+                        "requiresEvidenceText": True,
+                        "mustBeGroundedIn": "latest_user_utterance",
+                    },
+                },
+            ],
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.turnClassification, "REPEAT_REQUEST")
+        self.assertEqual(result.filledSlots, [])
+        self.assertEqual(result.nextQuestion, "Hi, what's the purpose of your visit?")
+        self.assertEqual(result.translatedQuestion, "안녕하세요. 방문 목적이 어떻게 되시나요?")
+        self.assertEqual(result.nextQuestionTargetSlotName, "visit_purpose")
+
+    def test_next_question_downgrades_model_repeat_for_invalid_short_non_answers(self):
+        from app.models.conversation import NextQuestionRequest
+
+        for user_utterance in ["ABC", "haha"]:
+            with self.subTest(user_utterance=user_utterance):
+                chat_calls = []
+                request = NextQuestionRequest.model_validate({
+                    "originalQuestion": "Hi, what's the purpose of your visit?",
+                    "originalTranslatedQuestion": "안녕하세요. 방문 목적이 어떻게 되시나요?",
+                    "originalQuestionTargetSlotName": "visit_purpose",
+                    "userUtterance": user_utterance,
+                    "scenarioTitle": "입국심사 받기",
+                    "scenarioSituation": "미국 공항에 도착해 입국심사를 받는 상황이에요. 심사관의 질문에 여행 계획을 차분히 설명해야 해요.",
+                    "aiRole": "미국 공항 입국심사관",
+                    "scenarioGoal": "입국 목적과 체류 정보를 설명하고 입국심사를 통과할 수 있다.",
+                    "slots": [
+                        {
+                            "slotName": "visit_purpose",
+                            "description": "사용자가 미국 방문 목적을 여행, 출장, 유학 등으로 설명했는지 여부",
+                            "filled": False,
+                            "evidencePolicy": {
+                                "mode": "semantic_evidence",
+                                "hints": ["travel", "business", "study", "vacation", "visit"],
+                                "requiresEvidenceText": True,
+                                "mustBeGroundedIn": "latest_user_utterance",
+                            },
+                        },
+                        {
+                            "slotName": "stay_duration",
+                            "description": "사용자가 미국에 머무를 기간이나 출국 예정 시점을 설명했는지 여부",
+                            "filled": False,
+                            "evidencePolicy": {
+                                "mode": "semantic_evidence",
+                                "hints": ["days", "weeks", "until", "stay for", "return"],
+                                "requiresEvidenceText": True,
+                                "mustBeGroundedIn": "latest_user_utterance",
+                            },
+                        },
+                    ],
+                })
+                def repeat_misclassification_chat(*args, **kwargs):
+                    chat_calls.append(args)
+                    return json.dumps({
+                        "filledSlots": [{"slotName": "visit_purpose"}],
+                        "candidateFilledSlots": [
+                            {
+                                "slotName": "visit_purpose",
+                                "evidenceText": user_utterance,
+                            }
+                        ],
+                        "nextQuestion": "Hi, what's the purpose of your visit?",
+                        "translatedQuestion": "안녕하세요. 방문 목적이 어떻게 되시나요?",
+                        "nextQuestionTargetSlotName": "visit_purpose",
+                        "turnClassification": "REPEAT_REQUEST",
+                    })
+
+                self.service.chat = repeat_misclassification_chat
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(len(chat_calls), 1)
+                self.assertEqual(result.turnClassification, "INVALID_RESPONSE")
+                self.assertEqual(result.filledSlots, [])
+                self.assertEqual(result.nextQuestion, "Hi, what's the purpose of your visit?")
+                self.assertEqual(result.translatedQuestion, "안녕하세요. 방문 목적이 어떻게 되시나요?")
+                self.assertEqual(result.nextQuestionTargetSlotName, "visit_purpose")
+
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest
 
@@ -3480,6 +3586,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("ASSISTANCE_REQUEST", prompt)
         self.assertIn("INVALID_RESPONSE", prompt)
         self.assertIn("REPEAT_REQUEST", prompt)
+        self.assertIn("short random text such as ABC or haha is INVALID_RESPONSE", prompt)
         self.assertIn("The user can only use information that appears in your nextQuestion", prompt)
         self.assertIn("If retrieved assistance context is provided", prompt)
         self.assertIn("generate a plausible role-play answer", prompt)

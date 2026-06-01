@@ -126,12 +126,18 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     stage_started_at = time.perf_counter()
     data = _parse_json_object(raw, workflow=workflow)
     raw_classification = _parse_next_question_turn_classification(data.get("turnClassification"))
+    repeat_request_rejected = (
+        raw_classification == NextQuestionTurnClassification.REPEAT_REQUEST
+        and not _is_repeat_request(request.userUtterance)
+    )
+    if repeat_request_rejected:
+        raw_classification = NextQuestionTurnClassification.INVALID_RESPONSE
     filled_slots = _normalize_newly_filled_slots(data, unfilled_slot_names)
     candidate_evidence_by_slot = _normalize_candidate_filled_slot_evidence(data, unfilled_slot_names)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
     stage_started_at = time.perf_counter()
     rejected_evidence_slot_names: set[str] = set()
-    if raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
+    if repeat_request_rejected or raw_classification == NextQuestionTurnClassification.INVALID_RESPONSE:
         filled_slots = []
     else:
         filled_slots, rejected_evidence_slot_names = _apply_evidence_policies_to_slots(
@@ -140,13 +146,15 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
             filled_slots,
             candidate_evidence_by_slot,
         )
-    filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, filled_slots)
+    if not repeat_request_rejected:
+        filled_slots = _add_deterministic_evidence_slots(request, unfilled_slot_names, filled_slots)
     turn_classification = _resolve_next_question_turn_classification(
         data,
         request,
         filled_slots,
         raw_classification,
         rejected_evidence_slot_names,
+        rejected_repeat_request=repeat_request_rejected,
     )
     if turn_classification != NextQuestionTurnClassification.ANSWER:
         filled_slots = []
@@ -478,7 +486,8 @@ def _next_question_system_prompt(*, include_assistance_examples: bool = True) ->
             "Assistance request means the user asks for help, recommendation, menu, options, available choices, rules, or details. It is relevant, but it does not fill a target slot unless the user accepts or names a concrete item or value.\n"
             "REPEAT_REQUEST means the user asks you to repeat or say the previous question again, such as Pardon?, Can you say that again?, or Can you tell me again?. It should not fill slots.\n"
             "INVALID_RESPONSE means the utterance is off-topic, nonsense, refusal, incomplete, vague, or generic.\n"
-            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for scenario help, recommendation, menu, option, or information requests, REPEAT_REQUEST for asking to hear the previous question again, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses."
+            "turnClassification must describe the latest utterance: ANSWER for direct answers to the current AI question, ASSISTANCE_REQUEST for scenario help, recommendation, menu, option, or information requests, REPEAT_REQUEST for asking to hear the previous question again, and INVALID_RESPONSE for off-topic, nonsense, refusal, incomplete, or generic responses.\n"
+            "Self-check: use REPEAT_REQUEST only when the user explicitly asks to hear the previous question again; short random text such as ABC or haha is INVALID_RESPONSE."
         ),
         (
             "Slot Policy:\n"
@@ -2487,14 +2496,20 @@ def _resolve_next_question_turn_classification(
     filled_slots: list[FilledSlotResponse],
     raw_classification: NextQuestionTurnClassification | None = None,
     rejected_evidence_slot_names: set[str] | None = None,
+    *,
+    rejected_repeat_request: bool = False,
 ) -> NextQuestionTurnClassification:
     rejected_evidence_slot_names = rejected_evidence_slot_names or set()
     if _should_force_invalid_next_question(request):
         return NextQuestionTurnClassification.INVALID_RESPONSE
+    if rejected_repeat_request:
+        return NextQuestionTurnClassification.INVALID_RESPONSE
+    if raw_classification == NextQuestionTurnClassification.REPEAT_REQUEST:
+        if _is_repeat_request(request.userUtterance):
+            return NextQuestionTurnClassification.REPEAT_REQUEST
+        return NextQuestionTurnClassification.INVALID_RESPONSE
     if filled_slots:
         return NextQuestionTurnClassification.ANSWER
-    if raw_classification == NextQuestionTurnClassification.REPEAT_REQUEST:
-        return NextQuestionTurnClassification.REPEAT_REQUEST
     if _is_no_more_options_response(request.originalQuestion, request.userUtterance):
         return NextQuestionTurnClassification.ANSWER
     if filled_slots and _fills_option_or_customization_slot(filled_slots):
