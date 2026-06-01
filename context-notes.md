@@ -255,3 +255,7 @@
 - 2026-06-02 원인은 스키마 검증은 통과하지만 제품 품질 기준을 벗어난 모델 응답을 그대로 캐시하거나 반환한 것이다. 프롬프트에는 짧은 맞장구 필수, 명확한 이유 답변 과교정 금지, 같은 발화 의도 보존, 한국어 총평을 명시하고, 후처리에는 관측된 실패 패턴에 대한 좁은 보정만 추가했다.
 - 2026-06-02 품질 보정 RED 테스트 4개는 모두 실패를 확인한 뒤 GREEN으로 통과했다. 검증은 focused 테스트 4개, `tests.test_conversation_service` 13개, 전체 `unittest discover` 34개, `compileall app tests`, `git diff --check`로 확인했다.
 - 2026-06-02 실제 develop SSM OpenAI 설정으로 재실행한 `/private/tmp/saynow_3mvp_quality_smoke.py`에서 다음 질문은 `I see. Do you cook often?`, 좋은 피자 답변은 `GOOD`, 어색한 요리 답변은 `I cook sometimes, but I am not good at cooking.`, 세션 총평은 한국어로 확인됐다.
+- 2026-06-02 추가 검토에서 fallback 맞장구 `I see.`와 모델의 `That's great to hear!`가 사용자 발화에 반응하는 느낌이 약하다는 점을 확인했다. 고정 질문만 오거나 일반 맞장구로 시작하면 사용자 발화 기반 fallback 맞장구로 교체한다.
+- 2026-06-02 `TurnFeedbackData`는 이제 `NEEDS_IMPROVEMENT`일 때 교정 필드만 허용하고 칭찬 필드는 null이어야 한다. `GOOD`일 때는 칭찬 필드만 허용하고 교정 필드는 null이어야 한다.
+- 2026-06-02 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. next-question 5개와 turn-feedback 5개가 모두 통과했고, GOOD 피드백의 영어 칭찬 설명은 한국어 fallback으로 보정됐다.
+- 2026-06-02 다음 질문 fallback 맞장구가 장소명을 만들 때 `Busan`처럼 고유명사는 보기 좋은 표기로 보정한다. 10케이스 평가 결과를 사용자에게 공유할 때도 실제 사용자 화면에 가까운 문장 품질을 기준으로 본다.

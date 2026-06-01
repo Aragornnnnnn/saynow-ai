@@ -28,7 +28,7 @@ class ConversationServiceTest(unittest.TestCase):
             "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
         }
 
-    def _next_question_request(self):
+    def _next_question_request(self, *, user_utterance="I like pizza because it is spicy."):
         from app.models.conversation import NextQuestionRequest
 
         return NextQuestionRequest.model_validate({
@@ -39,7 +39,7 @@ class ConversationServiceTest(unittest.TestCase):
             "currentTurn": {
                 "aiQuestion": "What is your favorite food? Why do you like it?",
                 "translatedQuestion": "가장 좋아하는 음식이 뭐예요? 왜 좋아하나요?",
-                "userUtterance": "I like pizza because it is spicy.",
+                "userUtterance": user_utterance,
             },
             "nextQuestion": {
                 "questionId": 101,
@@ -96,8 +96,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(self._next_question_request())
 
-        self.assertEqual(result.aiQuestion, "Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
+        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
 
     def test_next_question_adds_acknowledgement_when_model_returns_only_fixed_question(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -107,8 +107,61 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(self._next_question_request())
 
-        self.assertEqual(result.aiQuestion, "I see. Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "그렇군요. 요리는 자주 하나요?")
+        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
+
+    def test_next_question_fallback_acknowledges_user_answer_before_fixed_question(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Do you cook often?",
+            "translatedQuestion": "요리는 자주 하나요?",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(user_utterance="I usually cook pasta at home.")
+        )
+
+        self.assertEqual(result.aiQuestion, "Cooking pasta at home sounds nice. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "집에서 파스타를 요리하는군요. 요리는 자주 하나요?")
+
+    def test_next_question_recovers_non_json_model_response_with_acknowledged_fixed_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: (
+            "That sounds like a delicious experience! Who do you usually travel with? 보통 누구와 여행하나요?"
+        )
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": self._scenario(),
+            "currentTurn": {
+                "aiQuestion": "What did you do last weekend?",
+                "translatedQuestion": "지난 주말에 무엇을 했나요?",
+                "userUtterance": "I went to Busan last weekend and ate seafood.",
+            },
+            "nextQuestion": {
+                "questionId": 101,
+                "sequence": 2,
+                "questionEn": "Who do you usually travel with?",
+                "questionKo": "보통 누구와 여행하나요?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.aiQuestion, "Your trip to Busan sounds interesting. Who do you usually travel with?")
+        self.assertEqual(result.translatedQuestion, "그 여행 이야기가 흥미롭네요. 보통 누구와 여행하나요?")
+
+    def test_next_question_replaces_generic_acknowledgement_with_user_specific_one(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That's great to hear! Do you cook often?",
+            "translatedQuestion": "좋다고 들었어요! 요리는 자주 하나요?",
+        })
+
+        result = self.service.generate_next_question(self._next_question_request())
+
+        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
 
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}
@@ -158,6 +211,29 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertIsNone(cached.correctionPoint)
         self.assertEqual(cached.praiseSummary, "이유를 because로 자연스럽게 붙였어요.")
+
+    def test_turn_feedback_repairs_english_good_praise_to_korean(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '부산에 가서 친구와 해산물을 먹었어요'처럼 자연스럽게 들려요.",
+            "correctionPoint": None,
+            "correctionReason": None,
+            "plusOneExpression": None,
+            "praiseSummary": "Your response is clear and well-structured.",
+            "praiseReason": "You provided a specific activity and included a reason.",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I went to Busan last weekend and ate seafood with my friend."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertRegex(cached.praiseSummary, r"[가-힣]")
+        self.assertRegex(cached.praiseReason, r"[가-힣]")
+        self.assertNotIn("Your response", cached.praiseSummary)
 
     def test_turn_feedback_does_not_overcorrect_clear_reason_answer(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -331,6 +407,34 @@ class ConversationServiceTest(unittest.TestCase):
                 plusOneExpression=None,
                 praiseSummary="좋아요.",
                 praiseReason=None,
+            )
+
+    def test_feedback_data_rejects_fields_from_other_feedback_type(self):
+        from pydantic import ValidationError
+        from app.models.conversation import FeedbackType, TurnFeedbackData
+
+        with self.assertRaises(ValidationError):
+            TurnFeedbackData(
+                turnId=5000,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="한국어로 비유하자면 '조금 날카롭게 들려요'처럼 들려요.",
+                correctionPoint="표현이 너무 직접적이에요.",
+                correctionReason="가벼운 대화에서는 상대를 몰아붙이는 느낌이 날 수 있어요.",
+                plusOneExpression="I wonder why you are curious about it.",
+                praiseSummary="의미는 전달했어요.",
+                praiseReason=None,
+            )
+
+        with self.assertRaises(ValidationError):
+            TurnFeedbackData(
+                turnId=5000,
+                feedbackType=FeedbackType.GOOD,
+                koreanAnalogy="한국어로 비유하자면 '저는 피자가 좋아요'처럼 들려요.",
+                correctionPoint="더 구체적으로 말할 수 있어요.",
+                correctionReason=None,
+                plusOneExpression=None,
+                praiseSummary="이유를 잘 붙였어요.",
+                praiseReason="질문에 바로 답했어요.",
             )
 
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):

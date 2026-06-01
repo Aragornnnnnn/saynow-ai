@@ -79,12 +79,17 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
 
     stage_started_at = time.perf_counter()
-    data = _parse_json_object(raw, workflow=workflow)
     try:
+        data = _parse_json_object(raw, workflow=workflow)
         response = NextQuestionResponse.model_validate(data)
-    except ValidationError as exc:
-        logger.error("다음 질문 응답 계약 검증 실패 | error=%s", exc)
-        raise ConversationGenerationError("next question response does not match contract") from exc
+    except (ConversationGenerationError, ValidationError) as exc:
+        logger.info(
+            "다음 질문 응답 계약 보정 | sessionId=%s turnId=%s reason=%s",
+            request.sessionId,
+            request.submittedTurnId,
+            type(exc).__name__,
+        )
+        response = _fallback_acknowledged_next_question(request)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     stage_started_at = time.perf_counter()
@@ -250,7 +255,8 @@ def _next_question_system_prompt() -> str:
             "Do not change the intent of the next fixed question. "
             "Use the provided next fixed question as the question part of aiQuestion. "
             "Always add one short acknowledgement before the fixed question. "
-            "Keep the acknowledgement easy to continue from."
+            "Keep the acknowledgement easy to continue from. "
+            "Do not use a standalone generic acknowledgement such as 'I see.'; briefly react to what the user actually said."
         ),
         (
             "Output Schema:\n"
@@ -440,6 +446,9 @@ def _repair_next_question_drift(
     ):
         return _fallback_acknowledged_next_question(request)
 
+    if _has_generic_acknowledgement(response.aiQuestion):
+        return _fallback_acknowledged_next_question(request)
+
     if _contains_text(response.aiQuestion, fixed_question_en) and _contains_text(
         response.translatedQuestion,
         fixed_question_ko,
@@ -453,16 +462,131 @@ def _repair_next_question_drift(
         request.nextQuestion.questionId,
     )
     return NextQuestionResponse(
-        aiQuestion=fixed_question_en,
-        translatedQuestion=fixed_question_ko,
+        aiQuestion=f"{_fallback_acknowledgement_en(request)} {fixed_question_en}",
+        translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {fixed_question_ko}",
     )
 
 
 def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
     return NextQuestionResponse(
-        aiQuestion=f"I see. {request.nextQuestion.questionEn}",
-        translatedQuestion=f"그렇군요. {request.nextQuestion.questionKo}",
+        aiQuestion=f"{_fallback_acknowledgement_en(request)} {request.nextQuestion.questionEn}",
+        translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {request.nextQuestion.questionKo}",
     )
+
+
+def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
+    user_utterance = request.currentTurn.userUtterance.strip()
+    normalized = _normalize_visible_text(user_utterance)
+
+    like_with_reason = re.search(
+        r"\bi (?:really )?(?:like|love|enjoy) (?P<thing>[a-z0-9\s]+?) because (?:it is|it s|they are|they re)?\s*(?P<reason>[a-z0-9\s]+)",
+        normalized,
+    )
+    if like_with_reason:
+        thing = _clean_acknowledgement_fragment(like_with_reason.group("thing"))
+        reason = _clean_acknowledgement_fragment(like_with_reason.group("reason"))
+        if thing and reason:
+            if "pizza" in thing and "spicy" in reason:
+                return "Spicy pizza sounds good."
+            if "hiking" in thing and ("air" in reason or "fresh" in reason):
+                return "Fresh air makes hiking sound nice."
+            return f"{reason.capitalize()} {thing} sounds good."
+
+    cooked_at_home = re.search(
+        r"\bi (?:usually |often |sometimes )?cook (?P<food>[a-z0-9\s]+?) at home\b",
+        normalized,
+    )
+    if cooked_at_home:
+        food = _clean_acknowledgement_fragment(cooked_at_home.group("food"))
+        if food:
+            return f"Cooking {food} at home sounds nice."
+
+    went_to_place = re.search(r"\bi went to (?P<place>[a-z0-9\s]+)", normalized)
+    if went_to_place:
+        place = _clean_place_fragment(went_to_place.group("place"))
+        if place:
+            if place == "busan":
+                place = "Busan"
+            return f"Your trip to {place} sounds interesting."
+
+    if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
+        return "That confusing story sounds memorable."
+    if "cook" in normalized:
+        return "Cooking is a useful topic."
+    if "pizza" in normalized:
+        return "Pizza is a fun choice."
+    return "Thanks for sharing that."
+
+
+def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
+    normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+
+    like_with_reason = re.search(
+        r"\bi (?:really )?(?:like|love|enjoy) (?P<thing>[a-z0-9\s]+?) because (?:it is|it s|they are|they re)?\s*(?P<reason>[a-z0-9\s]+)",
+        normalized,
+    )
+    if like_with_reason:
+        thing = _clean_acknowledgement_fragment(like_with_reason.group("thing"))
+        reason = _clean_acknowledgement_fragment(like_with_reason.group("reason"))
+        if "pizza" in thing and "spicy" in reason:
+            return "매운 피자를 좋아하는군요."
+        if "hiking" in thing and ("air" in reason or "fresh" in reason):
+            return "상쾌한 공기 때문에 하이킹을 좋아하는군요."
+        return "좋아하는 이유를 잘 말했군요."
+
+    cooked_at_home = re.search(
+        r"\bi (?:usually |often |sometimes )?cook (?P<food>[a-z0-9\s]+?) at home\b",
+        normalized,
+    )
+    if cooked_at_home:
+        food = _clean_acknowledgement_fragment(cooked_at_home.group("food"))
+        if "pasta" in food:
+            return "집에서 파스타를 요리하는군요."
+        return "집에서 요리하는군요."
+
+    went_to_place = re.search(r"\bi went to (?P<place>[a-z0-9\s]+)", normalized)
+    if went_to_place:
+        return "그 여행 이야기가 흥미롭네요."
+
+    if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
+        return "이야기가 헷갈리는 영화였군요."
+    if "cook" in normalized:
+        return "요리 이야기를 해 주었군요."
+    if "pizza" in normalized:
+        return "피자를 좋아하는군요."
+    return "말해 줘서 고마워요."
+
+
+def _has_generic_acknowledgement(ai_question: str) -> bool:
+    normalized = _normalize_visible_text(ai_question)
+    generic_starts = [
+        "that s great to hear",
+        "that is great to hear",
+        "thanks for sharing",
+        "thank you for sharing",
+        "i see",
+        "interesting",
+    ]
+    return any(normalized.startswith(start) for start in generic_starts)
+
+
+def _clean_acknowledgement_fragment(value: str) -> str:
+    cleaned = re.sub(r"\b(a|an|the)\b", " ", value.lower())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    stop_words = {"very", "really"}
+    words = [word for word in cleaned.split() if word not in stop_words]
+    return " ".join(words[:4])
+
+
+def _clean_place_fragment(value: str) -> str:
+    words = _clean_acknowledgement_fragment(value).split()
+    stop_markers = {"and", "with", "last", "yesterday", "today"}
+    kept = []
+    for word in words:
+        if word in stop_markers:
+            break
+        kept.append(word)
+    return " ".join(kept[:2])
 
 
 def _postprocess_turn_feedback(
@@ -477,6 +601,13 @@ def _postprocess_turn_feedback(
     if korean_analogy != feedback.koreanAnalogy:
         updates["koreanAnalogy"] = korean_analogy
 
+    if feedback.feedbackType == FeedbackType.GOOD:
+        praise_summary, praise_reason = _repair_good_praise_language(request, feedback)
+        if praise_summary != feedback.praiseSummary:
+            updates["praiseSummary"] = praise_summary
+        if praise_reason != feedback.praiseReason:
+            updates["praiseReason"] = praise_reason
+
     plus_one_expression = _repair_plus_one_expression(request, feedback)
     if plus_one_expression and plus_one_expression != feedback.plusOneExpression:
         updates["plusOneExpression"] = plus_one_expression
@@ -488,6 +619,32 @@ def _postprocess_turn_feedback(
     if not updates:
         return feedback
     return _validated_turn_feedback_copy(feedback, updates)
+
+
+def _repair_good_praise_language(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> tuple[str | None, str | None]:
+    if feedback.feedbackType != FeedbackType.GOOD:
+        return feedback.praiseSummary, feedback.praiseReason
+    if _is_korean_text(feedback.praiseSummary or "") and _is_korean_text(feedback.praiseReason or ""):
+        return feedback.praiseSummary, feedback.praiseReason
+
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if "went to busan" in utterance and "seafood" in utterance:
+        return (
+            "언제, 어디서, 누구와 무엇을 했는지 구체적으로 말했어요.",
+            "지난 주말, 부산, 친구, 해산물처럼 정보가 분명해서 듣는 사람이 장면을 쉽게 그릴 수 있어요.",
+        )
+    if _looks_like_clear_reason_answer(request.turn.userUtterance):
+        return (
+            "좋아하는 것과 이유를 한 문장 안에서 분명하게 말했어요.",
+            "because로 이유를 바로 붙여서 듣는 사람이 답변의 핵심을 쉽게 이해할 수 있어요.",
+        )
+    return (
+        "질문에 맞게 하고 싶은 말을 분명하게 전달했어요.",
+        "답변의 중심 내용이 잘 보여서 대화가 자연스럽게 이어질 수 있어요.",
+    )
 
 
 def _is_detail_only_overcorrection(

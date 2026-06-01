@@ -138,11 +138,20 @@ class TurnFeedbackData(BaseModel):
             ]
             if any(value is None or not value.strip() for value in required_values):
                 raise ValueError("correction fields are required for NEEDS_IMPROVEMENT feedback")
+            if self.praiseSummary is not None or self.praiseReason is not None:
+                raise ValueError("praise fields must be null for NEEDS_IMPROVEMENT feedback")
             return self
 
         required_values = [self.praiseSummary, self.praiseReason]
         if any(value is None or not value.strip() for value in required_values):
             raise ValueError("praise fields are required for GOOD feedback")
+        correction_values = [
+            self.correctionPoint,
+            self.correctionReason,
+            self.plusOneExpression,
+        ]
+        if any(value is not None for value in correction_values):
+            raise ValueError("correction fields must be null for GOOD feedback")
         return self
 
 

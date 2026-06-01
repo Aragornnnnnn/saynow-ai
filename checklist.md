@@ -27,6 +27,10 @@
 - [x] 프롬프트와 후처리 품질 가드를 최소 범위로 보강한다.
 - [x] focused 테스트, 대화 서비스 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 실제 모델 품질 스모크를 재실행한다.
+- [x] `GOOD`과 `NEEDS_IMPROVEMENT` 타입별 필드가 섞이지 않도록 검증을 강화한다.
+- [x] 일반 맞장구(`I see.`, `That's great to hear!`)를 사용자 발화 기반 맞장구로 보정한다.
+- [x] GOOD 피드백의 칭찬 설명이 영어로 오면 한국어 설명으로 보정한다.
+- [x] 실제 모델 10개 대표 케이스 평가를 실행한다.
 
 ## develop/main EC2 배포 대상 교체
 
