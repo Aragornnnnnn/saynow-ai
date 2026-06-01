@@ -99,6 +99,17 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.aiQuestion, "Do you cook often?")
         self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
 
+    def test_next_question_adds_acknowledgement_when_model_returns_only_fixed_question(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Do you cook often?",
+            "translatedQuestion": "요리는 자주 하나요?",
+        })
+
+        result = self.service.generate_next_question(self._next_question_request())
+
+        self.assertEqual(result.aiQuestion, "I see. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "그렇군요. 요리는 자주 하나요?")
+
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}
 
@@ -147,6 +158,48 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertIsNone(cached.correctionPoint)
         self.assertEqual(cached.praiseSummary, "이유를 because로 자연스럽게 붙였어요.")
+
+    def test_turn_feedback_does_not_overcorrect_clear_reason_answer(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "이 표현은 마치 '나는 매운 음식을 좋아해요'라고 말하는 것과 비슷하지만, 피자에 대한 구체적인 설명이 부족해요.",
+            "correctionPoint": "Add more details about the type of pizza you like or why you find it spicy.",
+            "correctionReason": "Your answer is clear, but it could be improved by providing more specific information.",
+            "plusOneExpression": "I also enjoy spicy food like kimchi.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(self._turn_feedback_request())
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIsNone(cached.correctionPoint)
+        self.assertIsNone(cached.plusOneExpression)
+        self.assertEqual(cached.praiseSummary, "좋아하는 음식과 이유를 한 문장으로 분명하게 말했어요.")
+        self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+
+    def test_turn_feedback_repairs_plus_one_expression_to_fix_target_issue(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "이 표현은 마치 '나는 노래를 가끔 부르지만 잘 부르지 못해요'라고 말하는 것과 비슷해요.",
+            "correctionPoint": "I am not good at cooking.",
+            "correctionReason": "In English, we say 'good at' when referring to skills.",
+            "plusOneExpression": "I enjoy trying new recipes.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I cook sometimes but I am not good in cook.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.plusOneExpression, "I cook sometimes, but I am not good at cooking.")
+        self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
     def test_session_feedback_uses_cached_turn_feedbacks_in_expected_order(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -198,6 +251,45 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.nativeScore, 82)
         self.assertEqual(result.nativeLevelLabel, "유학생 수준")
         self.assertEqual([feedback.turnId for feedback in result.turnFeedbacks], [5000, 5001])
+
+    def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
+                "correctionPoint": None,
+                "correctionReason": None,
+                "plusOneExpression": None,
+                "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
+                "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            },
+            {
+                "sessionId": 1000,
+                "nativeScore": 75,
+                "nativeLevelLabel": "유학생 수준",
+                "summary": (
+                    "You did well in expressing your food preferences and experiences, "
+                    "but your responses could be more detailed."
+                ),
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(self._turn_feedback_request())
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertIn("말", result.summary)
+        self.assertNotIn("You did well", result.summary)
+        self.assertRegex(result.summary, r"[가-힣]")
 
     def test_session_feedback_raises_not_ready_when_expected_turn_is_missing(self):
         from app.models.conversation import SessionFeedbackRequest

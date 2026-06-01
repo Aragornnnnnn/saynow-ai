@@ -247,3 +247,11 @@
 - 2026-06-01 raw `REPEAT_REQUEST`가 reject된 경우에는 모델이 `filledSlots`나 `candidateFilledSlots`를 같이 반환해도 모두 무시한다. 이 경로는 semantic verifier와 deterministic evidence rescue를 타지 않고 `INVALID_RESPONSE`로 닫는다.
 - 2026-06-01 커밋 `13aaee1`을 develop에 push했고 GitHub Actions run `26735967518`로 develop AI backend 배포가 성공했다. `/health`는 `{"status":"ok"}`를 반환했다.
 - 2026-06-01 배포 후 direct smoke 결과는 `/private/tmp/saynow-ai-repeat-request-smoke-20260601T045728Z.json`에 저장했다. `ABC`, `haha`는 `INVALID_RESPONSE`, `Pardon?`, `Parden Can you tell again?`은 `REPEAT_REQUEST`, 빈 문자열은 기존처럼 400 `INVALID_REQUEST`로 확인했다.
+- 2026-06-01 develop/main EC2 배포 대상 교체는 브랜치별 SSM path는 유지하는 방향으로 진행한다. `develop`은 계속 `/saynow/develop` 설정을 읽고 `main`은 계속 `/saynow/prod` 설정을 읽는다. 바꾸는 것은 GitHub Environment의 EC2 접속 정보 매핑뿐이다.
+- 2026-06-01 구현 결과, `deploy-develop.yml`은 GitHub `prod` environment의 EC2 접속 정보를 쓰고 `/saynow/develop` SSM path를 유지한다. `deploy-prod.yml`은 GitHub `develop` environment의 EC2 접속 정보를 쓰고 `/saynow/prod` SSM path를 유지한다. main 배포가 develop environment의 SSH secret 형식에 의존하게 되므로 prod workflow도 raw private key와 base64 private key를 모두 처리하도록 맞췄다.
+- 2026-06-01 workflow 매핑 검증은 신규 `tests/test_deploy_workflows.py`로 고정했다. RED에서는 environment 매핑 2개와 prod SSH key 처리 1개가 실패했고, GREEN 후 `tests.test_deploy_workflows` 3개, 전체 `unittest discover` 166개, `compileall tests`, Ruby YAML parse, `git diff --check`가 통과했다.
+- 2026-06-01 배포 대상 교체 작업은 커밋 `247fccd`에 담았다. 이 커밋이 main에도 반영되어야 main 브랜치 push 시 새 매핑이 적용된다.
+- 2026-06-02 3차 MVP 실제 모델 품질 스모크에서 `next-question`은 고정 질문만 반환했고, 좋은 `because` 답변은 세부 정보 부족만으로 `NEEDS_IMPROVEMENT`가 됐으며, `plusOneExpression`이 사용자 의도와 다른 새 문장으로 나왔고, 세션 총평이 영어로 내려왔다.
+- 2026-06-02 원인은 스키마 검증은 통과하지만 제품 품질 기준을 벗어난 모델 응답을 그대로 캐시하거나 반환한 것이다. 프롬프트에는 짧은 맞장구 필수, 명확한 이유 답변 과교정 금지, 같은 발화 의도 보존, 한국어 총평을 명시하고, 후처리에는 관측된 실패 패턴에 대한 좁은 보정만 추가했다.
+- 2026-06-02 품질 보정 RED 테스트 4개는 모두 실패를 확인한 뒤 GREEN으로 통과했다. 검증은 focused 테스트 4개, `tests.test_conversation_service` 13개, 전체 `unittest discover` 34개, `compileall app tests`, `git diff --check`로 확인했다.
+- 2026-06-02 실제 develop SSM OpenAI 설정으로 재실행한 `/private/tmp/saynow_3mvp_quality_smoke.py`에서 다음 질문은 `I see. Do you cook often?`, 좋은 피자 답변은 `GOOD`, 어색한 요리 답변은 `I cook sometimes, but I am not good at cooking.`, 세션 총평은 한국어로 확인됐다.

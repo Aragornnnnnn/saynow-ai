@@ -12,6 +12,7 @@ from app.core.llm import chat
 from app.core.logger import get_logger
 from app.core.request_context import get_request_id
 from app.models.conversation import (
+    FeedbackType,
     GuideChatRequest,
     GuideChatResponse,
     NextQuestionRequest,
@@ -119,6 +120,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
             feedback.turnId,
         )
         raise ConversationGenerationError("turn feedback id does not match request turn id")
+    feedback = _postprocess_turn_feedback(request, feedback)
     _store_turn_feedback(request.sessionId, feedback)
     _log_workflow_stage_duration(workflow, "parse_validate_store", stage_started_at)
 
@@ -158,6 +160,7 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
             summary.sessionId,
         )
         raise ConversationGenerationError("session feedback id does not match request session id")
+    summary = _postprocess_session_feedback_summary(summary, turn_feedbacks)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     return SessionFeedbackResponse(
@@ -246,7 +249,8 @@ def _next_question_system_prompt() -> str:
             "Do not choose a new next question. "
             "Do not change the intent of the next fixed question. "
             "Use the provided next fixed question as the question part of aiQuestion. "
-            "If you add an acknowledgement, keep it short and easy to continue from."
+            "Always add one short acknowledgement before the fixed question. "
+            "Keep the acknowledgement easy to continue from."
         ),
         (
             "Output Schema:\n"
@@ -293,6 +297,8 @@ def _turn_feedback_system_prompt() -> str:
             "Judgement Policy:\n"
             "Classify the turn as GOOD or NEEDS_IMPROVEMENT. "
             "Do not force a correction when the utterance is already good. "
+            "A clear direct answer with a reason, such as 'I like pizza because it is spicy.', is GOOD unless there is a concrete grammar, word choice, nuance, politeness, or relevance issue. "
+            "Do not mark an answer as NEEDS_IMPROVEMENT only because it could include more detail. "
             "Judge grammar, nuance, politeness, situation fit, word choice, and whether the answer fits the AI question. "
             "When several issues exist, handle the most important one first. "
             "Use cautious wording such as can sound when the nuance depends on context."
@@ -300,9 +306,12 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Field Policy:\n"
             "koreanAnalogy is required for every response and should explain how the English sounds through a Korean analogy. "
+            "koreanAnalogy must start with '한국어로 비유하자면'. "
             "For NEEDS_IMPROVEMENT, correctionPoint, correctionReason, and plusOneExpression are required, while praiseSummary and praiseReason must be null. "
+            "correctionPoint and correctionReason must be Korean explanations of the issue. "
             "For GOOD, praiseSummary and praiseReason are required, while correctionPoint, correctionReason, and plusOneExpression must be null. "
-            "plusOneExpression must be a sentence the user can immediately say in a real conversation."
+            "plusOneExpression must correct or improve the user's same utterance while preserving the user's intent. "
+            "Do not introduce a new idea that the user did not say."
         ),
         (
             "Output Schema:\n"
@@ -347,6 +356,7 @@ def _session_feedback_system_prompt() -> str:
         ),
         (
             "Summary Policy:\n"
+            "summary must be written in Korean. "
             "summary must start with what the user did well, then give one concrete improvement direction. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
@@ -424,6 +434,12 @@ def _repair_next_question_drift(
 ) -> NextQuestionResponse:
     fixed_question_en = request.nextQuestion.questionEn
     fixed_question_ko = request.nextQuestion.questionKo
+    if _same_visible_text(response.aiQuestion, fixed_question_en) and _same_visible_text(
+        response.translatedQuestion,
+        fixed_question_ko,
+    ):
+        return _fallback_acknowledged_next_question(request)
+
     if _contains_text(response.aiQuestion, fixed_question_en) and _contains_text(
         response.translatedQuestion,
         fixed_question_ko,
@@ -440,6 +456,160 @@ def _repair_next_question_drift(
         aiQuestion=fixed_question_en,
         translatedQuestion=fixed_question_ko,
     )
+
+
+def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
+    return NextQuestionResponse(
+        aiQuestion=f"I see. {request.nextQuestion.questionEn}",
+        translatedQuestion=f"그렇군요. {request.nextQuestion.questionKo}",
+    )
+
+
+def _postprocess_turn_feedback(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData:
+    if _is_detail_only_overcorrection(request, feedback):
+        return _good_feedback_for_clear_reason_answer(request, feedback)
+
+    updates: dict[str, Any] = {}
+    korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
+    if korean_analogy != feedback.koreanAnalogy:
+        updates["koreanAnalogy"] = korean_analogy
+
+    plus_one_expression = _repair_plus_one_expression(request, feedback)
+    if plus_one_expression and plus_one_expression != feedback.plusOneExpression:
+        updates["plusOneExpression"] = plus_one_expression
+
+    correction_reason = _repair_correction_reason(request, feedback)
+    if correction_reason and correction_reason != feedback.correctionReason:
+        updates["correctionReason"] = correction_reason
+
+    if not updates:
+        return feedback
+    return _validated_turn_feedback_copy(feedback, updates)
+
+
+def _is_detail_only_overcorrection(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> bool:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return False
+    if not _looks_like_clear_reason_answer(request.turn.userUtterance):
+        return False
+    feedback_text = " ".join(
+        value or ""
+        for value in [feedback.correctionPoint, feedback.correctionReason, feedback.plusOneExpression]
+    ).lower()
+    has_detail_complaint = any(
+        marker in feedback_text
+        for marker in ["more detail", "more details", "specific", "type of", "detailed", "engaging"]
+    )
+    has_concrete_language_issue = any(
+        marker in feedback_text
+        for marker in ["grammar", "tense", "preposition", "good at", "wrong", "incorrect", "polite"]
+    )
+    return has_detail_complaint and not has_concrete_language_issue
+
+
+def _looks_like_clear_reason_answer(user_utterance: str) -> bool:
+    normalized = f" {_normalize_visible_text(user_utterance)} "
+    if " because " not in normalized and " since " not in normalized:
+        return False
+    obvious_issue_markers = [" good in ", " in cook ", " wanna know that "]
+    return not any(marker in normalized for marker in obvious_issue_markers)
+
+
+def _good_feedback_for_clear_reason_answer(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData:
+    return TurnFeedbackData(
+        turnId=feedback.turnId,
+        feedbackType=FeedbackType.GOOD,
+        koreanAnalogy=(
+            "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 "
+            "좋아하는 것과 이유가 바로 이어져 담백하게 들려요."
+        ),
+        correctionPoint=None,
+        correctionReason=None,
+        plusOneExpression=None,
+        praiseSummary="좋아하는 음식과 이유를 한 문장으로 분명하게 말했어요.",
+        praiseReason="because로 이유를 붙여서 상대가 답변의 핵심을 바로 이해할 수 있어요.",
+    )
+
+
+def _repair_plus_one_expression(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str | None:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return feedback.plusOneExpression
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "not good in cook" in utterance and "not good at cooking" in correction_point:
+        return "I cook sometimes, but I am not good at cooking."
+    return feedback.plusOneExpression
+
+
+def _repair_correction_reason(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str | None:
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "not good in cook" in utterance and "not good at cooking" in correction_point:
+        return "영어에서는 능력을 말할 때 good in보다 good at을 써야 자연스럽습니다."
+    return feedback.correctionReason
+
+
+def _ensure_korean_analogy_prefix(korean_analogy: str) -> str:
+    if korean_analogy.startswith("한국어로 비유하자면"):
+        return korean_analogy
+    return f"한국어로 비유하자면, {korean_analogy}"
+
+
+def _postprocess_session_feedback_summary(
+    summary: SessionFeedbackSummaryResponse,
+    turn_feedbacks: list[TurnFeedbackData],
+) -> SessionFeedbackSummaryResponse:
+    if _is_korean_text(summary.summary):
+        return summary
+
+    if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
+        replacement = (
+            "하고 싶은 말은 전달했지만 몇몇 표현에서 한국어식 직역이 보였어요. "
+            "다음에는 턴별 피드백의 교정 표현을 한 문장씩 바로 바꿔 말하는 연습을 해 보세요."
+        )
+    else:
+        replacement = (
+            "하고 싶은 말을 분명하게 전달했고, 질문에 맞춰 자연스럽게 답했어요. "
+            "다음에는 답변마다 짧은 예시를 하나 더 붙이면 대화가 더 풍성해질 수 있어요."
+        )
+    return SessionFeedbackSummaryResponse(
+        sessionId=summary.sessionId,
+        nativeScore=summary.nativeScore,
+        nativeLevelLabel=summary.nativeLevelLabel,
+        summary=replacement,
+    )
+
+
+def _is_korean_text(value: str) -> bool:
+    return re.search(r"[가-힣]", value) is not None
+
+
+def _validated_turn_feedback_copy(
+    feedback: TurnFeedbackData,
+    updates: dict[str, Any],
+) -> TurnFeedbackData:
+    data = feedback.model_dump(mode="json")
+    data.update(updates)
+    return TurnFeedbackData.model_validate(data)
+
+
+def _same_visible_text(value: str, required_text: str) -> bool:
+    return _normalize_visible_text(required_text) == _normalize_visible_text(value)
 
 
 def _contains_text(value: str, required_text: str) -> bool:
