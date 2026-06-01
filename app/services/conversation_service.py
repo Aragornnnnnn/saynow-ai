@@ -246,7 +246,8 @@ def _next_question_system_prompt() -> str:
         (
             "Priority:\n"
             "For this MVP, quality is more important than speed or token savings. "
-            "The user value is understanding how their English sounded to a foreign listener, so keep the acknowledgement grounded in the user's actual utterance."
+            "The user value is feeling that the AI is listening like a real conversation partner. "
+            "The acknowledgement may react to the user's meaning, tone, effort, emotion, or situation, but it does not need to quote or restate the user's words."
         ),
         _safety_system_policy(),
         (
@@ -256,14 +257,27 @@ def _next_question_system_prompt() -> str:
             "Use the provided next fixed question as the question part of aiQuestion. "
             "Always add one short acknowledgement before the fixed question. "
             "Keep the acknowledgement easy to continue from. "
-            "Do not use a standalone generic acknowledgement such as 'I see.'; briefly react to what the user actually said."
+            "Do not use a standalone generic acknowledgement such as 'I see.' "
+            "Do not mechanically summarize or quote the user. "
+            "Prefer a human conversational reaction over keyword restatement."
+        ),
+        (
+            "Conversation Style Examples:\n"
+            "Good JSON for user 'I like pizza because it is spicy.': "
+            '{"aiQuestion":"Sounds tasty. Do you cook often?","translatedQuestion":"맛있겠네요. 요리는 자주 하나요?"}\n'
+            "Good JSON for user 'I watched a movie yesterday, but the story was confusing.': "
+            '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?"}\n'
+            "Bad aiQuestion style: 'I see. Do you cook often?'\n"
+            "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
+            "Bad output format: Sounds tasty. Do you cook often?"
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
             '{"aiQuestion":"...","translatedQuestion":"..."}. '
             "aiQuestion must be English. "
-            "translatedQuestion must be a natural Korean translation of aiQuestion."
+            "translatedQuestion must be a natural Korean translation of aiQuestion. "
+            "Never return plain text outside the JSON object."
         ),
     ])
 
@@ -487,10 +501,10 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
         reason = _clean_acknowledgement_fragment(like_with_reason.group("reason"))
         if thing and reason:
             if "pizza" in thing and "spicy" in reason:
-                return "Spicy pizza sounds good."
+                return "Sounds tasty."
             if "hiking" in thing and ("air" in reason or "fresh" in reason):
-                return "Fresh air makes hiking sound nice."
-            return f"{reason.capitalize()} {thing} sounds good."
+                return "That sounds refreshing."
+            return "That makes sense."
 
     cooked_at_home = re.search(
         r"\bi (?:usually |often |sometimes )?cook (?P<food>[a-z0-9\s]+?) at home\b",
@@ -499,23 +513,21 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
     if cooked_at_home:
         food = _clean_acknowledgement_fragment(cooked_at_home.group("food"))
         if food:
-            return f"Cooking {food} at home sounds nice."
+            return "Nice, home cooking sounds cozy."
 
     went_to_place = re.search(r"\bi went to (?P<place>[a-z0-9\s]+)", normalized)
     if went_to_place:
         place = _clean_place_fragment(went_to_place.group("place"))
         if place:
-            if place == "busan":
-                place = "Busan"
-            return f"Your trip to {place} sounds interesting."
+            return "That sounds like a nice trip."
 
     if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
-        return "That confusing story sounds memorable."
+        return "That must have been a little confusing."
     if "cook" in normalized:
-        return "Cooking is a useful topic."
+        return "Nice, cooking is a useful topic."
     if "pizza" in normalized:
-        return "Pizza is a fun choice."
-    return "Thanks for sharing that."
+        return "Sounds tasty."
+    return "Got it."
 
 
 def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
@@ -529,10 +541,10 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
         thing = _clean_acknowledgement_fragment(like_with_reason.group("thing"))
         reason = _clean_acknowledgement_fragment(like_with_reason.group("reason"))
         if "pizza" in thing and "spicy" in reason:
-            return "매운 피자를 좋아하는군요."
+            return "맛있었겠네요."
         if "hiking" in thing and ("air" in reason or "fresh" in reason):
-            return "상쾌한 공기 때문에 하이킹을 좋아하는군요."
-        return "좋아하는 이유를 잘 말했군요."
+            return "상쾌했겠네요."
+        return "그럴 만하네요."
 
     cooked_at_home = re.search(
         r"\bi (?:usually |often |sometimes )?cook (?P<food>[a-z0-9\s]+?) at home\b",
@@ -541,20 +553,20 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
     if cooked_at_home:
         food = _clean_acknowledgement_fragment(cooked_at_home.group("food"))
         if "pasta" in food:
-            return "집에서 파스타를 요리하는군요."
+            return "집에서 해 먹는 느낌이 좋네요."
         return "집에서 요리하는군요."
 
     went_to_place = re.search(r"\bi went to (?P<place>[a-z0-9\s]+)", normalized)
     if went_to_place:
-        return "그 여행 이야기가 흥미롭네요."
+        return "좋은 여행이었겠네요."
 
     if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
-        return "이야기가 헷갈리는 영화였군요."
+        return "조금 헷갈렸겠네요."
     if "cook" in normalized:
-        return "요리 이야기를 해 주었군요."
+        return "요리 이야기도 좋네요."
     if "pizza" in normalized:
-        return "피자를 좋아하는군요."
-    return "말해 줘서 고마워요."
+        return "맛있었겠네요."
+    return "좋아요."
 
 
 def _has_generic_acknowledgement(ai_question: str) -> bool:

@@ -49,6 +49,31 @@ class ConversationServiceTest(unittest.TestCase):
             },
         })
 
+    def _assert_conversational_next_question(
+        self,
+        response,
+        *,
+        fixed_question_en="Do you cook often?",
+        fixed_question_ko="요리는 자주 하나요?",
+        user_utterance="I like pizza because it is spicy.",
+    ):
+        self.assertIn(fixed_question_en, response.aiQuestion)
+        self.assertIn(fixed_question_ko.rstrip("?"), response.translatedQuestion)
+        acknowledgement = response.aiQuestion.split(fixed_question_en, 1)[0].strip()
+        self.assertTrue(acknowledgement)
+        self.assertLessEqual(len(acknowledgement.split()), 8)
+        lowered_acknowledgement = acknowledgement.lower()
+        for generic_start in [
+            "i see",
+            "interesting",
+            "that's great to hear",
+            "that is great to hear",
+            "thanks for sharing",
+            "thank you for sharing",
+        ]:
+            self.assertFalse(lowered_acknowledgement.startswith(generic_start))
+        self.assertNotIn(user_utterance.rstrip(".").lower(), response.aiQuestion.lower())
+
     def _turn_feedback_request(self, *, turn_id=5000, user_utterance="I like pizza because it is spicy."):
         from app.models.conversation import TurnFeedbackRequest
 
@@ -83,6 +108,11 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.aiQuestion, "Oh, you like spicy pizza. Do you cook often?")
         self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
         self.assertIn("quality is more important than speed or token savings", captured["system"])
+        self.assertIn("feeling that the AI is listening like a real conversation partner", captured["system"])
+        self.assertIn("does not need to quote or restate the user's words", captured["system"])
+        self.assertIn('"aiQuestion":"Sounds tasty. Do you cook often?"', captured["system"])
+        self.assertIn("Bad aiQuestion style: 'I see. Do you cook often?'", captured["system"])
+        self.assertIn("Never return plain text outside the JSON object", captured["system"])
         self.assertIn("Do not choose a new next question", captured["system"])
         self.assertIn("Next fixed question English: Do you cook often?", captured["user"])
         self.assertIn("User utterance: I like pizza because it is spicy.", captured["user"])
@@ -96,8 +126,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(self._next_question_request())
 
-        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
+        self._assert_conversational_next_question(result)
+        self.assertEqual(result.aiQuestion, "Sounds tasty. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "맛있었겠네요. 요리는 자주 하나요?")
 
     def test_next_question_adds_acknowledgement_when_model_returns_only_fixed_question(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -107,8 +138,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(self._next_question_request())
 
-        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
+        self._assert_conversational_next_question(result)
+        self.assertEqual(result.aiQuestion, "Sounds tasty. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "맛있었겠네요. 요리는 자주 하나요?")
 
     def test_next_question_fallback_acknowledges_user_answer_before_fixed_question(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -120,8 +152,12 @@ class ConversationServiceTest(unittest.TestCase):
             self._next_question_request(user_utterance="I usually cook pasta at home.")
         )
 
-        self.assertEqual(result.aiQuestion, "Cooking pasta at home sounds nice. Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "집에서 파스타를 요리하는군요. 요리는 자주 하나요?")
+        self._assert_conversational_next_question(
+            result,
+            user_utterance="I usually cook pasta at home.",
+        )
+        self.assertEqual(result.aiQuestion, "Nice, home cooking sounds cozy. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "집에서 해 먹는 느낌이 좋네요. 요리는 자주 하나요?")
 
     def test_next_question_recovers_non_json_model_response_with_acknowledged_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
@@ -149,8 +185,14 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(request)
 
-        self.assertEqual(result.aiQuestion, "Your trip to Busan sounds interesting. Who do you usually travel with?")
-        self.assertEqual(result.translatedQuestion, "그 여행 이야기가 흥미롭네요. 보통 누구와 여행하나요?")
+        self._assert_conversational_next_question(
+            result,
+            fixed_question_en="Who do you usually travel with?",
+            fixed_question_ko="보통 누구와 여행하나요?",
+            user_utterance="I went to Busan last weekend and ate seafood.",
+        )
+        self.assertEqual(result.aiQuestion, "That sounds like a nice trip. Who do you usually travel with?")
+        self.assertEqual(result.translatedQuestion, "좋은 여행이었겠네요. 보통 누구와 여행하나요?")
 
     def test_next_question_replaces_generic_acknowledgement_with_user_specific_one(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -160,8 +202,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(self._next_question_request())
 
-        self.assertEqual(result.aiQuestion, "Spicy pizza sounds good. Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
+        self._assert_conversational_next_question(result)
+        self.assertEqual(result.aiQuestion, "Sounds tasty. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "맛있었겠네요. 요리는 자주 하나요?")
 
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}

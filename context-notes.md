@@ -259,3 +259,6 @@
 - 2026-06-02 `TurnFeedbackData`는 이제 `NEEDS_IMPROVEMENT`일 때 교정 필드만 허용하고 칭찬 필드는 null이어야 한다. `GOOD`일 때는 칭찬 필드만 허용하고 교정 필드는 null이어야 한다.
 - 2026-06-02 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. next-question 5개와 turn-feedback 5개가 모두 통과했고, GOOD 피드백의 영어 칭찬 설명은 한국어 fallback으로 보정됐다.
 - 2026-06-02 다음 질문 fallback 맞장구가 장소명을 만들 때 `Busan`처럼 고유명사는 보기 좋은 표기로 보정한다. 10케이스 평가 결과를 사용자에게 공유할 때도 실제 사용자 화면에 가까운 문장 품질을 기준으로 본다.
+- 2026-06-02 `prompt-engineering-patterns` 관점에서 next-question 맞장구의 기준은 사용자 발화 키워드 인용이 아니라 실제 대화감이다. 프롬프트와 테스트는 사용자가 들은 느낌, 상황, 노력, 감정 중 하나에 짧게 반응하고 고정 질문으로 자연스럽게 넘어가는지를 본다.
+- 2026-06-02 plain text few-shot 예시는 실제 모델이 JSON 없이 문장만 반환하게 만드는 부작용이 있었다. next-question few-shot은 `{"aiQuestion": "...", "translatedQuestion": "..."}` 형태로 바꿔 structured output과 예시가 같은 방향을 보게 했다.
+- 2026-06-02 새 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. 결과는 10개 모두 통과했고, next-question 5개는 모두 JSON으로 파싱됐으며 turn-feedback 5개는 실제 피드백 문구까지 확인했다.
