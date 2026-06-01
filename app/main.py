@@ -1,4 +1,4 @@
-# FastAPI 앱 진입점 — 2차 MVP 대화 API 라우터와 공통 예외 처리를 등록한다.
+# FastAPI 앱 진입점 — 3차 MVP 대화 API 라우터와 공통 예외 처리를 등록한다.
 import time
 import uuid
 
@@ -12,7 +12,7 @@ from app.core.logger import get_logger
 from app.core.observability import capture_exception, init_sentry
 from app.core.request_context import reset_request_id, set_request_id
 
-app = FastAPI(title="SayNow AI API", version="0.2.0")
+app = FastAPI(title="SayNow AI API", version="0.3.0")
 logger = get_logger("main")
 init_sentry()
 REQUEST_ID_HEADER = "X-Request-Id"

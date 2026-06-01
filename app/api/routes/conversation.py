@@ -1,25 +1,26 @@
-# 2차 MVP 백엔드 연동용 대화 API 라우터를 제공한다.
-import json
-
+# 3차 MVP 백엔드 연동용 프리톡 대화 API 라우터를 제공한다.
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
 from app.core.logger import get_logger
 from app.core.observability import capture_exception
 from app.models.conversation import (
-    ConversationFeedbackRequest,
-    ConversationFeedbackResponse,
     GuideChatRequest,
     GuideChatResponse,
     NextQuestionRequest,
     NextQuestionResponse,
+    SessionFeedbackRequest,
+    SessionFeedbackResponse,
+    TurnFeedbackCreationResponse,
+    TurnFeedbackRequest,
 )
 from app.services.conversation_service import (
     ConversationGenerationError,
-    generate_feedback,
-    generate_feedback_stream_events,
+    TurnFeedbackNotReadyError,
     generate_guide_answer,
     generate_next_question,
+    generate_session_feedback,
+    generate_turn_feedback,
 )
 
 
@@ -30,87 +31,68 @@ logger = get_logger("route.conversation")
 @router.post(
     "/next-question",
     response_model=NextQuestionResponse,
-    summary="꼬리 질문 생성",
+    summary="다음 고정 질문 연결 문장 생성",
 )
 async def next_question(request: NextQuestionRequest):
     logger.info(
-        "POST /api/v1/conversation/next-question | scenario: %s | slots: %d",
-        request.scenarioTitle,
-        len(request.slots),
+        "POST /api/v1/conversation/next-question | sessionId=%s scenarioId=%s submittedTurnId=%s",
+        request.sessionId,
+        request.scenario.scenarioId,
+        request.submittedTurnId,
     )
     try:
         return generate_next_question(request)
     except ConversationGenerationError as exc:
-        logger.exception("꼬리 질문 생성 실패 | error: %s", exc)
-        capture_exception(exc)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "code": "AI_GENERATION_FAILED",
-                "message": "꼬리 질문 생성에 실패했습니다.",
-            },
-        )
+        return _generation_error_response(exc, "다음 질문 생성에 실패했습니다.")
 
 
 @router.post(
-    "/feedback",
-    response_model=ConversationFeedbackResponse,
-    summary="대화 피드백 생성",
+    "/turn-feedback",
+    response_model=TurnFeedbackCreationResponse,
+    summary="턴별 피드백 생성 및 AI 캐시 저장",
 )
-async def feedback(request: ConversationFeedbackRequest):
+async def turn_feedback(request: TurnFeedbackRequest):
     logger.info(
-        "POST /api/v1/conversation/feedback | scenario: %s | turns: %d",
-        request.scenarioTitle,
-        len(request.turns),
+        "POST /api/v1/conversation/turn-feedback | sessionId=%s turnId=%s sequence=%s",
+        request.sessionId,
+        request.turnId,
+        request.sequence,
     )
     try:
-        return generate_feedback(request)
+        return generate_turn_feedback(request)
     except ConversationGenerationError as exc:
-        logger.exception("피드백 생성 실패 | error: %s", exc)
-        capture_exception(exc)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "code": "AI_GENERATION_FAILED",
-                "message": "피드백 생성에 실패했습니다.",
-            },
-        )
+        return _generation_error_response(exc, "턴별 피드백 생성에 실패했습니다.")
 
 
 @router.post(
-    "/feedback/stream",
-    summary="대화 피드백 스트리밍 생성",
+    "/session-feedback",
+    response_model=SessionFeedbackResponse,
+    summary="세션 최종 피드백 생성",
 )
-async def feedback_stream(request: ConversationFeedbackRequest):
+async def session_feedback(request: SessionFeedbackRequest):
     logger.info(
-        "POST /api/v1/conversation/feedback/stream | scenario: %s | turns: %d",
-        request.scenarioTitle,
-        len(request.turns),
+        "POST /api/v1/conversation/session-feedback | sessionId=%s expectedTurnCount=%s",
+        request.sessionId,
+        len(request.expectedTurnIds),
     )
-
-    def event_generator():
-        try:
-            for event, data in generate_feedback_stream_events(request):
-                yield _format_sse_event(event, data)
-        except ConversationGenerationError as exc:
-            logger.exception("피드백 스트리밍 생성 실패 | error: %s", exc)
-            capture_exception(exc)
-            yield _format_sse_event(
-                "error",
-                {
-                    "code": "AI_GENERATION_FAILED",
-                    "message": "피드백 생성에 실패했습니다.",
-                },
-            )
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    try:
+        return generate_session_feedback(request)
+    except TurnFeedbackNotReadyError as exc:
+        logger.info(
+            "세션 피드백 생성 대기 | sessionId=%s missingTurnIds=%s",
+            request.sessionId,
+            exc.missing_turn_ids,
+        )
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": "TURN_FEEDBACK_NOT_READY",
+                "message": "턴별 피드백이 아직 준비되지 않았습니다.",
+                "missingTurnIds": exc.missing_turn_ids,
+            },
+        )
+    except ConversationGenerationError as exc:
+        return _generation_error_response(exc, "세션 최종 피드백 생성에 실패했습니다.")
 
 
 @router.post(
@@ -126,17 +108,16 @@ async def guide(request: GuideChatRequest):
     try:
         return generate_guide_answer(request)
     except ConversationGenerationError as exc:
-        logger.exception("가이드 답변 생성 실패 | error: %s", exc)
-        capture_exception(exc)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "code": "AI_GENERATION_FAILED",
-                "message": "가이드 답변 생성에 실패했습니다.",
-            },
-        )
+        return _generation_error_response(exc, "가이드 답변 생성에 실패했습니다.")
 
 
-def _format_sse_event(event: str, data: dict) -> str:
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    return f"event: {event}\ndata: {payload}\n\n"
+def _generation_error_response(exc: ConversationGenerationError, message: str) -> JSONResponse:
+    logger.exception("AI 생성 실패 | error: %s", exc)
+    capture_exception(exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "AI_GENERATION_FAILED",
+            "message": message,
+        },
+    )
