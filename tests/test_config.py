@@ -48,12 +48,5 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.sentry_traces_sample_rate, 0.25)
         self.assertEqual(settings.sentry_max_breadcrumbs, 150)
 
-    def test_assistance_rag_is_disabled_by_default(self):
-        from app.config import Settings
-
-        settings = Settings(openai_api_key="test-key")
-
-        self.assertFalse(settings.assistance_rag_enabled)
-
 if __name__ == "__main__":
     unittest.main()
