@@ -237,3 +237,5 @@
 - 2026-06-01 `REPEAT_REQUEST` enum은 UX상 유지하되 최종 판정 권한은 deterministic `_is_repeat_request()`에 둔다. LLM raw `REPEAT_REQUEST`는 로컬 repeat detector가 인정한 경우에만 최종 `REPEAT_REQUEST`가 되고, 아니면 `INVALID_RESPONSE`로 downgrade한다. null 또는 STT 실패 발화의 하트 정책은 BE 범위로 분리한다.
 - 2026-06-01 `REPEAT_REQUEST` 오분류 방어 검증은 focused 테스트 5개, `tests.test_conversation_service` 133개, 전체 `unittest discover` 163개, `compileall app tests`, `git diff --check` 통과로 확인했다. `ABC`, `haha`가 모델 raw `REPEAT_REQUEST`여도 최종 `INVALID_RESPONSE`로 내려가고, `Pardon?`, `Parden Can you tell again?`은 모델 호출 없이 `REPEAT_REQUEST`를 유지한다.
 - 2026-06-01 raw `REPEAT_REQUEST`가 reject된 경우에는 모델이 `filledSlots`나 `candidateFilledSlots`를 같이 반환해도 모두 무시한다. 이 경로는 semantic verifier와 deterministic evidence rescue를 타지 않고 `INVALID_RESPONSE`로 닫는다.
+- 2026-06-01 커밋 `13aaee1`을 develop에 push했고 GitHub Actions run `26735967518`로 develop AI backend 배포가 성공했다. `/health`는 `{"status":"ok"}`를 반환했다.
+- 2026-06-01 배포 후 direct smoke 결과는 `/private/tmp/saynow-ai-repeat-request-smoke-20260601T045728Z.json`에 저장했다. `ABC`, `haha`는 `INVALID_RESPONSE`, `Pardon?`, `Parden Can you tell again?`은 `REPEAT_REQUEST`, 빈 문자열은 기존처럼 400 `INVALID_REQUEST`로 확인했다.

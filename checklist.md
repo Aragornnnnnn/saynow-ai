@@ -8,9 +8,9 @@
 - [x] next-question prompt에 repeat self-check를 최소 보강한다.
 - [x] focused 테스트와 전체 검증을 실행한다.
 - [x] Obsidian 품질 회귀 문서에 세션 351 원인과 수정 기준을 기록한다.
-- [ ] 변경 사항을 커밋하고 develop에 push한다.
-- [ ] GitHub Actions develop 배포와 `/health`를 확인한다.
-- [ ] 배포 후 direct AI smoke로 `ABC`, `haha`, 정상 반복 요청을 확인한다.
+- [x] 변경 사항을 커밋하고 develop에 push한다.
+- [x] GitHub Actions develop 배포와 `/health`를 확인한다.
+- [x] 배포 후 direct AI smoke로 `ABC`, `haha`, 정상 반복 요청을 확인한다.
 
 ## AI 슬롯명 노출과 피드백 문맥 오염 수정
 
