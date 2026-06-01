@@ -234,6 +234,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.plusOneExpression, "I wonder why you are curious about it.")
         self.assertIn("quality is more important than speed or token savings", captured["system"])
         self.assertIn("koreanAnalogy", captured["system"])
+        self.assertIn("Copy it exactly", captured["system"])
+        self.assertNotIn('"turnId":5000', captured["system"])
         self.assertIn("User utterance: Why do you wanna know that?", captured["user"])
 
     def test_turn_feedback_generates_and_caches_good_feedback(self):
@@ -254,6 +256,27 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertIsNone(cached.correctionPoint)
         self.assertEqual(cached.praiseSummary, "이유를 because로 자연스럽게 붙였어요.")
+
+    def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
+            "correctionPoint": None,
+            "correctionReason": None,
+            "plusOneExpression": None,
+            "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
+            "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+        })
+
+        result = self.service.generate_turn_feedback(self._turn_feedback_request(turn_id=3))
+        cached_request_turn = self.service.get_cached_turn_feedback(1000, 3)
+        cached_model_turn = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(result.turnId, 3)
+        self.assertIsNotNone(cached_request_turn)
+        self.assertEqual(cached_request_turn.turnId, 3)
+        self.assertIsNone(cached_model_turn)
 
     def test_turn_feedback_repairs_english_good_praise_to_korean(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

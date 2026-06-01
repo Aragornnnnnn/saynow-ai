@@ -264,3 +264,5 @@
 - 2026-06-02 새 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. 결과는 10개 모두 통과했고, next-question 5개는 모두 JSON으로 파싱됐으며 turn-feedback 5개는 실제 피드백 문구까지 확인했다.
 - 2026-06-02 현재 운영 기준은 prod AI `15.164.34.102:8080`, develop AI `43.202.146.182:8080`이다. 따라서 develop workflow는 GitHub `develop` environment와 `/saynow/develop` SSM 경로를, prod workflow는 GitHub `prod` environment와 `/saynow/prod` SSM 경로를 사용해야 한다.
 - 2026-06-02 잘못된 environment swap 배포는 `15.164.34.102`에서 `/saynow/develop` SSM 권한이 없어 `AccessDeniedException`으로 실패했다. 실패 지점은 env 파일 생성 전이라 `systemctl restart saynow-ai`까지 도달하지 않았다.
+- 2026-06-02 BE 연동 중 `turn-feedback` 모델 응답이 요청 `turnId` 대신 프롬프트 예시값 `5000`을 복사해 HTTP 500으로 이어지는 문제가 확인됐다. `turnId`는 피드백 품질 판단 대상이 아니라 서버 식별자이므로, 모델 응답 검증 후 요청 `turnId`로 덮어써 캐시 key와 응답 식별자를 고정한다.
+- 2026-06-02 turn-feedback 프롬프트 Output Schema에서도 고정 `{"turnId":5000,...}` 예시를 제거하고, 사용자 메시지의 Turn ID를 그대로 복사하라고 명시했다. 다만 운영 안전성은 프롬프트가 아니라 서버 후처리 보정에 둔다.

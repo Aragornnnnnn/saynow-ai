@@ -119,12 +119,12 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         logger.error("턴별 피드백 응답 계약 검증 실패 | turnId=%s error=%s", request.turnId, exc)
         raise ConversationGenerationError("turn feedback response does not match contract") from exc
     if feedback.turnId != request.turnId:
-        logger.error(
-            "턴별 피드백 ID 불일치 | request_turn_id=%s response_turn_id=%s",
+        logger.warning(
+            "턴별 피드백 ID 불일치 보정 | request_turn_id=%s response_turn_id=%s",
             request.turnId,
             feedback.turnId,
         )
-        raise ConversationGenerationError("turn feedback id does not match request turn id")
+        feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
     _store_turn_feedback(request.sessionId, feedback)
     _log_workflow_stage_duration(workflow, "parse_validate_store", stage_started_at)
@@ -336,7 +336,8 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":5000,"feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","correctionPoint":null,"correctionReason":null,"plusOneExpression":null,"praiseSummary":"...","praiseReason":"..."}.'
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","correctionPoint":null,"correctionReason":null,"plusOneExpression":null,"praiseSummary":"...","praiseReason":"..."}. '
+            "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
     ])
 

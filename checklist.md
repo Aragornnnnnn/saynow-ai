@@ -46,6 +46,14 @@
 - [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
 - [x] 변경 사항을 커밋한다.
 
+## turn-feedback turnId 불일치 보정
+
+- [x] 요청 `turnId=3`인데 모델이 `turnId=5000`을 반환하는 RED 테스트를 추가한다.
+- [x] LLM 응답의 `turnId`를 서버 요청값으로 덮어써 캐시와 응답 식별자를 고정한다.
+- [x] turn-feedback 프롬프트 schema에서 고정 `turnId=5000` 예시를 제거한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+
 ## REPEAT_REQUEST 오분류 방어
 
 - [x] `ABC`, `haha`가 모델 raw `REPEAT_REQUEST`여도 최종 `INVALID_RESPONSE`가 되는 RED 테스트를 추가한다.
