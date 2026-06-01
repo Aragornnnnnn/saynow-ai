@@ -19,19 +19,19 @@ def _job_environment(workflow: str) -> str:
 
 
 class DeployWorkflowTest(unittest.TestCase):
-    def test_develop_branch_uses_prod_ec2_environment_but_develop_ssm_path(self):
+    def test_develop_branch_uses_develop_ec2_environment_and_develop_ssm_path(self):
         workflow = _workflow_text("deploy-develop.yml")
 
         self.assertIn("- develop", workflow)
-        self.assertEqual(_job_environment(workflow), "prod")
+        self.assertEqual(_job_environment(workflow), "develop")
         self.assertIn("--path /saynow/develop", workflow)
         self.assertNotIn("--path /saynow/prod", workflow)
 
-    def test_main_branch_uses_develop_ec2_environment_but_prod_ssm_path(self):
+    def test_main_branch_uses_prod_ec2_environment_and_prod_ssm_path(self):
         workflow = _workflow_text("deploy-prod.yml")
 
         self.assertIn("- main", workflow)
-        self.assertEqual(_job_environment(workflow), "develop")
+        self.assertEqual(_job_environment(workflow), "prod")
         self.assertIn("--path /saynow/prod", workflow)
         self.assertNotIn("--path /saynow/develop", workflow)
 

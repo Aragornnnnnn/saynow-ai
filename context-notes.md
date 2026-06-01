@@ -262,3 +262,5 @@
 - 2026-06-02 `prompt-engineering-patterns` 관점에서 next-question 맞장구의 기준은 사용자 발화 키워드 인용이 아니라 실제 대화감이다. 프롬프트와 테스트는 사용자가 들은 느낌, 상황, 노력, 감정 중 하나에 짧게 반응하고 고정 질문으로 자연스럽게 넘어가는지를 본다.
 - 2026-06-02 plain text few-shot 예시는 실제 모델이 JSON 없이 문장만 반환하게 만드는 부작용이 있었다. next-question few-shot은 `{"aiQuestion": "...", "translatedQuestion": "..."}` 형태로 바꿔 structured output과 예시가 같은 방향을 보게 했다.
 - 2026-06-02 새 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. 결과는 10개 모두 통과했고, next-question 5개는 모두 JSON으로 파싱됐으며 turn-feedback 5개는 실제 피드백 문구까지 확인했다.
+- 2026-06-02 현재 운영 기준은 prod AI `15.164.34.102:8080`, develop AI `43.202.146.182:8080`이다. 따라서 develop workflow는 GitHub `develop` environment와 `/saynow/develop` SSM 경로를, prod workflow는 GitHub `prod` environment와 `/saynow/prod` SSM 경로를 사용해야 한다.
+- 2026-06-02 잘못된 environment swap 배포는 `15.164.34.102`에서 `/saynow/develop` SSM 권한이 없어 `AccessDeniedException`으로 실패했다. 실패 지점은 env 파일 생성 전이라 `systemctl restart saynow-ai`까지 도달하지 않았다.

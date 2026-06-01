@@ -36,11 +36,11 @@
 - [x] 테스트가 실제 피드백 출력 내용을 함께 검증하고 보고하도록 갱신한다.
 - [x] 실제 모델 10개 대표 케이스 평가를 새 기준으로 재실행한다.
 
-## develop/main EC2 배포 대상 교체
+## develop/main EC2 배포 대상 매핑 복구
 
-- [x] workflow 매핑 회귀 테스트를 추가하고 RED를 확인한다.
-- [x] `develop` 브랜치는 EC2 B GitHub environment를 쓰되 `/saynow/develop` SSM 경로를 유지한다.
-- [x] `main` 브랜치는 EC2 A GitHub environment를 쓰되 `/saynow/prod` SSM 경로를 유지한다.
+- [x] workflow 매핑 회귀 테스트를 현재 운영 IP 기준으로 수정한다.
+- [x] `develop` 브랜치는 develop GitHub environment와 `/saynow/develop` SSM 경로를 사용한다.
+- [x] `main` 브랜치는 prod GitHub environment와 `/saynow/prod` SSM 경로를 사용한다.
 - [x] SSH key raw/base64 처리 차이로 main 배포가 깨지지 않게 prod workflow 키 처리를 보강한다.
 - [x] workflow 테스트, YAML 파싱, diff check를 실행한다.
 - [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.

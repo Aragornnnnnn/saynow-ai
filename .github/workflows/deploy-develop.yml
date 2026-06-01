@@ -8,8 +8,8 @@ on:
 jobs:
     deploy:
         runs-on: ubuntu-latest
-        # EC2 접속 정보는 교체된 prod GitHub Environment를 사용하고, SSM은 아래에서 /saynow/develop을 유지한다.
-        environment: prod
+        # develop AI는 develop GitHub Environment의 EC2 접속 정보와 /saynow/develop SSM 경로를 사용한다.
+        environment: develop
         timeout-minutes: 20
         permissions:
             contents: read
