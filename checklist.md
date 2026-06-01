@@ -1,5 +1,32 @@
 # 작업 체크리스트
 
+## 3차 MVP AI 계약 구현
+
+- [x] 3차 MVP 기준 문서에서 AI 서버가 맡는 범위를 확정한다.
+- [x] 기존 2차 MVP 슬롯 기반 `next-question` 계약과 통합 `feedback` 계약을 제거 대상으로 분류한다.
+- [x] `/api/v1/conversation/next-question` 문서 계약 테스트를 RED로 추가한다.
+- [x] `/api/v1/conversation/turn-feedback` 문서 계약 테스트를 RED로 추가한다.
+- [x] `/api/v1/conversation/session-feedback` 문서 계약 테스트를 RED로 추가한다.
+- [x] 다음 질문 생성 프롬프트를 “맞장구 + BE 고정 질문 연결” 기준으로 단순화한다.
+- [x] 턴별 피드백 생성 프롬프트를 `GOOD` / `NEEDS_IMPROVEMENT` 품질 기준으로 구현한다.
+- [x] 세션 최종 피드백 프롬프트를 캐시된 턴별 피드백 종합 기준으로 구현한다.
+- [x] AI 쪽 턴 피드백 캐시를 추가하고 최종 피드백에서 `expectedTurnIds` 누락을 409로 처리한다.
+- [x] 더 이상 쓰지 않는 슬롯 모델, 슬롯 판정 로직, RAG 보조 로직, 통합 피드백 SSE 경로를 제거한다.
+- [x] README와 파일 헤더를 3차 MVP 기준으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [x] 의미 있는 단위로 커밋한다.
+
+## develop/main EC2 배포 대상 교체
+
+- [x] workflow 매핑 회귀 테스트를 추가하고 RED를 확인한다.
+- [x] `develop` 브랜치는 EC2 B GitHub environment를 쓰되 `/saynow/develop` SSM 경로를 유지한다.
+- [x] `main` 브랜치는 EC2 A GitHub environment를 쓰되 `/saynow/prod` SSM 경로를 유지한다.
+- [x] SSH key raw/base64 처리 차이로 main 배포가 깨지지 않게 prod workflow 키 처리를 보강한다.
+- [x] workflow 테스트, YAML 파싱, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [x] 변경 사항을 커밋한다.
+
 ## REPEAT_REQUEST 오분류 방어
 
 - [x] `ABC`, `haha`가 모델 raw `REPEAT_REQUEST`여도 최종 `INVALID_RESPONSE`가 되는 RED 테스트를 추가한다.

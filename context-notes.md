@@ -1,5 +1,13 @@
 # 작업 맥락 기록
 
+- 2026-06-02 3차 MVP AI 작업은 BE 구현을 제외하고 `saynow-ai` 내부 API, 프롬프트, 캐시, 테스트만 대상으로 한다. 기준 문서는 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP.md`이며, 최우선 목표는 응답 속도나 토큰 절감이 아니라 사용자가 납득할 수 있는 피드백 품질이다.
+- 2026-06-02 3차 MVP에서는 AI가 슬롯을 채우거나 다음 질문을 결정하지 않는다. 백엔드가 다음 고정 질문을 `nextQuestion`으로 넘기면 AI는 직전 사용자 발화에 대한 짧은 맞장구와 고정 질문을 자연스럽게 이어 붙여 `aiQuestion`, `translatedQuestion`을 반환한다.
+- 2026-06-02 턴별 피드백은 발화 직후 `/api/v1/conversation/turn-feedback`에서 생성하고 AI 서버 캐시에 저장한다. 백엔드는 즉시 DB에 저장하지 않고, `/api/v1/conversation/session-feedback` 호출 시 AI 캐시에 있는 턴별 피드백을 받아 세션 최종 피드백과 함께 저장한다.
+- 2026-06-02 기존 2차 MVP의 슬롯 판정, `filledSlots`, `turnClassification`, `evidencePolicy`, `feedbackRequired`, SSE feedback relay는 3차 MVP AI 계약의 핵심이 아니므로 제거 대상으로 본다. guide API는 문서에서 제거 대상으로 명시되지 않았고 영어 학습 보조 흐름으로 독립되어 있어 우선 유지한다.
+- 2026-06-02 구현 결과, `app/models/conversation.py`는 3차 MVP DTO만 남겼고 `app/api/routes/conversation.py`는 `next-question`, `turn-feedback`, `session-feedback`, `guide`만 등록한다. 기존 `/feedback`, `/feedback/stream`은 등록하지 않아 404가 된다.
+- 2026-06-02 `app/services/conversation_service.py`는 다음 고정 질문 drift 보정, 턴별 피드백 생성 및 캐시 저장, 캐시 기반 세션 최종 피드백 생성으로 단순화했다. 최종 피드백 요청의 `expectedTurnIds` 중 캐시에 없는 턴이 있으면 `TurnFeedbackNotReadyError`를 통해 HTTP 409 `TURN_FEEDBACK_NOT_READY`를 반환한다.
+- 2026-06-02 Assistance RAG와 임베딩 경로는 3차 MVP AI 계약에서 쓰지 않으므로 `app/services/assistance_knowledge_store.py`, `app/core/embeddings.py`, RAG 테스트, pgvector SQL 문서를 제거했다. 관련 환경 설정도 `Settings`에서 제거했다.
+- 2026-06-02 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_routes tests.test_conversation_service`, `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 30개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 확인했다.
 - 2026-05-31 대화 턴 지연 3차 개선은 피드백 생성이 아니라 `/next-question`만 대상으로 한다. RAG는 이미 기본 비활성화됐으므로 이번 작업의 핵심은 main `next_question` prompt/token 축소, target request slot의 local evidence accept, deterministic completion skip reason 관측성이다.
 - 2026-05-31 local accept는 슬롯명을 하드코딩하지 않는다. `originalQuestionTargetSlotName`과 슬롯의 `evidencePolicy`, request-act description, 최신 발화의 request act, slot hints/slot name target matching이 모두 맞을 때만 semantic verifier를 건너뛴다. non-target request slot은 기존처럼 바로 채우지 않는다.
 - 2026-05-31 구현 결과, 일반 슬롯 답변 경로는 assistance few-shot과 retrieved assistance context를 빼고 main `next_question` max token을 384로 낮췄다. assistance request 경로는 기존 assistance few-shot을 유지한다. semantic verifier는 max token을 `min(320, 80 + 50 * candidates)`로 낮췄다.

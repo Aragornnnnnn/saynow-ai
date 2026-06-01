@@ -1,83 +1,56 @@
-# SayNow AI Server — 2차 MVP
+# SayNow AI Server — 3차 MVP
 
 ## Project Overview
 
-SayNow 백엔드가 호출하는 내부 AI 서버입니다. 2차 MVP에서는 오디오, STT, TTS, 세션 상태 저장을 담당하지 않고, 백엔드가 전달한 텍스트와 슬롯 상태를 바탕으로 꼬리 질문과 최종 피드백만 생성합니다.
+SayNow 백엔드가 호출하는 내부 AI 서버입니다. 3차 MVP에서는 슬롯 기반 역할극을 줄이고, 주제가 있는 프리톡을 4개 고정 질문으로 진행합니다. AI 서버는 질문 순서나 세션 상태를 결정하지 않고, 백엔드가 넘긴 고정 질문과 사용자 발화를 바탕으로 사용자에게 보일 AI 문장과 피드백을 생성합니다.
 
 ## Tech Stack
 
 - **Framework**: FastAPI.
-- **LLM**: OpenAI Chat Completions.
+- **LLM**: OpenAI Chat Completions 또는 OpenAI 호환 Chat Completions.
 - **Validation**: Pydantic v2.
-- **Runtime State**: 없음. 요청마다 필요한 컨텍스트를 백엔드가 전달합니다.
+- **Runtime State**: 턴별 피드백을 최종 피드백 호출 전까지 프로세스 메모리 캐시에 보관합니다.
 
-## Project Structure
-
-```text
-saynow-ai/
-├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── api/
-│   │   └── routes/
-│   │       └── conversation.py
-│   ├── services/
-│   │   └── conversation_service.py
-│   ├── core/
-│   │   ├── llm.py
-│   │   └── logger.py
-│   └── models/
-│       └── conversation.py
-├── tests/
-│   ├── test_conversation_routes.py
-│   └── test_conversation_service.py
-├── requirements.txt
-└── readme.md
-```
-
-## API
+## API Responsibilities
 
 ### `POST /api/v1/conversation/next-question`
 
-- 백엔드가 직전 질문, 직전 질문의 target slot, 사용자 텍스트 발화, 시나리오 제목, 상황, AI 역할, 목표, 현재 슬롯 상태와 슬롯별 설명을 전달합니다.
-- `slots[].description`은 슬롯을 채웠다고 판단하는 의미 기준이며, 특정 영어 표현을 강제하는 문구가 아닙니다.
-- AI 서버는 이번 발화로 새롭게 충족된 슬롯만 `filledSlots`에 반환합니다.
-- `originalQuestionTargetSlotName`은 직전 질문의 주 target일 뿐이며, 최신 발화 근거가 있으면 여러 슬롯을 함께 채울 수 있습니다.
-- AI 서버는 다음 질문의 주 target을 `nextQuestionTargetSlotName`으로 반환합니다.
-- 이미 `filled=true`인 슬롯은 `filledSlots`에 다시 넣지 않습니다.
-- 모든 미충족 슬롯이 이번 발화로 채워졌다면 `nextQuestion`, `translatedQuestion`, `nextQuestionTargetSlotName`은 `null`입니다.
-- 세션 완료 여부와 누적 슬롯 상태 갱신은 백엔드 책임입니다.
+- 백엔드가 `nextQuestion.questionEn`과 `nextQuestion.questionKo`로 다음 고정 질문을 전달합니다.
+- AI 서버는 직전 사용자 발화에 짧게 반응하고 다음 고정 질문을 자연스럽게 이어 붙입니다.
+- AI 서버는 다음 질문을 새로 고르거나 질문 의도를 바꾸지 않습니다.
+- 응답은 `aiQuestion`, `translatedQuestion`만 반환합니다.
 
-### `POST /api/v1/conversation/feedback`
+### `POST /api/v1/conversation/turn-feedback`
 
-- 백엔드가 시나리오 제목, 상황, AI 역할, 목표, 세션 결과, 슬롯 상태와 설명, 완료된 세션의 턴 목록을 텍스트로 전달합니다.
-- AI 서버는 전체 이해도, 총평, 턴별 피드백을 반환합니다.
-- `turnId`는 백엔드 매핑을 위해 요청값과 동일하게 보존해야 합니다.
-- 잘한 응답은 내부 점수 `85-100`이면서 질문 의도 답변, 턴 목표 충족, 추가 추측 없는 이해, 의미 차단 오류 없음 조건을 모두 만족할 때만 `feedbackRequired=false`로 반환합니다.
-- `betterExpression`은 사용자 발화의 의도, 단어 수준, 문장 형태를 유지하면서 딱 한 단계만 개선해야 합니다.
-- LLM 호출은 같은 입력에 같은 기준을 적용하기 위해 `temperature=0`을 사용합니다.
+- 사용자 발화 1개를 `GOOD` 또는 `NEEDS_IMPROVEMENT`로 판단합니다.
+- 모든 피드백은 `koreanAnalogy`를 포함합니다.
+- `NEEDS_IMPROVEMENT`는 `correctionPoint`, `correctionReason`, `plusOneExpression`을 포함합니다.
+- `GOOD`은 `praiseSummary`, `praiseReason`을 포함합니다.
+- 생성된 턴별 피드백은 AI 서버 캐시에 저장하고 응답은 `PREPARING`을 반환합니다.
 
-## Error Policy
+### `POST /api/v1/conversation/session-feedback`
 
-- 잘못된 요청은 HTTP 400과 `{"code": "INVALID_REQUEST", "message": "잘못된 요청입니다."}`를 반환합니다.
-- LLM 호출 실패나 계약에 맞지 않는 LLM 응답은 HTTP 500과 `AI_GENERATION_FAILED`를 반환합니다.
+- `expectedTurnIds`에 해당하는 캐시된 턴별 피드백을 조회합니다.
+- 누락된 턴이 있으면 HTTP 409와 `TURN_FEEDBACK_NOT_READY`를 반환합니다.
+- 최종 응답은 `nativeScore`, `nativeLevelLabel`, `summary`, `turnFeedbacks`를 포함합니다.
 
-## Environment Variables
+### `POST /api/v1/conversation/guide`
 
-```bash
-OPENAI_API_KEY=
-LOG_LEVEL=INFO
-```
+- 영어 학습 관련 질문만 처리합니다.
+- 가이드 대화는 턴별 피드백과 최종 피드백 입력에 포함하지 않습니다.
 
-## Development
+## Quality Rules
 
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+- 이번 MVP의 최우선 목표는 응답 속도나 토큰 절감이 아니라 품질입니다.
+- 피드백은 사용자의 실제 발화에 근거해야 합니다.
+- 문법뿐 아니라 뉘앙스, 공손함, 상황 적절성, 어휘 선택, 질문에 대한 답변 적절성을 함께 봅니다.
+- 잘한 발화는 억지로 고치지 않고 왜 좋은 발화였는지 설명합니다.
+- JSON 응답 API에서는 JSON 외 설명 문장을 반환하지 않습니다.
 
 ## Verification
 
 ```bash
 OPENAI_API_KEY=test-key python -m unittest discover -s tests -p 'test*.py'
+python -m compileall app tests
+git diff --check
 ```
