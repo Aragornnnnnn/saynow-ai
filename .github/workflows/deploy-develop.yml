@@ -8,7 +8,8 @@ on:
 jobs:
     deploy:
         runs-on: ubuntu-latest
-        environment: develop
+        # EC2 접속 정보는 교체된 prod GitHub Environment를 사용하고, SSM은 아래에서 /saynow/develop을 유지한다.
+        environment: prod
         timeout-minutes: 20
         permissions:
             contents: read

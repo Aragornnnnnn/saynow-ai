@@ -8,7 +8,8 @@ on:
 jobs:
     deploy:
         runs-on: ubuntu-latest
-        environment: prod
+        # EC2 접속 정보는 교체된 develop GitHub Environment를 사용하고, SSM은 아래에서 /saynow/prod를 유지한다.
+        environment: develop
         timeout-minutes: 20
         permissions:
             contents: read
@@ -39,11 +40,17 @@ jobs:
 
             - name: Configure SSH
               env:
-                  SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY }}
+                  SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
               run: |
+                  set -euo pipefail
                   mkdir -p ~/.ssh
-                  echo "$SSH_KEY_B64" | base64 --decode > ~/.ssh/saynow-prod-deploy
+                  if printf '%s' "$SSH_KEY" | grep -q "BEGIN .*PRIVATE KEY"; then
+                    printf '%s\n' "$SSH_KEY" > ~/.ssh/saynow-prod-deploy
+                  else
+                    printf '%s' "$SSH_KEY" | base64 --decode > ~/.ssh/saynow-prod-deploy
+                  fi
                   chmod 600 ~/.ssh/saynow-prod-deploy
+                  ssh-keygen -y -f ~/.ssh/saynow-prod-deploy > /dev/null
                   ssh-keyscan -H "${{ vars.EC2_HOST }}" >> ~/.ssh/known_hosts
 
             - name: Upload app files
