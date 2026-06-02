@@ -89,6 +89,51 @@ class ConversationServiceTest(unittest.TestCase):
             },
         })
 
+    def _cache_turn_feedbacks(self, feedback_types):
+        from app.models.conversation import TurnFeedbackData
+
+        expected_turn_ids = []
+        for offset, feedback_type in enumerate(feedback_types):
+            turn_id = 5000 + offset
+            expected_turn_ids.append(turn_id)
+            better_expression = None
+            if feedback_type == "NEEDS_IMPROVEMENT":
+                better_expression = "I usually drink water in the morning."
+            self.service._store_turn_feedback(
+                1000,
+                TurnFeedbackData.model_validate({
+                    "turnId": turn_id,
+                    "feedbackType": feedback_type,
+                    "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
+                    "feedbackDetail": "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다.",
+                    "betterExpression": better_expression,
+                }),
+            )
+        return expected_turn_ids
+
+    def _session_feedback_result_for_types(
+        self,
+        feedback_types,
+        *,
+        llm_score,
+        llm_label="영어 유치원 수준",
+    ):
+        from app.models.conversation import SessionFeedbackRequest
+
+        expected_turn_ids = self._cache_turn_feedbacks(feedback_types)
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "sessionId": 1000,
+            "nativeScore": llm_score,
+            "nativeLevelLabel": llm_label,
+            "summary": "질문에 맞춰 답하려는 힘이 보였어요. 다음에는 어색한 표현을 한 문장씩 고쳐 말해 보세요.",
+        })
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": expected_turn_ids,
+        })
+        return self.service.generate_session_feedback(request)
+
     def test_next_question_uses_fixed_backend_question_and_quality_prompt(self):
         captured = {}
 
@@ -578,9 +623,73 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 82)
-        self.assertEqual(result.nativeLevelLabel, "유학생 수준")
+        self.assertEqual(result.nativeScore, 90)
+        self.assertEqual(result.nativeLevelLabel, "원어민에 가까운 자연스러움")
         self.assertEqual([feedback.turnId for feedback in result.turnFeedbacks], [5000, 5001])
+
+    def test_session_feedback_prompt_delegates_score_label_to_server_ratio_policy(self):
+        system_prompt = self.service._session_feedback_system_prompt()
+
+        self.assertIn("The server will calibrate nativeScore", system_prompt)
+        self.assertIn("GOOD ratio", system_prompt)
+        self.assertIn("원어민에 가까운 자연스러움", system_prompt)
+        self.assertNotIn("토종 한국인 느낌", system_prompt)
+        self.assertNotIn("영어 유치원 수준", system_prompt)
+        self.assertNotIn("재미교포 느낌", system_prompt)
+
+    def test_session_feedback_maps_three_all_good_to_near_native_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "GOOD", "GOOD"],
+            llm_score=72,
+        )
+
+        self.assertEqual(result.nativeScore, 90)
+        self.assertEqual(result.nativeLevelLabel, "원어민에 가까운 자연스러움")
+
+    def test_session_feedback_maps_four_turns_with_three_good_to_study_abroad_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "GOOD", "GOOD", "NEEDS_IMPROVEMENT"],
+            llm_score=95,
+        )
+
+        self.assertEqual(result.nativeScore, 89)
+        self.assertEqual(result.nativeLevelLabel, "유학생 느낌")
+
+    def test_session_feedback_maps_five_turns_with_three_good_to_basic_conversation_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "GOOD", "GOOD", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT"],
+            llm_score=95,
+            llm_label="원어민에 가까운 자연스러움",
+        )
+
+        self.assertEqual(result.nativeScore, 81)
+        self.assertEqual(result.nativeLevelLabel, "기초 회화 연습 단계")
+
+    def test_session_feedback_maps_four_turns_with_one_good_to_sentence_structure_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT"],
+            llm_score=95,
+            llm_label="원어민에 가까운 자연스러움",
+        )
+
+        self.assertEqual(result.nativeScore, 69)
+        self.assertEqual(result.nativeLevelLabel, "문장 뼈대 연습 단계")
+
+    def test_session_feedback_maps_five_all_needs_to_basic_correction_band(self):
+        result = self._session_feedback_result_for_types(
+            [
+                "NEEDS_IMPROVEMENT",
+                "NEEDS_IMPROVEMENT",
+                "NEEDS_IMPROVEMENT",
+                "NEEDS_IMPROVEMENT",
+                "NEEDS_IMPROVEMENT",
+            ],
+            llm_score=95,
+            llm_label="유학생 느낌",
+        )
+
+        self.assertEqual(result.nativeScore, 59)
+        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
 
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -695,7 +804,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("설명하려고 한 점", result.summary)
         self.assertIn("더 자연스럽게 들립니다", result.summary)
 
-    def test_session_feedback_caps_score_when_all_turn_feedbacks_need_improvement(self):
+    def test_session_feedback_uses_basic_correction_band_when_all_turn_feedbacks_need_improvement(self):
         from app.models.conversation import SessionFeedbackRequest
 
         responses = [
@@ -742,8 +851,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertLessEqual(result.nativeScore, 74)
-        self.assertEqual(result.nativeLevelLabel, "영어 유치원 수준")
+        self.assertLessEqual(result.nativeScore, 59)
+        self.assertGreaterEqual(result.nativeScore, 50)
+        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
         self.assertIn("대부분의 턴에서", result.summary)
 
     def test_session_feedback_uses_single_turn_summary_when_only_one_needs_improvement(self):
@@ -779,8 +889,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertLessEqual(result.nativeScore, 74)
-        self.assertEqual(result.nativeLevelLabel, "영어 유치원 수준")
+        self.assertLessEqual(result.nativeScore, 59)
+        self.assertGreaterEqual(result.nativeScore, 50)
+        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
         self.assertIn("이번 턴에서는", result.summary)
         self.assertNotIn("대부분의 턴", result.summary)
         self.assertIn("In the morning", result.summary)

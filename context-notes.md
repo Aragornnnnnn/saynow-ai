@@ -1,5 +1,13 @@
 # 작업 맥락 기록
 
+- 2026-06-03 세션 최종 점수와 라벨은 질문 수가 4개로 고정된다는 전제를 버리고, 캐시된 턴 피드백의 `GOOD` 비율로 서버가 결정한다. 질문 수가 3개, 4개, 5개로 바뀌어도 같은 비율 기준을 적용한다.
+- 2026-06-03 점수/라벨 기준은 `GOOD` 비율 90% 이상 `90-95`와 `원어민에 가까운 자연스러움`, 75% 이상 `82-89`와 `유학생 느낌`, 50% 이상 `70-81`과 `기초 회화 연습 단계`, 25% 이상 `60-69`와 `문장 뼈대 연습 단계`, 25% 미만 `50-59`와 `기초 문장 교정 단계`로 잡는다.
+- 2026-06-03 최고 라벨은 `원어민 수준` 대신 `원어민에 가까운 자연스러움`으로 둔다. 3-5개 짧은 발화만으로 원어민 수준이라고 말하면 과대평가처럼 보일 수 있고, `GOOD`은 완벽함이 아니라 현재 발화에 핵심 교정이 없다는 의미이기 때문이다.
+- 2026-06-03 RED 확인 결과, 기존 구현은 세션 점수와 라벨을 LLM 값에 거의 맡기고 있었다. 3 GOOD은 72점 그대로 남았고, 3/4 GOOD은 95점 그대로 남았으며, 1/4 GOOD과 0/5 GOOD은 옛 `영어 유치원 수준` 보정으로만 처리됐다.
+- 2026-06-03 구현 결과, `_postprocess_session_feedback_summary`가 `GOOD` 비율로 점수 밴드를 고르고 LLM 점수를 밴드 안으로 clamp한다. `nativeLevelLabel`은 서버 기준으로 덮어쓰며, 프롬프트는 LLM의 주 역할을 한국어 요약 생성으로 분리했다. focused RED 6개는 GREEN으로 바뀌었고 `tests.test_conversation_service` 39개가 통과했다.
+- 2026-06-03 전체 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 60개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 통과했다. 현재 시나리오 데이터 기반 로컬 smoke 결과는 `/private/tmp/saynow_3mvp_ratio_score_label_smoke_20260603.json`에 저장했다.
+- 2026-06-03 로컬 smoke에서 3문항 3 GOOD은 LLM draft `72/영어 유치원 수준`을 `90/원어민에 가까운 자연스러움`으로 보정했다. 4문항 3 GOOD은 `95/원어민에 가까운 자연스러움`을 `89/유학생 느낌`으로, 5문항 3 GOOD 확장 가정은 `81/기초 회화 연습 단계`로, 5문항 전체 NEEDS 확장 가정은 `59/기초 문장 교정 단계`로 보정했다.
+
 - 2026-06-03 현재 시나리오 품질 개선은 GOOD/NEEDS와 점수/라벨 기준 재설계가 아니라, 실제 smoke에서 드러난 출력 품질 후보만 먼저 좁게 고치는 작업이다. 우선순위는 사용자에게 바로 보이는 턴별 피드백 grounding, 사용자가 말하지 않은 감정 보태기 방지, 세션 총평 문체 보정, 반복적인 travel 맞장구 보정 순서다.
 - 2026-06-03 sleeping habit 답변 `I want to change my sleeping habit because I sleep too late.`는 GOOD 분류가 맞지만 기존 GOOD fallback이 “좋아하는 것과 이유”로 설명해 문맥이 틀어졌다. 이 케이스는 바꾸고 싶은 루틴과 이유가 이어진 답변으로 칭찬해야 한다.
 - 2026-06-03 `I ate tteokbokki yesterday with my friend.`는 음식, 시점, 동행이 분명한 GOOD 답변이다. 다만 “소중한 시간”처럼 사용자가 말하지 않은 감정을 보태기보다, 사용자가 실제로 말한 정보가 선명하다는 점만 칭찬하는 편이 낫다.

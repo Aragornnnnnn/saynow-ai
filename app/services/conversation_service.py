@@ -36,6 +36,13 @@ from app.services.safety_guard import (
 logger = get_logger("conversation")
 _turn_feedback_cache: dict[int, dict[int, TurnFeedbackData]] = {}
 _turn_feedback_cache_lock = RLock()
+_SESSION_SCORE_BANDS = (
+    (90, 90, 95, "원어민에 가까운 자연스러움"),
+    (75, 82, 89, "유학생 느낌"),
+    (50, 70, 81, "기초 회화 연습 단계"),
+    (25, 60, 69, "문장 뼈대 연습 단계"),
+    (0, 50, 59, "기초 문장 교정 단계"),
+)
 
 
 def _record_workflow_duration(workflow: str):
@@ -385,12 +392,15 @@ def _session_feedback_system_prompt() -> str:
         _safety_system_policy(),
         (
             "Scoring Policy:\n"
-            "nativeScore is an integer from 0 to 100. "
+            "nativeScore is a draft integer from 0 to 100. "
+            "The server will calibrate nativeScore and nativeLevelLabel after validation using the cached turn feedback GOOD ratio. "
             "Do not score only grammar. Consider communicative clarity, naturalness, nuance, politeness, word choice, and answer sustainability. "
-            "The score and nativeLevelLabel must be consistent with cached turn feedback counts. "
-            "If every cached turn is NEEDS_IMPROVEMENT, do not return 유학생 수준 and do not score above the mid-70s. "
-            "If NEEDS_IMPROVEMENT is at least half of the turns, keep the score below 80. "
-            "nativeLevelLabel should be intuitive for Korean users, such as 토종 한국인 느낌, 영어 유치원 수준, 유학생 수준, or 재미교포 느낌, but it must not sound mocking."
+            "Use these server ratio bands as the draft guide: GOOD ratio >= 90% means 90-95 and 원어민에 가까운 자연스러움; "
+            "GOOD ratio >= 75% means 82-89 and 유학생 느낌; "
+            "GOOD ratio >= 50% means 70-81 and 기초 회화 연습 단계; "
+            "GOOD ratio >= 25% means 60-69 and 문장 뼈대 연습 단계; "
+            "GOOD ratio < 25% means 50-59 and 기초 문장 교정 단계. "
+            "Your main job is to write the Korean summary; the server is authoritative for the final score and label."
         ),
         (
             "Summary Policy:\n"
@@ -963,8 +973,8 @@ def _postprocess_session_feedback_summary(
     summary: SessionFeedbackSummaryResponse,
     turn_feedbacks: list[TurnFeedbackData],
 ) -> SessionFeedbackSummaryResponse:
-    native_score = summary.nativeScore
-    native_level_label = summary.nativeLevelLabel
+    min_score, max_score, native_level_label = _session_feedback_score_band(turn_feedbacks)
+    native_score = _clamp_score(summary.nativeScore, min_score, max_score)
     summary_text = summary.summary
     total_count = len(turn_feedbacks)
     needs_count = sum(
@@ -972,8 +982,6 @@ def _postprocess_session_feedback_summary(
     )
 
     if needs_count == total_count and total_count > 0:
-        native_score = min(native_score, 74)
-        native_level_label = "영어 유치원 수준"
         if total_count == 1:
             summary_text = _single_needs_improvement_session_summary(turn_feedbacks[0])
         else:
@@ -982,8 +990,6 @@ def _postprocess_session_feedback_summary(
                 "다음에는 턴별 betterExpression을 한 문장씩 소리 내어 다시 말하면서 문장 뼈대를 먼저 익혀 보세요."
             )
     elif needs_count * 2 >= total_count and total_count > 0:
-        native_score = min(native_score, 79)
-        native_level_label = "영어 유치원 수준"
         if not _is_korean_text(summary_text):
             summary_text = (
                 "하고 싶은 말은 전달했지만 여러 턴에서 어색한 연결이 반복됐어요. "
@@ -1007,6 +1013,21 @@ def _postprocess_session_feedback_summary(
         nativeLevelLabel=native_level_label,
         summary=summary_text,
     )
+
+
+def _session_feedback_score_band(turn_feedbacks: list[TurnFeedbackData]) -> tuple[int, int, str]:
+    total_count = len(turn_feedbacks)
+    if total_count == 0:
+        return _SESSION_SCORE_BANDS[-1][1:]
+    good_count = sum(1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.GOOD)
+    for min_good_percent, min_score, max_score, label in _SESSION_SCORE_BANDS:
+        if good_count * 100 >= total_count * min_good_percent:
+            return min_score, max_score, label
+    return _SESSION_SCORE_BANDS[-1][1:]
+
+
+def _clamp_score(score: int, min_score: int, max_score: int) -> int:
+    return max(min_score, min(score, max_score))
 
 
 def _repair_session_summary_style(summary_text: str) -> str:
