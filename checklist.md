@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 현재 시나리오 데이터 품질 테스트와 문서화
+
+- [x] 첨부된 현재 시나리오 데이터의 파싱 조건을 확인한다.
+- [x] 기존 `turn-feedback` 필드 단순화 변경을 의미 있는 단위로 커밋했는지 확인한다.
+- [x] 실제 develop 설정으로 3개 시나리오 12개 턴 품질 스모크를 실행한다.
+- [x] 각 턴의 `turn-feedback`, 고정 질문 연결 `next-question`, 캐시 기반 `session-feedback` 결과를 수집한다.
+- [x] 품질 이슈와 개선 후보를 사용자 검토용 표로 정리한다.
+- [x] `humanizer` 기준으로 설명 문장을 점검해 Obsidian 3차 MVP 하위 문서에 기록한다.
+- [x] 새 계약과 충돌하는 기존 live smoke 문서를 삭제하고 링크를 정리한다.
+
 ## turn-feedback 필드 단순화
 
 - [x] `feedbackDetail` 중심 계약을 검증하는 RED 테스트를 추가한다.
@@ -8,7 +18,7 @@
 - [x] 기존 후처리와 세션 총평 보정이 새 필드를 사용하도록 바꾼다.
 - [x] route/service focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
-- [ ] 변경 사항을 의미 있는 단위로 커밋한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
 ## 3차 MVP AI 계약 구현
 
