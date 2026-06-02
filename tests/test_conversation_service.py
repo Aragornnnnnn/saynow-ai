@@ -322,6 +322,28 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.praiseSummary, "좋아하는 음식과 이유를 한 문장으로 분명하게 말했어요.")
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
+    def test_turn_feedback_does_not_overcorrect_clear_travel_plan_for_missing_reason(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '다음에 밥 먹으러 가고 싶어요'처럼 구체적인 계획이 부족해요.",
+            "correctionPoint": "구체성 부족",
+            "correctionReason": "여행 경험에 대해 이야기할 때는 목적지에 대한 이유를 포함하는 것이 중요합니다.",
+            "plusOneExpression": "I would like to travel to Vancouver next because I want to see the beautiful nature there.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I would like to travel to Vancouver next.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIsNone(cached.plusOneExpression)
+        self.assertIn("Vancouver", cached.praiseSummary)
+        self.assertIn("여행지와 의도", cached.praiseReason)
+
     def test_turn_feedback_repairs_plus_one_expression_to_fix_target_issue(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -342,6 +364,27 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertEqual(cached.plusOneExpression, "I cook sometimes, but I am not good at cooking.")
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+
+    def test_turn_feedback_repairs_blunt_wanna_know_that_plus_one(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '왜 그걸 알고 싶어?'라고 되묻는 느낌이에요.",
+            "correctionPoint": "대화 흐름",
+            "correctionReason": "질문에 대한 자신의 경험이나 생각을 공유하는 것이 좋습니다.",
+            "plusOneExpression": "I can share my routine if you're interested!",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="Why do you wanna know that?")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.plusOneExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.correctionPoint)
+        self.assertIn("몰아붙이는 느낌", cached.correctionReason)
 
     def test_turn_feedback_repairs_generic_good_praise_to_utterance_specific_korean(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

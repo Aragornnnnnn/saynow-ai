@@ -626,6 +626,8 @@ def _postprocess_turn_feedback(
     feedback: TurnFeedbackData,
 ) -> TurnFeedbackData:
     if _is_detail_only_overcorrection(request, feedback):
+        if _looks_like_clear_travel_plan_answer(request.turn.userUtterance):
+            return _good_feedback_for_clear_travel_plan_answer(request, feedback)
         return _good_feedback_for_clear_reason_answer(request, feedback)
 
     updates: dict[str, Any] = {}
@@ -728,7 +730,10 @@ def _is_detail_only_overcorrection(
 ) -> bool:
     if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
         return False
-    if not _looks_like_clear_reason_answer(request.turn.userUtterance):
+    if not (
+        _looks_like_clear_reason_answer(request.turn.userUtterance)
+        or _looks_like_clear_travel_plan_answer(request.turn.userUtterance)
+    ):
         return False
     feedback_text = " ".join(
         value or ""
@@ -736,11 +741,40 @@ def _is_detail_only_overcorrection(
     ).lower()
     has_detail_complaint = any(
         marker in feedback_text
-        for marker in ["more detail", "more details", "specific", "type of", "detailed", "engaging"]
+        for marker in [
+            "more detail",
+            "more details",
+            "specific",
+            "type of",
+            "detailed",
+            "engaging",
+            "구체성 부족",
+            "구체적인",
+            "구체적",
+            "이유",
+            "풍부한",
+            "추가",
+        ]
     )
     has_concrete_language_issue = any(
         marker in feedback_text
-        for marker in ["grammar", "tense", "preposition", "good at", "wrong", "incorrect", "polite"]
+        for marker in [
+            "grammar",
+            "tense",
+            "preposition",
+            "good at",
+            "wrong",
+            "incorrect",
+            "polite",
+            "문법",
+            "동사",
+            "전치사",
+            "관사",
+            "시제",
+            "형태",
+            "어색",
+            "공손",
+        ]
     )
     return has_detail_complaint and not has_concrete_language_issue
 
@@ -751,6 +785,17 @@ def _looks_like_clear_reason_answer(user_utterance: str) -> bool:
         return False
     obvious_issue_markers = [" good in ", " in cook ", " wanna know that "]
     return not any(marker in normalized for marker in obvious_issue_markers)
+
+
+def _looks_like_clear_travel_plan_answer(user_utterance: str) -> bool:
+    normalized = f" {_normalize_visible_text(user_utterance)} "
+    patterns = [
+        r"\bi would like to (?:travel|go) to [a-z0-9\s]+ next\b",
+        r"\bi want to (?:travel|go) to [a-z0-9\s]+ next\b",
+        r"\bi would like to visit [a-z0-9\s]+ next\b",
+        r"\bi want to visit [a-z0-9\s]+ next\b",
+    ]
+    return any(re.search(pattern, normalized) for pattern in patterns)
 
 
 def _good_feedback_for_clear_reason_answer(
@@ -772,6 +817,26 @@ def _good_feedback_for_clear_reason_answer(
     )
 
 
+def _good_feedback_for_clear_travel_plan_answer(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData:
+    destination = _extract_travel_destination(request.turn.userUtterance) or "가고 싶은 곳"
+    return TurnFeedbackData(
+        turnId=feedback.turnId,
+        feedbackType=FeedbackType.GOOD,
+        koreanAnalogy=(
+            f"한국어로 비유하자면, '{destination}에 다음에 가고 싶어요'처럼 "
+            "가고 싶은 여행지가 바로 보여 자연스럽게 들려요."
+        ),
+        correctionPoint=None,
+        correctionReason=None,
+        plusOneExpression=None,
+        praiseSummary=f"{destination}에 가고 싶은 계획을 한 문장으로 또렷하게 말했어요.",
+        praiseReason="다음에 가고 싶은 여행지와 의도를 바로 말해서 질문자가 대화를 이어가기 쉬워요.",
+    )
+
+
 def _repair_plus_one_expression(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
@@ -780,6 +845,8 @@ def _repair_plus_one_expression(
         return feedback.plusOneExpression
     utterance = _normalize_visible_text(request.turn.userUtterance)
     correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "wanna know that" in utterance:
+        return "I wonder why you are curious about it."
     if "not good in cook" in utterance and "not good at cooking" in correction_point:
         return "I cook sometimes, but I am not good at cooking."
     if "in morning" in utterance and "usually drinking" in utterance:
@@ -801,6 +868,8 @@ def _repair_correction_point(
         return feedback.correctionPoint
     utterance = _normalize_visible_text(request.turn.userUtterance)
     correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "wanna know that" in utterance:
+        return "상대의 질문 의도를 되묻는 표현이 방어적으로 들릴 수 있습니다."
     if "not good in cook" in utterance and "not good at cooking" in correction_point:
         return "능력 표현의 전치사와 동사 형태가 어색합니다."
     if "in morning" in utterance and "usually drinking" in utterance:
@@ -820,6 +889,8 @@ def _repair_correction_reason(
 ) -> str | None:
     utterance = _normalize_visible_text(request.turn.userUtterance)
     correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "wanna know that" in utterance:
+        return "가벼운 대화에서는 Why do you wanna know that?이 상대를 몰아붙이는 느낌을 줄 수 있어요."
     if "not good in cook" in utterance and "not good at cooking" in correction_point:
         return "영어에서는 능력을 말할 때 good in보다 good at을 써야 자연스럽습니다."
     if "in morning" in utterance and "usually drinking" in utterance:
