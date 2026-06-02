@@ -258,6 +258,11 @@
 - 2026-06-02 추가 검토에서 fallback 맞장구 `I see.`와 모델의 `That's great to hear!`가 사용자 발화에 반응하는 느낌이 약하다는 점을 확인했다. 고정 질문만 오거나 일반 맞장구로 시작하면 사용자 발화 기반 fallback 맞장구로 교체한다.
 - 2026-06-02 `TurnFeedbackData`는 이제 `NEEDS_IMPROVEMENT`일 때 교정 필드만 허용하고 칭찬 필드는 null이어야 한다. `GOOD`일 때는 칭찬 필드만 허용하고 교정 필드는 null이어야 한다.
 - 2026-06-02 실제 모델 10개 대표 케이스 평가는 `/private/tmp/saynow_3mvp_10case_eval_clean.json`에 저장했다. next-question 5개와 turn-feedback 5개가 모두 통과했고, GOOD 피드백의 영어 칭찬 설명은 한국어 fallback으로 보정됐다.
+- 2026-06-02 BE live smoke에서 3차 MVP API 흐름은 통과했지만 품질 문제가 남았다. 모든 턴이 `NEEDS_IMPROVEMENT`인 세션도 `nativeScore=82`, `nativeLevelLabel=유학생 수준`으로 내려왔고, GOOD 칭찬은 `좋은 대답이에요!`처럼 발화 내용과 무관하게 반복됐으며, NEEDS의 `koreanAnalogy`는 원 발화 비유가 아니라 교정 설명으로 흐르는 케이스가 있었다.
+- 2026-06-02 `prompt-engineering-patterns` 기준으로 이번 보정은 프롬프트 확장만으로 끝내지 않고 구조화 출력, field separation, grounding self-check, deterministic postprocess를 조합했다. 턴 피드백 프롬프트에는 `koreanAnalogy`와 교정 필드의 역할 분리, GOOD 칭찬의 발화 기반 구체성, `plusOneExpression`의 의도 보존 self-check를 추가했다. 세션 피드백 프롬프트에서는 고정 `nativeScore=82`, `유학생 수준` 예시를 제거하고, 캐시된 GOOD/NEEDS 개수를 입력에 명시했다.
+- 2026-06-02 서버 후처리는 모델이 품질 기준을 어겨도 관측된 실패만 좁게 보정한다. 일반 GOOD 칭찬은 여행지나 이유 답변 같은 발화 정보로 바꾸고, 교정 설명처럼 흐른 `koreanAnalogy`는 원 발화가 한국어로 어떻게 들리는지로 되돌린다. `Most memorable part was see the sea at night.`처럼 교정문이 핵심 문법은 고쳤지만 관사가 빠진 경우 `The most memorable part was seeing the sea at night.`로 보정하고, `correctionPoint`가 영어 교정문 전체가 되면 짧은 한국어 이슈 라벨로 바꾼다.
+- 2026-06-02 세션 점수는 캐시된 턴 피드백과 모순되지 않게 서버가 마지막으로 보정한다. 모든 턴이 `NEEDS_IMPROVEMENT`이면 점수는 최대 74, 레벨은 `영어 유치원 수준`으로 제한하고, 절반 이상이 개선 필요면 최대 79와 같은 레벨로 제한한다. 속도는 이번 범위에서 고려하지 않고 품질 일관성만 기준으로 삼았다.
+- 2026-06-02 품질 보정 RED 테스트 4개는 모두 기존 구현에서 실패했고, 구현 후 GREEN으로 통과했다. 검증은 focused 4개, `tests.test_conversation_service` 23개, 전체 `unittest discover` 44개, `compileall app tests`, `git diff --check`로 확인했다. 로컬 환경에는 실제 `OPENAI_API_KEY`가 없어 수정본의 실제 모델 평가는 develop 배포 후 live smoke로 진행한다.
 - 2026-06-02 다음 질문 fallback 맞장구가 장소명을 만들 때 `Busan`처럼 고유명사는 보기 좋은 표기로 보정한다. 10케이스 평가 결과를 사용자에게 공유할 때도 실제 사용자 화면에 가까운 문장 품질을 기준으로 본다.
 - 2026-06-02 `prompt-engineering-patterns` 관점에서 next-question 맞장구의 기준은 사용자 발화 키워드 인용이 아니라 실제 대화감이다. 프롬프트와 테스트는 사용자가 들은 느낌, 상황, 노력, 감정 중 하나에 짧게 반응하고 고정 질문으로 자연스럽게 넘어가는지를 본다.
 - 2026-06-02 plain text few-shot 예시는 실제 모델이 JSON 없이 문장만 반환하게 만드는 부작용이 있었다. next-question few-shot은 `{"aiQuestion": "...", "translatedQuestion": "..."}` 형태로 바꿔 structured output과 예시가 같은 방향을 보게 했다.

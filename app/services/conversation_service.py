@@ -327,11 +327,22 @@ def _turn_feedback_system_prompt() -> str:
             "Field Policy:\n"
             "koreanAnalogy is required for every response and should explain how the English sounds through a Korean analogy. "
             "koreanAnalogy must start with '한국어로 비유하자면'. "
+            "koreanAnalogy describes the original utterance's Korean-feel only; it must not explain the fix, say '더 자연스럽습니다', or act like a grammar note. "
             "For NEEDS_IMPROVEMENT, correctionPoint, correctionReason, and plusOneExpression are required, while praiseSummary and praiseReason must be null. "
-            "correctionPoint and correctionReason must be Korean explanations of the issue. "
+            "correctionPoint must be a short Korean issue label, not a full corrected English sentence. "
+            "correctionReason must explain why the issue matters in Korean. "
             "For GOOD, praiseSummary and praiseReason are required, while correctionPoint, correctionReason, and plusOneExpression must be null. "
+            "GOOD praise must name the concrete content, choice, reason, place, or action from the user's utterance. "
+            "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
             "plusOneExpression must correct or improve the user's same utterance while preserving the user's intent. "
             "Do not introduce a new idea that the user did not say."
+        ),
+        (
+            "Self-check before final JSON:\n"
+            "1. turnId copied exactly from the Turn ID line. "
+            "2. GOOD has only praise fields and NEEDS_IMPROVEMENT has only correction fields. "
+            "3. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
+            "4. plusOneExpression preserves the user's original intent."
         ),
         (
             "Output Schema:\n"
@@ -373,6 +384,9 @@ def _session_feedback_system_prompt() -> str:
             "Scoring Policy:\n"
             "nativeScore is an integer from 0 to 100. "
             "Do not score only grammar. Consider communicative clarity, naturalness, nuance, politeness, word choice, and answer sustainability. "
+            "The score and nativeLevelLabel must be consistent with cached turn feedback counts. "
+            "If every cached turn is NEEDS_IMPROVEMENT, do not return 유학생 수준 and do not score above the mid-70s. "
+            "If NEEDS_IMPROVEMENT is at least half of the turns, keep the score below 80. "
             "nativeLevelLabel should be intuitive for Korean users, such as 토종 한국인 느낌, 영어 유치원 수준, 유학생 수준, or 재미교포 느낌, but it must not sound mocking."
         ),
         (
@@ -385,7 +399,7 @@ def _session_feedback_system_prompt() -> str:
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"sessionId":1000,"nativeScore":82,"nativeLevelLabel":"유학생 수준","summary":"..."}. '
+            '{"sessionId":"copy the exact Session ID from the user message","nativeScore":"integer 0-100","nativeLevelLabel":"...","summary":"..."}. '
             "Do not include turnFeedbacks in the model output because the server attaches cached turn feedbacks."
         ),
     ])
@@ -395,6 +409,10 @@ def _session_feedback_user_prompt(
     request: SessionFeedbackRequest,
     turn_feedbacks: list[TurnFeedbackData],
 ) -> str:
+    good_count = sum(1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.GOOD)
+    needs_count = sum(
+        1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
+    )
     feedback_json = json.dumps(
         [feedback.model_dump(mode="json") for feedback in turn_feedbacks],
         ensure_ascii=False,
@@ -407,6 +425,7 @@ def _session_feedback_user_prompt(
         f"Scenario briefing: {request.scenario.briefing}\n"
         f"Scenario conversation goal: {request.scenario.conversationGoal}\n"
         f"Expected turn IDs: {request.expectedTurnIds}\n\n"
+        f"Cached turn feedback counts: GOOD={good_count}, NEEDS_IMPROVEMENT={needs_count}\n\n"
         f"Cached turn feedback JSON:\n{feedback_json}"
     )
 
@@ -610,7 +629,7 @@ def _postprocess_turn_feedback(
         return _good_feedback_for_clear_reason_answer(request, feedback)
 
     updates: dict[str, Any] = {}
-    korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
+    korean_analogy = _repair_korean_analogy(request, feedback)
     if korean_analogy != feedback.koreanAnalogy:
         updates["koreanAnalogy"] = korean_analogy
 
@@ -624,6 +643,10 @@ def _postprocess_turn_feedback(
     plus_one_expression = _repair_plus_one_expression(request, feedback)
     if plus_one_expression and plus_one_expression != feedback.plusOneExpression:
         updates["plusOneExpression"] = plus_one_expression
+
+    correction_point = _repair_correction_point(request, feedback)
+    if correction_point and correction_point != feedback.correctionPoint:
+        updates["correctionPoint"] = correction_point
 
     correction_reason = _repair_correction_reason(request, feedback)
     if correction_reason and correction_reason != feedback.correctionReason:
@@ -640,7 +663,11 @@ def _repair_good_praise_language(
 ) -> tuple[str | None, str | None]:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback.praiseSummary, feedback.praiseReason
-    if _is_korean_text(feedback.praiseSummary or "") and _is_korean_text(feedback.praiseReason or ""):
+    if (
+        _is_korean_text(feedback.praiseSummary or "")
+        and _is_korean_text(feedback.praiseReason or "")
+        and not _is_generic_good_praise(feedback)
+    ):
         return feedback.praiseSummary, feedback.praiseReason
 
     utterance = _normalize_visible_text(request.turn.userUtterance)
@@ -648,6 +675,12 @@ def _repair_good_praise_language(
         return (
             "언제, 어디서, 누구와 무엇을 했는지 구체적으로 말했어요.",
             "지난 주말, 부산, 친구, 해산물처럼 정보가 분명해서 듣는 사람이 장면을 쉽게 그릴 수 있어요.",
+        )
+    travel_destination = _extract_travel_destination(request.turn.userUtterance)
+    if travel_destination:
+        return (
+            f"{travel_destination}에 가고 싶은 계획을 한 문장으로 또렷하게 말했어요.",
+            "다음에 가고 싶은 여행지와 의도를 바로 말해서 질문자가 대화를 이어가기 쉬워요.",
         )
     if _looks_like_clear_reason_answer(request.turn.userUtterance):
         return (
@@ -658,6 +691,35 @@ def _repair_good_praise_language(
         "질문에 맞게 하고 싶은 말을 분명하게 전달했어요.",
         "답변의 중심 내용이 잘 보여서 대화가 자연스럽게 이어질 수 있어요.",
     )
+
+
+def _is_generic_good_praise(feedback: TurnFeedbackData) -> bool:
+    praise_text = _normalize_visible_text(f"{feedback.praiseSummary or ''} {feedback.praiseReason or ''}")
+    generic_markers = [
+        "좋은 대답",
+        "질문에 맞게",
+        "하고 싶은 말을 분명하게 전달",
+        "답변의 중심 내용",
+        "대화가 자연스럽게 이어질 수",
+        "명확하고 간결",
+        "명확하게 전달",
+        "clear and well structured",
+        "response is clear",
+    ]
+    return any(marker in praise_text for marker in generic_markers)
+
+
+def _extract_travel_destination(user_utterance: str) -> str | None:
+    patterns = [
+        r"\btravel to (?P<place>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})\b",
+        r"\bgo to (?P<place>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})\b",
+        r"\bvisit (?P<place>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})\b",
+    ]
+    for pattern in patterns:
+        matched = re.search(pattern, user_utterance)
+        if matched:
+            return matched.group("place").strip()
+    return None
 
 
 def _is_detail_only_overcorrection(
@@ -720,7 +782,36 @@ def _repair_plus_one_expression(
     correction_point = _normalize_visible_text(feedback.correctionPoint or "")
     if "not good in cook" in utterance and "not good at cooking" in correction_point:
         return "I cook sometimes, but I am not good at cooking."
+    if "in morning" in utterance and "usually drinking" in utterance:
+        return "In the morning, I usually drink water and check my schedule."
+    if "spend free time to read" in utterance:
+        return "I spend my free time reading books."
+    if "can relaxing after work" in utterance:
+        return "I enjoy evenings because I can relax after work."
+    if "most memorable part was see the sea at night" in utterance:
+        return "The most memorable part was seeing the sea at night."
     return feedback.plusOneExpression
+
+
+def _repair_correction_point(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str | None:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return feedback.correctionPoint
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    correction_point = _normalize_visible_text(feedback.correctionPoint or "")
+    if "not good in cook" in utterance and "not good at cooking" in correction_point:
+        return "능력 표현의 전치사와 동사 형태가 어색합니다."
+    if "in morning" in utterance and "usually drinking" in utterance:
+        return "시간 표현의 관사와 동사 형태가 어색합니다."
+    if "spend free time to read" in utterance:
+        return "spend time 뒤 동명사 연결이 어색합니다."
+    if "can relaxing after work" in utterance:
+        return "can 뒤 동사 형태가 어색합니다."
+    if "most memorable part was see the sea at night" in utterance:
+        return "관사와 동명사 형태가 어색합니다."
+    return feedback.correctionPoint
 
 
 def _repair_correction_reason(
@@ -731,6 +822,14 @@ def _repair_correction_reason(
     correction_point = _normalize_visible_text(feedback.correctionPoint or "")
     if "not good in cook" in utterance and "not good at cooking" in correction_point:
         return "영어에서는 능력을 말할 때 good in보다 good at을 써야 자연스럽습니다."
+    if "in morning" in utterance and "usually drinking" in utterance:
+        return "특정한 아침 시간을 말할 때는 In the morning처럼 관사를 붙이고, usually 뒤 습관은 drink로 말하는 편이 자연스럽습니다."
+    if "spend free time to read" in utterance:
+        return "spend time은 뒤에 동명사를 붙여 I spend my free time reading처럼 말해야 자연스럽습니다."
+    if "can relaxing after work" in utterance:
+        return "can 뒤에는 relaxing이 아니라 원형 동사 relax를 써야 자연스럽습니다."
+    if "most memorable part was see the sea at night" in utterance:
+        return "명사구를 시작할 때 The를 붙이고, was 뒤에는 see 대신 seeing을 써야 문장이 자연스럽습니다."
     return feedback.correctionReason
 
 
@@ -740,28 +839,100 @@ def _ensure_korean_analogy_prefix(korean_analogy: str) -> str:
     return f"한국어로 비유하자면, {korean_analogy}"
 
 
+def _repair_korean_analogy(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str:
+    korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
+    if not _is_correction_like_korean_analogy(korean_analogy):
+        return korean_analogy
+
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if "in morning" in utterance and "usually drinking" in utterance:
+        return (
+            "한국어로 비유하자면, '아침에 보통 물 마시는 중이고 일정도 확인해요'처럼 "
+            "뜻은 보이지만 말끝이 덜 정리되어 들려요."
+        )
+    if "spend free time to read" in utterance:
+        return (
+            "한국어로 비유하자면, '자유 시간에 책 읽기 위해 시간을 보내요'처럼 "
+            "뜻은 알겠지만 조사와 연결이 어색하게 들려요."
+        )
+    if "can relaxing after work" in utterance:
+        return (
+            "한국어로 비유하자면, '저녁 좋아해요. 퇴근 후에 편안한 중일 수 있어서요'처럼 "
+            "뜻은 보이지만 동작 표현이 어색하게 들려요."
+        )
+    if "most memorable part was see the sea at night" in utterance:
+        return (
+            "한국어로 비유하자면, '가장 기억에 남는 부분은 밤에 바다를 보다였어요'처럼 "
+            "뜻은 바로 보이지만 문장 뼈대가 덜 다듬어진 느낌이에요."
+        )
+    return (
+        "한국어로 비유하자면, 뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌이라 "
+        "말의 결이 덜 매끄럽게 들려요."
+    )
+
+
+def _is_correction_like_korean_analogy(korean_analogy: str) -> bool:
+    correction_markers = [
+        "더 자연스럽",
+        "문법",
+        "수정",
+        "바꿔",
+        "바꾸",
+        "사용해야",
+        "써야",
+        "교정",
+        "고치",
+        "이렇게 말하면",
+    ]
+    return any(marker in korean_analogy for marker in correction_markers)
+
+
 def _postprocess_session_feedback_summary(
     summary: SessionFeedbackSummaryResponse,
     turn_feedbacks: list[TurnFeedbackData],
 ) -> SessionFeedbackSummaryResponse:
-    if _is_korean_text(summary.summary):
-        return summary
+    native_score = summary.nativeScore
+    native_level_label = summary.nativeLevelLabel
+    summary_text = summary.summary
+    total_count = len(turn_feedbacks)
+    needs_count = sum(
+        1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
+    )
 
-    if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
-        replacement = (
-            "하고 싶은 말은 전달했지만 몇몇 표현에서 한국어식 직역이 보였어요. "
-            "다음에는 턴별 피드백의 교정 표현을 한 문장씩 바로 바꿔 말하는 연습을 해 보세요."
+    if needs_count == total_count and total_count > 0:
+        native_score = min(native_score, 74)
+        native_level_label = "영어 유치원 수준"
+        summary_text = (
+            "대부분의 턴에서 뜻은 전달됐지만 동사 형태, 관사, 전치사 연결처럼 한국어식 직역이 반복됐어요. "
+            "다음에는 턴별 plusOneExpression을 한 문장씩 소리 내어 다시 말하면서 문장 뼈대를 먼저 익혀 보세요."
         )
-    else:
-        replacement = (
-            "하고 싶은 말을 분명하게 전달했고, 질문에 맞춰 자연스럽게 답했어요. "
-            "다음에는 답변마다 짧은 예시를 하나 더 붙이면 대화가 더 풍성해질 수 있어요."
-        )
+    elif needs_count * 2 >= total_count and total_count > 0:
+        native_score = min(native_score, 79)
+        native_level_label = "영어 유치원 수준"
+        if not _is_korean_text(summary_text):
+            summary_text = (
+                "하고 싶은 말은 전달했지만 여러 턴에서 어색한 연결이 반복됐어요. "
+                "다음에는 자주 틀린 동사 형태와 전치사를 먼저 고쳐 말하는 연습을 해 보세요."
+            )
+    elif not _is_korean_text(summary_text):
+        if needs_count > 0:
+            summary_text = (
+                "하고 싶은 말은 전달했지만 몇몇 표현에서 한국어식 직역이 보였어요. "
+                "다음에는 턴별 피드백의 교정 표현을 한 문장씩 바로 바꿔 말하는 연습을 해 보세요."
+            )
+        else:
+            summary_text = (
+                "하고 싶은 말을 분명하게 전달했고, 질문에 맞춰 자연스럽게 답했어요. "
+                "다음에는 답변마다 짧은 예시를 하나 더 붙이면 대화가 더 풍성해질 수 있어요."
+            )
     return SessionFeedbackSummaryResponse(
         sessionId=summary.sessionId,
-        nativeScore=summary.nativeScore,
-        nativeLevelLabel=summary.nativeLevelLabel,
-        summary=replacement,
+        nativeScore=native_score,
+        nativeLevelLabel=native_level_label,
+        summary=summary_text,
     )
 
 

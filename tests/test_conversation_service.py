@@ -343,6 +343,72 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.plusOneExpression, "I cook sometimes, but I am not good at cooking.")
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
+    def test_turn_feedback_repairs_generic_good_praise_to_utterance_specific_korean(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '밴쿠버에 가고 싶어요'처럼 자연스럽게 들려요.",
+            "correctionPoint": None,
+            "correctionReason": None,
+            "plusOneExpression": None,
+            "praiseSummary": "좋은 대답이에요!",
+            "praiseReason": "질문에 맞게 하고 싶은 말을 분명하게 전달했어요.",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I would like to travel to Vancouver next.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIn("Vancouver", cached.praiseSummary)
+        self.assertIn("다음에 가고 싶은 여행지", cached.praiseReason)
+        self.assertNotEqual(cached.praiseSummary, "좋은 대답이에요!")
+
+    def test_turn_feedback_repairs_correction_like_korean_analogy(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '아침에 물을 마셔요'가 더 자연스럽습니다.",
+            "correctionPoint": "동사 형태가 어색합니다.",
+            "correctionReason": "usually 뒤에는 진행형보다 기본 현재형을 쓰는 편이 자연스럽습니다.",
+            "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="In morning I usually drinking water and check schedule."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("말끝이 덜 정리되어", cached.koreanAnalogy)
+        self.assertNotIn("더 자연스럽", cached.koreanAnalogy)
+        self.assertNotIn("문법", cached.koreanAnalogy)
+
+    def test_turn_feedback_repairs_memorable_part_plus_one_and_issue_label(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '가장 기억에 남는 부분은 밤에 바다를 보다였어요'처럼 어색하게 들려요.",
+            "correctionPoint": "Most memorable part was seeing the sea at night.",
+            "correctionReason": "see를 seeing으로 바꾸면 자연스럽습니다.",
+            "plusOneExpression": "Most memorable part was seeing the sea at night.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="Most memorable part was see the sea at night.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.plusOneExpression, "The most memorable part was seeing the sea at night.")
+        self.assertIn("관사", cached.correctionPoint)
+        self.assertNotIn("Most memorable part", cached.correctionPoint)
+
     def test_session_feedback_uses_cached_turn_feedbacks_in_expected_order(self):
         from app.models.conversation import SessionFeedbackRequest
 
@@ -432,6 +498,63 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("말", result.summary)
         self.assertNotIn("You did well", result.summary)
         self.assertRegex(result.summary, r"[가-힣]")
+
+    def test_session_feedback_caps_score_when_all_turn_feedbacks_need_improvement(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "한국어로 비유하자면 '아침에 물 마시는 중이고 일정도 확인해요'처럼 뜻은 보이지만 어색해요.",
+                "correctionPoint": "동사 형태가 어색합니다.",
+                "correctionReason": "usually 뒤에는 진행형보다 현재형이 자연스럽습니다.",
+                "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
+                "praiseSummary": None,
+                "praiseReason": None,
+            },
+            {
+                "turnId": 5001,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "한국어로 비유하자면 '자유 시간에 책 읽기 위해 시간을 보내요'처럼 뜻은 알겠지만 어색해요.",
+                "correctionPoint": "spend time과 read의 연결이 어색합니다.",
+                "correctionReason": "spend free time reading처럼 동명사로 연결해야 자연스럽습니다.",
+                "plusOneExpression": "I spend my free time reading books.",
+                "praiseSummary": None,
+                "praiseReason": None,
+            },
+            {
+                "sessionId": 1000,
+                "nativeScore": 82,
+                "nativeLevelLabel": "유학생 수준",
+                "summary": "하고 싶은 말을 잘 전달했어요. 조금 더 자연스럽게 말하면 좋아요.",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                turn_id=5000,
+                user_utterance="In morning I usually drinking water and check schedule.",
+            )
+        )
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                turn_id=5001,
+                user_utterance="I spend free time to read books.",
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000, 5001],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertLessEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeLevelLabel, "영어 유치원 수준")
+        self.assertIn("대부분의 턴에서", result.summary)
 
     def test_session_feedback_raises_not_ready_when_expected_turn_is_missing(self):
         from app.models.conversation import SessionFeedbackRequest
