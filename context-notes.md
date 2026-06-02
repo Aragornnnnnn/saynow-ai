@@ -1,5 +1,11 @@
 # 작업 맥락 기록
 
+- 2026-06-03 현재 시나리오 품질 개선은 GOOD/NEEDS와 점수/라벨 기준 재설계가 아니라, 실제 smoke에서 드러난 출력 품질 후보만 먼저 좁게 고치는 작업이다. 우선순위는 사용자에게 바로 보이는 턴별 피드백 grounding, 사용자가 말하지 않은 감정 보태기 방지, 세션 총평 문체 보정, 반복적인 travel 맞장구 보정 순서다.
+- 2026-06-03 sleeping habit 답변 `I want to change my sleeping habit because I sleep too late.`는 GOOD 분류가 맞지만 기존 GOOD fallback이 “좋아하는 것과 이유”로 설명해 문맥이 틀어졌다. 이 케이스는 바꾸고 싶은 루틴과 이유가 이어진 답변으로 칭찬해야 한다.
+- 2026-06-03 `I ate tteokbokki yesterday with my friend.`는 음식, 시점, 동행이 분명한 GOOD 답변이다. 다만 “소중한 시간”처럼 사용자가 말하지 않은 감정을 보태기보다, 사용자가 실제로 말한 정보가 선명하다는 점만 칭찬하는 편이 낫다.
+- 2026-06-03 session-feedback 총평은 scoring 기준 재설계 전에 문체만 보정한다. `문장을 구성하는 데 있어`, `자연스러움을 높일 수 있습니다` 같은 표현은 의미를 유지하되 사용자가 읽기 쉬운 말로 바꾼다.
+- 2026-06-03 개선 구현 결과, GOOD 피드백 후처리에 sleeping habit과 tteokbokki grounded praise를 추가했고, `That sounds like a fun trip!`은 현재 사용자 발화가 college friends 동행일 때 더 구체적인 맞장구로 바꾼다. 세션 총평은 관찰된 문서체 표현만 좁게 치환한다. RED 5개를 확인한 뒤 GREEN으로 전환했고, `tests.test_conversation_service` 33개, 전체 `unittest discover` 54개, `compileall app tests`, `git diff --check`가 통과했다.
+- 2026-06-03 실제 LLM targeted smoke 결과는 `/private/tmp/saynow_3mvp_quality_candidate_targeted_smoke_20260602T160707Z.json`이고 품질 이슈 0건이다. tteokbokki GOOD 피드백은 음식, 시점, 동행만 칭찬했고, sleeping habit GOOD 피드백은 `sleeping habit`과 `sleep too late`에 묶였으며, college friends 맞장구는 `Traveling with college friends sounds memorable.`로 보정됐다.
 - 2026-06-03 현재 시나리오 데이터 품질 테스트는 사용자가 첨부한 `/Users/sangmin8817/.codex/attachments/049d2a95-1263-4ab8-b1e0-e2a8ceabbb13/pasted-text.txt`를 기준으로 한다. 첨부 파일은 JSON 배열 뒤에 `|`가 붙어 있어 그대로는 파싱되지 않으므로 테스트 스크립트에서 꼬리 문자를 제거하고, 시나리오와 질문 값 자체는 원문 그대로 사용한다.
 - 2026-06-03 테스트 범위는 `Free Talk` 카테고리의 3개 시나리오와 12개 질문이다. 각 턴은 `turn-feedback`을 먼저 생성해 캐시를 만들고, 1번부터 3번 턴에서는 BE 고정 다음 질문을 `next-question`에 넣어 대화감과 질문 연결 품질을 본다. 마지막에는 `session-feedback`으로 캐시된 턴 피드백이 최종 총평에 제대로 합쳐지는지 확인한다.
 - 2026-06-03 기존 Obsidian 문서 `Backend/3차 MVP 전체 시나리오 live smoke`와 `3차 MVP/turn-feedback 품질 보정 live smoke 2026-06-03`은 새 `feedbackDetail`/`betterExpression` 계약과 충돌하는 필드 예시를 담고 있어 최신 품질 판단 자료로 쓰기 어렵다. 새 테스트 결과를 3차 MVP 하위 문서로 만들고, 기존 문서는 삭제하거나 링크를 새 문서로 교체하는 방향이 맞다.

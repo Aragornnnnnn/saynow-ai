@@ -206,6 +206,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.aiQuestion, "Sounds tasty. Do you cook often?")
         self.assertEqual(result.translatedQuestion, "맛있었겠네요. 요리는 자주 하나요?")
 
+    def test_next_question_replaces_repeated_fun_trip_acknowledgement_for_friend_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds like a fun trip! Where would you like to travel next?",
+            "translatedQuestion": "재미있는 여행이었겠네요! 다음에는 어디로 여행 가고 싶나요?",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5003,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "여행 경험 이야기하기",
+                "briefing": "가봤던 여행지와 기억에 남는 순간을 이야기합니다.",
+                "conversationGoal": "여행 경험과 감정을 영어로 자연스럽게 설명할 수 있다.",
+            },
+            "currentTurn": {
+                "aiQuestion": "That sounds beautiful! Who did you go with?",
+                "translatedQuestion": "아름답겠네요! 누구와 함께 갔나요?",
+                "userUtterance": "I went with my college friends.",
+            },
+            "nextQuestion": {
+                "questionId": 8,
+                "sequence": 4,
+                "questionEn": "Where would you like to travel next?",
+                "questionKo": "다음에는 어디로 여행 가고 싶나요?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(
+            result.aiQuestion,
+            "Traveling with college friends sounds memorable. Where would you like to travel next?",
+        )
+        self.assertEqual(
+            result.translatedQuestion,
+            "대학 친구들과 함께 간 여행이었군요. 다음에는 어디로 여행 가고 싶나요?",
+        )
+
     def test_turn_feedback_accepts_simplified_needs_improvement_shape(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -397,6 +438,50 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("여행지와 의도", cached.feedbackDetail)
         self.assertNotEqual(cached.feedbackDetail, "좋은 대답이에요! 질문에 맞게 하고 싶은 말을 분명하게 전달했어요.")
 
+    def test_turn_feedback_repairs_good_sleeping_habit_feedback_to_utterance_specific_detail(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, 뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌이라 말의 결이 덜 매끄럽게 들려요.",
+            "feedbackDetail": "좋아하는 것과 이유를 한 문장 안에서 분명하게 말했고, because로 이유를 바로 붙여 듣는 사람이 답변의 핵심을 쉽게 이해할 수 있어요.",
+            "betterExpression": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I want to change my sleeping habit because I sleep too late."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIsNone(cached.betterExpression)
+        self.assertIn("수면 습관", cached.koreanAnalogy)
+        self.assertIn("sleeping habit", cached.feedbackDetail)
+        self.assertIn("sleep too late", cached.feedbackDetail)
+        self.assertNotIn("좋아하는 것", cached.feedbackDetail)
+        self.assertNotIn("덜 매끄럽", cached.koreanAnalogy)
+
+    def test_turn_feedback_removes_unstated_emotion_from_tteokbokki_good_feedback(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, 친구와 함께 떡볶이를 먹었다고 말하는 것은 친구와의 소중한 시간을 공유하는 것처럼 느껴집니다.",
+            "feedbackDetail": "최근에 친구와 떡볶이를 먹었다고 구체적으로 언급한 점이 좋습니다. 이렇게 구체적인 경험을 공유함으로써 대화가 더 풍부해집니다.",
+            "betterExpression": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I ate tteokbokki yesterday with my friend.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIn("떡볶이", cached.feedbackDetail)
+        self.assertIn("친구", cached.feedbackDetail)
+        self.assertIn("어제", cached.feedbackDetail)
+        self.assertNotIn("소중", cached.koreanAnalogy + cached.feedbackDetail)
+
     def test_turn_feedback_repairs_correction_like_korean_analogy(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -532,6 +617,83 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("말", result.summary)
         self.assertNotIn("You did well", result.summary)
         self.assertRegex(result.summary, r"[가-힣]")
+
+    def test_session_feedback_softens_document_style_korean_summary(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '늦게 자는 습관을 바꾸고 싶어요'처럼 자연스럽게 들려요.",
+                "feedbackDetail": "sleeping habit과 sleep too late를 because로 잘 연결했어요.",
+                "betterExpression": None,
+            },
+            {
+                "sessionId": 1000,
+                "nativeScore": 72,
+                "nativeLevelLabel": "영어 유치원 수준",
+                "summary": "이번 세션에서 문장을 구성하는 데 있어 기본적인 의사 전달은 잘 하셨습니다. 그러나 문장 구조와 동사 사용에서 개선이 필요합니다. 자연스러움을 높일 수 있습니다.",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I want to change my sleeping habit because I sleep too late."
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertNotIn("구성하는 데 있어", result.summary)
+        self.assertNotIn("자연스러움을 높일 수 있습니다", result.summary)
+        self.assertIn("기본적인 뜻은 전달했어요", result.summary)
+        self.assertIn("더 자연스럽게 들립니다", result.summary)
+
+    def test_session_feedback_softens_live_smoke_routine_summary_style(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '늦게 자는 습관을 바꾸고 싶어요'처럼 자연스럽게 들려요.",
+                "feedbackDetail": "sleeping habit과 sleep too late를 because로 잘 연결했어요.",
+                "betterExpression": None,
+            },
+            {
+                "sessionId": 1000,
+                "nativeScore": 72,
+                "nativeLevelLabel": "영어 유치원 수준",
+                "summary": "이번 세션에서 아침 루틴과 여가 시간을 설명하는 데 있어 자연스러운 표현을 사용하려고 노력한 점이 좋았습니다. 하지만, 'I spend time' 대신 'I spend my free time'과 같은 구체적인 표현을 사용하는 것이 더 자연스러울 것입니다. 또한, 'can relax' 대신 원형 동사인 'relax'를 사용하는 것이 필요합니다.",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I want to change my sleeping habit because I sleep too late."
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertNotIn("설명하는 데 있어", result.summary)
+        self.assertNotIn("것입니다", result.summary)
+        self.assertNotIn("하지만,", result.summary)
+        self.assertIn("설명하려고 한 점", result.summary)
+        self.assertIn("더 자연스럽게 들립니다", result.summary)
 
     def test_session_feedback_caps_score_when_all_turn_feedbacks_need_improvement(self):
         from app.models.conversation import SessionFeedbackRequest

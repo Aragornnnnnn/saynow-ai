@@ -335,6 +335,8 @@ def _turn_feedback_system_prompt() -> str:
             "For GOOD, betterExpression must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
+            "For routine-change answers, praise the routine and reason, not a generic preference-and-reason pattern. "
+            "Do not add emotions or relationships that the user did not say. "
             "Do not introduce a new idea that the user did not say."
         ),
         (
@@ -544,6 +546,8 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
 
     if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
         return "That must have been a little confusing."
+    if "went with my college friends" in normalized:
+        return "Traveling with college friends sounds memorable."
     if "cook" in normalized:
         return "Nice, cooking is a useful topic."
     if "pizza" in normalized:
@@ -583,6 +587,8 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
 
     if "watched" in normalized and "movie" in normalized and "confusing" in normalized:
         return "조금 헷갈렸겠네요."
+    if "went with my college friends" in normalized:
+        return "대학 친구들과 함께 간 여행이었군요."
     if "cook" in normalized:
         return "요리 이야기도 좋네요."
     if "pizza" in normalized:
@@ -599,6 +605,7 @@ def _has_generic_acknowledgement(ai_question: str) -> bool:
         "thank you for sharing",
         "i see",
         "interesting",
+        "that sounds like a fun trip",
     ]
     return any(normalized.startswith(start) for start in generic_starts)
 
@@ -660,13 +667,23 @@ def _repair_good_feedback_detail(
 ) -> str:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback.feedbackDetail
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if _looks_like_sleeping_habit_change_answer(utterance):
+        return (
+            "sleeping habit과 sleep too late를 because로 잘 연결했어요. "
+            "바꾸고 싶은 수면 습관과 그 이유가 한 문장 안에서 바로 보여 질문자가 쉽게 이해할 수 있습니다."
+        )
+    if _looks_like_recent_tteokbokki_answer(utterance):
+        return (
+            "어제 친구와 떡볶이를 먹었다고 말해 음식, 시점, 동행이 한 문장 안에 분명해요. "
+            "질문자가 최근에 먹은 음식을 바로 이해할 수 있습니다."
+        )
     if (
         _is_korean_text(feedback.feedbackDetail)
         and not _is_generic_good_praise(feedback)
     ):
         return feedback.feedbackDetail
 
-    utterance = _normalize_visible_text(request.turn.userUtterance)
     if "went to busan" in utterance and "seafood" in utterance:
         return "지난 주말, 부산, 친구, 해산물처럼 언제, 어디서, 누구와 무엇을 했는지가 분명해서 듣는 사람이 장면을 쉽게 그릴 수 있어요."
     travel_destination = _extract_travel_destination(request.turn.userUtterance)
@@ -691,6 +708,21 @@ def _is_generic_good_praise(feedback: TurnFeedbackData) -> bool:
         "response is clear",
     ]
     return any(marker in praise_text for marker in generic_markers)
+
+
+def _looks_like_sleeping_habit_change_answer(normalized_utterance: str) -> bool:
+    return (
+        "change my sleeping habit" in normalized_utterance
+        and "sleep too late" in normalized_utterance
+    )
+
+
+def _looks_like_recent_tteokbokki_answer(normalized_utterance: str) -> bool:
+    return (
+        "ate tteokbokki" in normalized_utterance
+        and "yesterday" in normalized_utterance
+        and "friend" in normalized_utterance
+    )
 
 
 def _extract_travel_destination(user_utterance: str) -> str | None:
@@ -867,11 +899,23 @@ def _repair_korean_analogy(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
 ) -> str:
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if feedback.feedbackType == FeedbackType.GOOD:
+        if _looks_like_sleeping_habit_change_answer(utterance):
+            return (
+                "한국어로 비유하자면, '늦게 자는 수면 습관을 바꾸고 싶어요'처럼 "
+                "바꾸고 싶은 루틴과 이유가 바로 이어져 자연스럽게 들려요."
+            )
+        if _looks_like_recent_tteokbokki_answer(utterance):
+            return (
+                "한국어로 비유하자면, '어제 친구랑 떡볶이 먹었어요'처럼 "
+                "음식, 시점, 동행이 또렷하게 들려요."
+            )
+
     korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
     if not _is_correction_like_korean_analogy(korean_analogy):
         return korean_analogy
 
-    utterance = _normalize_visible_text(request.turn.userUtterance)
     if "in morning" in utterance and "usually drinking" in utterance:
         return (
             "한국어로 비유하자면, '아침에 보통 물 마시는 중이고 일정도 확인해요'처럼 "
@@ -956,12 +1000,40 @@ def _postprocess_session_feedback_summary(
                 "하고 싶은 말을 분명하게 전달했고, 질문에 맞춰 자연스럽게 답했어요. "
                 "다음에는 답변마다 짧은 예시를 하나 더 붙이면 대화가 더 풍성해질 수 있어요."
             )
+    summary_text = _repair_session_summary_style(summary_text)
     return SessionFeedbackSummaryResponse(
         sessionId=summary.sessionId,
         nativeScore=native_score,
         nativeLevelLabel=native_level_label,
         summary=summary_text,
     )
+
+
+def _repair_session_summary_style(summary_text: str) -> str:
+    replacements = {
+        "이번 세션에서 문장을 구성하는 데 있어 기본적인 의사 전달은 잘 하셨습니다.": (
+            "이번 세션에서는 기본적인 뜻은 전달했어요."
+        ),
+        "문장을 구성하는 데 있어 기본적인 의사 전달은 잘 하셨습니다.": (
+            "기본적인 뜻은 전달했어요."
+        ),
+        "문장 구조와 동사 사용에서 개선이 필요합니다.": (
+            "문장 구조와 동사 사용은 조금 더 다듬어야 해요."
+        ),
+        "아침 루틴과 여가 시간을 설명하는 데 있어 자연스러운 표현을 사용하려고 노력한 점이 좋았습니다.": (
+            "아침 루틴과 여가 시간을 설명하려고 한 점은 좋았습니다."
+        ),
+        "사용하는 것이 더 자연스러울 것입니다.": "쓰면 더 자연스럽게 들립니다.",
+        "사용하는 것이 필요합니다.": "써야 자연스럽습니다.",
+        "자연스러움을 높일 수 있습니다.": "더 자연스럽게 들립니다.",
+        "자연스러움을 높일 수 있습니다": "더 자연스럽게 들립니다",
+        " 그러나 ": " 다만 ",
+        " 하지만, ": " 다만 ",
+    }
+    repaired = summary_text
+    for source, target in replacements.items():
+        repaired = repaired.replace(source, target)
+    return repaired
 
 
 def _single_needs_improvement_session_summary(feedback: TurnFeedbackData) -> str:

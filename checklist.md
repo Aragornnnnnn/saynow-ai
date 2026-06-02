@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 현재 시나리오 품질 개선 후보 보정
+
+- [x] sleeping habit GOOD 피드백이 발화 내용에 맞게 grounding되는 RED 테스트를 추가한다.
+- [x] tteokbokki GOOD 피드백이 사용자가 말하지 않은 감정을 보태지 않는 RED 테스트를 추가한다.
+- [x] session-feedback 총평의 문서체와 번역투를 줄이는 RED 테스트를 추가한다.
+- [x] travel next-question의 반복적인 `fun trip` 맞장구를 사용자 발화 기반 표현으로 바꾸는 RED 테스트를 추가한다.
+- [x] 최소 후처리와 프롬프트 보강으로 테스트를 GREEN으로 만든다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 실제 모델 품질 스모크를 재실행해 개선 결과를 확인한다.
+
 ## 현재 시나리오 데이터 품질 테스트와 문서화
 
 - [x] 첨부된 현재 시나리오 데이터의 파싱 조건을 확인한다.
