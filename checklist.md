@@ -60,8 +60,8 @@
 - [x] `prompt-engineering-patterns` 기준으로 턴 피드백과 세션 피드백 프롬프트의 역할 분리, grounding, self-check를 보강한다.
 - [x] 모델 응답이 품질 기준을 벗어나도 서버 후처리에서 좁게 보정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] 실제 AI 서버 또는 실제 모델 경로로 대표 케이스를 직접 평가한다.
-- [ ] 개선 과정과 테스트 결과를 `context-notes.md`와 사용자 보고용 표로 정리한다.
+- [x] 실제 AI 서버 또는 실제 모델 경로로 대표 케이스를 직접 평가한다.
+- [x] 개선 과정과 테스트 결과를 `context-notes.md`와 사용자 보고용 표로 정리한다.
 
 ## REPEAT_REQUEST 오분류 방어
 
