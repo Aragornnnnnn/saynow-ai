@@ -1,5 +1,13 @@
 # 작업 맥락 기록
 
+- 2026-06-03 GOOD/NEEDS 기준은 `GOOD=완벽함`이 아니라 `GOOD=현재 발화에 핵심 교정이 필요 없음`으로 둔다. 짧거나 더 풍성하게 말할 수 있다는 이유만으로는 NEEDS가 아니다.
+- 2026-06-03 NEEDS_IMPROVEMENT는 문법, 단어 선택, 어순, 시제, 전치사, 뉘앙스, 공손함, 질문 적합성 중 하나가 실제 대화 품질을 떨어뜨리고 더 나은 표현을 제시할 수 있을 때만 쓴다.
+- 2026-06-03 GOOD/NEEDS 분류는 기본적으로 LLM이 판단하지만, 이미 현재 시나리오에서 반복된 고신뢰 문제는 서버 후처리로 방어한다. 예시는 `because spicy`, `not good in cook`, `Why do you wanna know that?`처럼 교정 포인트가 분명한 케이스다.
+- 2026-06-03 prompt-engineering-patterns 기준으로는 역할 분리, 판단 게이트, boundary 예시, 구조화 JSON 출력, self-check를 함께 둔다. 예시가 고정 `turnId`를 오염시키지 않도록 ID 값 예시는 계속 쓰지 않는다.
+- 2026-06-03 RED 확인 결과, 기존 턴 피드백 프롬프트에는 `GOOD Gate`, `NEEDS_IMPROVEMENT Gate`, `Actionable Issue Gate`가 없었고, 모델이 `I like pizza because spicy.`나 `Why do you wanna know that?`을 GOOD으로 내려도 서버가 그대로 캐시했다.
+- 2026-06-03 구현 결과, 턴 피드백 프롬프트는 gate 기반 판단 기준과 boundary 예시를 갖게 됐다. 서버 후처리는 모델이 GOOD으로 내려도 `because spicy`, `wanna know that`, `not good in cook` 같은 고신뢰 문제를 NEEDS로 보정한다. focused RED 3개는 GREEN으로 바뀌었다.
+- 2026-06-03 GOOD/NEEDS 기준 작업 검증은 `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_service` 42개, `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 63개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`로 통과했다.
+
 - 2026-06-03 세션 최종 점수와 라벨은 질문 수가 4개로 고정된다는 전제를 버리고, 캐시된 턴 피드백의 `GOOD` 비율로 서버가 결정한다. 질문 수가 3개, 4개, 5개로 바뀌어도 같은 비율 기준을 적용한다.
 - 2026-06-03 점수/라벨 기준은 `GOOD` 비율 90% 이상 `90-95`와 `원어민에 가까운 자연스러움`, 75% 이상 `82-89`와 `유학생 느낌`, 50% 이상 `70-81`과 `기초 회화 연습 단계`, 25% 이상 `60-69`와 `문장 뼈대 연습 단계`, 25% 미만 `50-59`와 `기초 문장 교정 단계`로 잡는다.
 - 2026-06-03 최고 라벨은 `원어민 수준` 대신 `원어민에 가까운 자연스러움`으로 둔다. 3-5개 짧은 발화만으로 원어민 수준이라고 말하면 과대평가처럼 보일 수 있고, `GOOD`은 완벽함이 아니라 현재 발화에 핵심 교정이 없다는 의미이기 때문이다.

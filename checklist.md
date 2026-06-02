@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## GOOD/NEEDS 분류 기준 정립
+
+- [x] `GOOD`과 `NEEDS_IMPROVEMENT`의 판단 기준을 `context-notes.md`에 기록한다.
+- [x] 짧지만 명확한 답변이 세부 정보 부족만으로 NEEDS가 되지 않는 기준을 테스트로 고정한다.
+- [x] 명백한 문법 문제를 모델이 GOOD으로 내려도 NEEDS로 보정하는 RED 테스트를 추가한다.
+- [x] 무례하거나 방어적으로 들리는 표현을 모델이 GOOD으로 내려도 NEEDS로 보정하는 RED 테스트를 추가한다.
+- [x] `prompt-engineering-patterns` 기준으로 턴 피드백 프롬프트의 역할, 판단 기준, self-check, 구조화 출력을 점검한다.
+- [x] 턴 피드백 프롬프트와 고신뢰 후처리를 기준에 맞게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 질문 수 변동 대응 세션 점수/라벨 기준
 
 - [x] `GOOD` 비율 기반 점수/라벨 기준을 `context-notes.md`에 기록한다.

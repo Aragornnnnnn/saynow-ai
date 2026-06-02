@@ -355,6 +355,55 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.betterExpression)
         self.assertIn("because", cached.feedbackDetail)
 
+    def test_turn_feedback_prompt_defines_good_needs_decision_gates(self):
+        system_prompt = self.service._turn_feedback_system_prompt()
+
+        self.assertIn("GOOD Gate", system_prompt)
+        self.assertIn("NEEDS_IMPROVEMENT Gate", system_prompt)
+        self.assertIn("Actionable Issue Gate", system_prompt)
+        self.assertIn("More detail alone is not an actionable issue", system_prompt)
+        self.assertIn("I like pizza because it is spicy.", system_prompt)
+        self.assertIn("I like pizza because spicy.", system_prompt)
+        self.assertIn("Why do you wanna know that?", system_prompt)
+
+    def test_turn_feedback_repairs_good_misclassification_for_actionable_grammar_issue(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '피자가 좋아요. 매워서요'처럼 들려요.",
+            "feedbackDetail": "좋아하는 음식과 이유를 말했기 때문에 좋은 답변이에요.",
+            "betterExpression": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I like pizza because spicy.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.betterExpression, "I like pizza because it is spicy.")
+        self.assertIn("because 뒤", cached.feedbackDetail)
+        self.assertIn("it is spicy", cached.feedbackDetail)
+
+    def test_turn_feedback_repairs_good_misclassification_for_blunt_question(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '왜 궁금한지 물어보는 말'처럼 들려요.",
+            "feedbackDetail": "상대에게 질문 이유를 묻는 표현이라 대화에 참여하고 있어요.",
+            "betterExpression": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="Why do you wanna know that?")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.feedbackDetail)
+        self.assertIn("몰아붙이", cached.feedbackDetail)
+
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,

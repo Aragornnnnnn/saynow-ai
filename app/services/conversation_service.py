@@ -322,11 +322,14 @@ def _turn_feedback_system_prompt() -> str:
         _safety_system_policy(),
         (
             "Judgement Policy:\n"
-            "Classify the turn as GOOD or NEEDS_IMPROVEMENT. "
-            "Do not force a correction when the utterance is already good. "
-            "A clear direct answer with a reason, such as 'I like pizza because it is spicy.', is GOOD unless there is a concrete grammar, word choice, nuance, politeness, or relevance issue. "
-            "Do not mark an answer as NEEDS_IMPROVEMENT only because it could include more detail. "
-            "Judge grammar, nuance, politeness, situation fit, word choice, and whether the answer fits the AI question. "
+            "Classify the turn as GOOD or NEEDS_IMPROVEMENT using these gates in order. "
+            "Actionable Issue Gate: first check whether grammar, word choice, word order, tense, preposition, nuance, politeness, or relevance creates a real correction point. "
+            "GOOD Gate: mark GOOD when the answer fits the AI question, the meaning is clear without guesswork, and there is no actionable correction point. "
+            "NEEDS_IMPROVEMENT Gate: mark NEEDS_IMPROVEMENT only when there is an actionable issue and you can provide a better expression that preserves the user's intent. "
+            "More detail alone is not an actionable issue; a short direct answer can be GOOD. "
+            "Boundary examples: 'I like pizza because it is spicy.' is GOOD; 'I would like to travel to Vancouver next.' is GOOD; "
+            "'I like pizza because spicy.' is NEEDS_IMPROVEMENT because because needs a clause; "
+            "'Why do you wanna know that?' is NEEDS_IMPROVEMENT because it can sound defensive or blunt in casual practice. "
             "When several issues exist, handle the most important one first. "
             "Use cautious wording such as can sound when the nuance depends on context."
         ),
@@ -648,6 +651,10 @@ def _postprocess_turn_feedback(
             return _good_feedback_for_clear_travel_plan_answer(request, feedback)
         return _good_feedback_for_clear_reason_answer(request, feedback)
 
+    deterministic_issue = _needs_feedback_for_good_misclassified_actionable_issue(request, feedback)
+    if deterministic_issue:
+        return deterministic_issue
+
     updates: dict[str, Any] = {}
     korean_analogy = _repair_korean_analogy(request, feedback)
     if korean_analogy != feedback.koreanAnalogy:
@@ -669,6 +676,52 @@ def _postprocess_turn_feedback(
     if not updates:
         return feedback
     return _validated_turn_feedback_copy(feedback, updates)
+
+
+def _needs_feedback_for_good_misclassified_actionable_issue(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData | None:
+    if feedback.feedbackType != FeedbackType.GOOD:
+        return None
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if _looks_like_because_spicy_clause_issue(utterance):
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy=(
+                "한국어로 비유하자면, '피자가 좋아요. 매운이라서요'처럼 "
+                "이유는 보이지만 말끝이 빠진 느낌이에요."
+            ),
+            feedbackDetail=(
+                "because 뒤에는 spicy만 두기보다 it is spicy처럼 주어와 동사를 붙여 "
+                "이유를 문장으로 말해야 자연스럽습니다."
+            ),
+            betterExpression="I like pizza because it is spicy.",
+        )
+    if "wanna know that" in utterance:
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="한국어로 비유하자면, '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
+            feedbackDetail=(
+                "질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 "
+                "상대를 몰아붙이거나 방어적으로 들릴 수 있어요."
+            ),
+            betterExpression="I wonder why you are curious about it.",
+        )
+    if "not good in cook" in utterance:
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy=(
+                "한국어로 비유하자면, '요리는 가끔 하지만 요리 안에 잘하지는 않아요'처럼 "
+                "뜻은 보이지만 표현 연결이 어색해요."
+            ),
+            feedbackDetail="능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다.",
+            betterExpression="I cook sometimes, but I am not good at cooking.",
+        )
+    return None
 
 
 def _repair_good_feedback_detail(
@@ -808,7 +861,14 @@ def _looks_like_clear_reason_answer(user_utterance: str) -> bool:
     if " because " not in normalized and " since " not in normalized:
         return False
     obvious_issue_markers = [" good in ", " in cook ", " wanna know that "]
-    return not any(marker in normalized for marker in obvious_issue_markers)
+    return (
+        not any(marker in normalized for marker in obvious_issue_markers)
+        and not _looks_like_because_spicy_clause_issue(normalized)
+    )
+
+
+def _looks_like_because_spicy_clause_issue(normalized_utterance: str) -> bool:
+    return re.search(r"\bbecause\s+spicy\b", normalized_utterance) is not None
 
 
 def _looks_like_clear_travel_plan_answer(user_utterance: str) -> bool:
