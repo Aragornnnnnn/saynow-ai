@@ -948,6 +948,7 @@ def _repair_korean_analogy(
 def _is_correction_like_korean_analogy(korean_analogy: str) -> bool:
     correction_markers = [
         "더 자연스럽",
+        "더 자연스러",
         "문법",
         "수정",
         "바꿔",
@@ -976,10 +977,13 @@ def _postprocess_session_feedback_summary(
     if needs_count == total_count and total_count > 0:
         native_score = min(native_score, 74)
         native_level_label = "영어 유치원 수준"
-        summary_text = (
-            "대부분의 턴에서 뜻은 전달됐지만 동사 형태, 관사, 전치사 연결처럼 한국어식 직역이 반복됐어요. "
-            "다음에는 턴별 plusOneExpression을 한 문장씩 소리 내어 다시 말하면서 문장 뼈대를 먼저 익혀 보세요."
-        )
+        if total_count == 1:
+            summary_text = _single_needs_improvement_session_summary(turn_feedbacks[0])
+        else:
+            summary_text = (
+                "대부분의 턴에서 뜻은 전달됐지만 동사 형태, 관사, 전치사 연결처럼 한국어식 직역이 반복됐어요. "
+                "다음에는 턴별 plusOneExpression을 한 문장씩 소리 내어 다시 말하면서 문장 뼈대를 먼저 익혀 보세요."
+            )
     elif needs_count * 2 >= total_count and total_count > 0:
         native_score = min(native_score, 79)
         native_level_label = "영어 유치원 수준"
@@ -1004,6 +1008,16 @@ def _postprocess_session_feedback_summary(
         nativeScore=native_score,
         nativeLevelLabel=native_level_label,
         summary=summary_text,
+    )
+
+
+def _single_needs_improvement_session_summary(feedback: TurnFeedbackData) -> str:
+    correction_point = feedback.correctionPoint or "표현이 어색합니다."
+    correction_reason = feedback.correctionReason or "문장의 뜻은 보이지만 영어식 연결이 덜 자연스럽습니다."
+    plus_one = feedback.plusOneExpression or "조금 더 자연스러운 문장"
+    return (
+        f"이번 턴에서는 뜻은 전달됐지만 {correction_point} "
+        f"{correction_reason} 다음에는 '{plus_one}'처럼 한 번 바꿔 말해 보세요."
     )
 
 

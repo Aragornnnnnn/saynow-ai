@@ -431,6 +431,26 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("더 자연스럽", cached.koreanAnalogy)
         self.assertNotIn("문법", cached.koreanAnalogy)
 
+    def test_turn_feedback_repairs_korean_analogy_with_natural_eojeol_variation(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '퇴근 후 편안해질 수 있어서요'가 더 자연스러워요.",
+            "correctionPoint": "can 뒤 동사 형태가 어색합니다.",
+            "correctionReason": "can 뒤에는 원형 동사를 써야 합니다.",
+            "plusOneExpression": "I enjoy evenings because I can relax after work.",
+            "praiseSummary": None,
+            "praiseReason": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I enjoy evening because I can relaxing after work.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("동작 표현이 어색하게", cached.koreanAnalogy)
+        self.assertNotIn("더 자연스러", cached.koreanAnalogy)
+
     def test_turn_feedback_repairs_memorable_part_plus_one_and_issue_label(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -598,6 +618,48 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertLessEqual(result.nativeScore, 74)
         self.assertEqual(result.nativeLevelLabel, "영어 유치원 수준")
         self.assertIn("대부분의 턴에서", result.summary)
+
+    def test_session_feedback_uses_single_turn_summary_when_only_one_needs_improvement(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "한국어로 비유하자면 '아침에 물 마시는 중이고 일정도 확인해요'처럼 뜻은 보이지만 어색해요.",
+                "correctionPoint": "시간 표현의 관사와 동사 형태가 어색합니다.",
+                "correctionReason": "In the morning처럼 관사를 붙이고 usually 뒤에는 drink를 쓰는 편이 자연스럽습니다.",
+                "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
+                "praiseSummary": None,
+                "praiseReason": None,
+            },
+            {
+                "sessionId": 1000,
+                "nativeScore": 82,
+                "nativeLevelLabel": "유학생 수준",
+                "summary": "하고 싶은 말을 잘 전달했어요. 조금 더 자연스럽게 말하면 좋아요.",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="In morning I usually drinking water and check schedule.",
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertLessEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeLevelLabel, "영어 유치원 수준")
+        self.assertIn("이번 턴에서는", result.summary)
+        self.assertNotIn("대부분의 턴", result.summary)
+        self.assertIn("In the morning", result.summary)
 
     def test_session_feedback_raises_not_ready_when_expected_turn_is_missing(self):
         from app.models.conversation import SessionFeedbackRequest
