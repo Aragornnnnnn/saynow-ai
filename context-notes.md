@@ -1,5 +1,11 @@
 # 작업 맥락 기록
 
+- 2026-06-03 최신 현재 시나리오 데이터 재검증은 `/Users/sangmin8817/.codex/attachments/049d2a95-1263-4ab8-b1e0-e2a8ceabbb13/pasted-text.txt`의 Free Talk 3개 시나리오, 12턴을 `http://43.202.146.182:8080` develop AI 서버에 직접 호출해 진행했다. 결과 JSON은 `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260602T164627Z.json`이다.
+- 2026-06-03 develop AI live smoke 결과, 12턴의 GOOD/NEEDS 분류는 예상과 모두 일치했지만 자동 이슈는 22건이었다. 이슈의 핵심은 최신 코드 품질 실패가 아니라 develop 서버 배포 미반영으로 보인다. `/openapi.json`의 `TurnFeedbackData`가 아직 `correctionPoint`, `correctionReason`, `plusOneExpression`, `praiseSummary`, `praiseReason` 계약을 노출했고, 실제 응답도 같은 예전 필드를 반환했다.
+- 2026-06-03 develop AI 서버에서는 이전에 보정한 품질 후보도 다시 개선 전처럼 관찰됐다. 음식 3번 GOOD 피드백은 친구와 먹은 떡볶이를 다시 “소중한 시간”으로 해석했고, 여행 3번 뒤 next-question은 `That sounds like a fun trip!`를 반복했으며, 일상 4번 GOOD 피드백은 sleeping habit 답변인데도 “뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌” 비유를 냈다.
+- 2026-06-03 점수/라벨도 최신 GOOD 비율 기준이 develop 서버에 반영되지 않았다. 2 GOOD/2 NEEDS는 `75/영어 유치원 수준`, 3 GOOD/1 NEEDS는 `85/유학생 수준`, 1 GOOD/3 NEEDS는 `75/영어 유치원 수준`으로 내려왔다. 최신 기준이면 각각 `기초 회화 연습 단계`, `유학생 느낌`, `문장 뼈대 연습 단계`가 되어야 한다.
+- 2026-06-03 Obsidian 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`에 `## 12. 최신 develop AI 재검증 2026-06-03` 섹션을 추가했다. 원문 JSON은 null 필드를 제외해 그대로 남겼고, 문서 문장은 humanizer 기준으로 표 중심, 짧은 문장, 의미 보존 방식으로 정리했다.
+
 - 2026-06-03 GOOD/NEEDS 기준은 `GOOD=완벽함`이 아니라 `GOOD=현재 발화에 핵심 교정이 필요 없음`으로 둔다. 짧거나 더 풍성하게 말할 수 있다는 이유만으로는 NEEDS가 아니다.
 - 2026-06-03 NEEDS_IMPROVEMENT는 문법, 단어 선택, 어순, 시제, 전치사, 뉘앙스, 공손함, 질문 적합성 중 하나가 실제 대화 품질을 떨어뜨리고 더 나은 표현을 제시할 수 있을 때만 쓴다.
 - 2026-06-03 GOOD/NEEDS 분류는 기본적으로 LLM이 판단하지만, 이미 현재 시나리오에서 반복된 고신뢰 문제는 서버 후처리로 방어한다. 예시는 `because spicy`, `not good in cook`, `Why do you wanna know that?`처럼 교정 포인트가 분명한 케이스다.
