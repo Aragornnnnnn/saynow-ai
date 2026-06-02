@@ -206,6 +206,24 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.aiQuestion, "Sounds tasty. Do you cook often?")
         self.assertEqual(result.translatedQuestion, "맛있었겠네요. 요리는 자주 하나요?")
 
+    def test_turn_feedback_accepts_simplified_needs_improvement_shape(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '그걸 알아서 뭐 하려고?'처럼 조금 날카롭게 들려요.",
+            "feedbackDetail": "질문 의도를 묻는 표현이지만, 친한 사이가 아니면 방어적이거나 따지는 말투처럼 들릴 수 있어요.",
+            "betterExpression": "I wonder why you are curious about it.",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="Why do you wanna know that?")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIn("방어적", cached.feedbackDetail)
+        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}
 
@@ -216,11 +234,8 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5000,
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면 '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
-                "correctionPoint": "why do you wanna know that은 방어적으로 들릴 수 있어요.",
-                "correctionReason": "상대의 질문 의도를 따지는 느낌이 강해서 가벼운 대화에서는 날카롭게 들려요.",
-                "plusOneExpression": "I wonder why you are curious about it.",
-                "praiseSummary": None,
-                "praiseReason": None,
+                "feedbackDetail": "why do you wanna know that은 상대의 질문 의도를 따지는 느낌이 강해서 가벼운 대화에서는 방어적으로 들릴 수 있어요.",
+                "betterExpression": "I wonder why you are curious about it.",
             })
 
         self.service.chat = capture_chat
@@ -231,7 +246,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.feedbackStatus, "PREPARING")
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.plusOneExpression, "I wonder why you are curious about it.")
+        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
         self.assertIn("quality is more important than speed or token savings", captured["system"])
         self.assertIn("koreanAnalogy", captured["system"])
         self.assertIn("Copy it exactly", captured["system"])
@@ -243,30 +258,24 @@ class ConversationServiceTest(unittest.TestCase):
             "turnId": 5000,
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-            "correctionPoint": None,
-            "correctionReason": None,
-            "plusOneExpression": None,
-            "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-            "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "betterExpression": None,
         })
 
         self.service.generate_turn_feedback(self._turn_feedback_request())
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.correctionPoint)
-        self.assertEqual(cached.praiseSummary, "이유를 because로 자연스럽게 붙였어요.")
+        self.assertIsNone(cached.betterExpression)
+        self.assertIn("because", cached.feedbackDetail)
 
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-            "correctionPoint": None,
-            "correctionReason": None,
-            "plusOneExpression": None,
-            "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-            "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "betterExpression": None,
         })
 
         result = self.service.generate_turn_feedback(self._turn_feedback_request(turn_id=3))
@@ -278,16 +287,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached_request_turn.turnId, 3)
         self.assertIsNone(cached_model_turn)
 
-    def test_turn_feedback_repairs_english_good_praise_to_korean(self):
+    def test_turn_feedback_repairs_english_good_detail_to_korean(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 '부산에 가서 친구와 해산물을 먹었어요'처럼 자연스럽게 들려요.",
-            "correctionPoint": None,
-            "correctionReason": None,
-            "plusOneExpression": None,
-            "praiseSummary": "Your response is clear and well-structured.",
-            "praiseReason": "You provided a specific activity and included a reason.",
+            "feedbackDetail": "Your response is clear and well-structured.",
+            "betterExpression": None,
         })
 
         self.service.generate_turn_feedback(
@@ -297,29 +303,24 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertRegex(cached.praiseSummary, r"[가-힣]")
-        self.assertRegex(cached.praiseReason, r"[가-힣]")
-        self.assertNotIn("Your response", cached.praiseSummary)
+        self.assertRegex(cached.feedbackDetail, r"[가-힣]")
+        self.assertNotIn("Your response", cached.feedbackDetail)
 
     def test_turn_feedback_does_not_overcorrect_clear_reason_answer(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "이 표현은 마치 '나는 매운 음식을 좋아해요'라고 말하는 것과 비슷하지만, 피자에 대한 구체적인 설명이 부족해요.",
-            "correctionPoint": "Add more details about the type of pizza you like or why you find it spicy.",
-            "correctionReason": "Your answer is clear, but it could be improved by providing more specific information.",
-            "plusOneExpression": "I also enjoy spicy food like kimchi.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "Your answer is clear, but it could be improved by providing more specific information about the type of pizza.",
+            "betterExpression": "I also enjoy spicy food like kimchi.",
         })
 
         self.service.generate_turn_feedback(self._turn_feedback_request())
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.correctionPoint)
-        self.assertIsNone(cached.plusOneExpression)
-        self.assertEqual(cached.praiseSummary, "좋아하는 음식과 이유를 한 문장으로 분명하게 말했어요.")
+        self.assertIsNone(cached.betterExpression)
+        self.assertIn("좋아하는 음식과 이유", cached.feedbackDetail)
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
     def test_turn_feedback_does_not_overcorrect_clear_travel_plan_for_missing_reason(self):
@@ -327,11 +328,8 @@ class ConversationServiceTest(unittest.TestCase):
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "한국어로 비유하자면 '다음에 밥 먹으러 가고 싶어요'처럼 구체적인 계획이 부족해요.",
-            "correctionPoint": "구체성 부족",
-            "correctionReason": "여행 경험에 대해 이야기할 때는 목적지에 대한 이유를 포함하는 것이 중요합니다.",
-            "plusOneExpression": "I would like to travel to Vancouver next because I want to see the beautiful nature there.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "여행 경험에 대해 이야기할 때는 목적지에 대한 이유를 포함하는 것이 중요합니다.",
+            "betterExpression": "I would like to travel to Vancouver next because I want to see the beautiful nature there.",
         })
 
         self.service.generate_turn_feedback(
@@ -340,20 +338,17 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.plusOneExpression)
-        self.assertIn("Vancouver", cached.praiseSummary)
-        self.assertIn("여행지와 의도", cached.praiseReason)
+        self.assertIsNone(cached.betterExpression)
+        self.assertIn("Vancouver", cached.feedbackDetail)
+        self.assertIn("여행지와 의도", cached.feedbackDetail)
 
-    def test_turn_feedback_repairs_plus_one_expression_to_fix_target_issue(self):
+    def test_turn_feedback_repairs_better_expression_to_fix_target_issue(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "이 표현은 마치 '나는 노래를 가끔 부르지만 잘 부르지 못해요'라고 말하는 것과 비슷해요.",
-            "correctionPoint": "I am not good at cooking.",
-            "correctionReason": "In English, we say 'good at' when referring to skills.",
-            "plusOneExpression": "I enjoy trying new recipes.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "In English, we say 'good at' when referring to skills.",
+            "betterExpression": "I enjoy trying new recipes.",
         })
 
         self.service.generate_turn_feedback(
@@ -362,19 +357,16 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.plusOneExpression, "I cook sometimes, but I am not good at cooking.")
+        self.assertEqual(cached.betterExpression, "I cook sometimes, but I am not good at cooking.")
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
-    def test_turn_feedback_repairs_blunt_wanna_know_that_plus_one(self):
+    def test_turn_feedback_repairs_blunt_wanna_know_that_better_expression(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "한국어로 비유하자면 '왜 그걸 알고 싶어?'라고 되묻는 느낌이에요.",
-            "correctionPoint": "대화 흐름",
-            "correctionReason": "질문에 대한 자신의 경험이나 생각을 공유하는 것이 좋습니다.",
-            "plusOneExpression": "I can share my routine if you're interested!",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "질문에 대한 자신의 경험이나 생각을 공유하는 것이 좋습니다.",
+            "betterExpression": "I can share my routine if you're interested!",
         })
 
         self.service.generate_turn_feedback(
@@ -382,20 +374,17 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.plusOneExpression, "I wonder why you are curious about it.")
-        self.assertIn("방어적", cached.correctionPoint)
-        self.assertIn("몰아붙이는 느낌", cached.correctionReason)
+        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.feedbackDetail)
+        self.assertIn("몰아붙이", cached.feedbackDetail)
 
-    def test_turn_feedback_repairs_generic_good_praise_to_utterance_specific_korean(self):
+    def test_turn_feedback_repairs_generic_good_detail_to_utterance_specific_korean(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 '밴쿠버에 가고 싶어요'처럼 자연스럽게 들려요.",
-            "correctionPoint": None,
-            "correctionReason": None,
-            "plusOneExpression": None,
-            "praiseSummary": "좋은 대답이에요!",
-            "praiseReason": "질문에 맞게 하고 싶은 말을 분명하게 전달했어요.",
+            "feedbackDetail": "좋은 대답이에요! 질문에 맞게 하고 싶은 말을 분명하게 전달했어요.",
+            "betterExpression": None,
         })
 
         self.service.generate_turn_feedback(
@@ -404,20 +393,17 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIn("Vancouver", cached.praiseSummary)
-        self.assertIn("다음에 가고 싶은 여행지", cached.praiseReason)
-        self.assertNotEqual(cached.praiseSummary, "좋은 대답이에요!")
+        self.assertIn("Vancouver", cached.feedbackDetail)
+        self.assertIn("여행지와 의도", cached.feedbackDetail)
+        self.assertNotEqual(cached.feedbackDetail, "좋은 대답이에요! 질문에 맞게 하고 싶은 말을 분명하게 전달했어요.")
 
     def test_turn_feedback_repairs_correction_like_korean_analogy(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "한국어로 비유하자면 '아침에 물을 마셔요'가 더 자연스럽습니다.",
-            "correctionPoint": "동사 형태가 어색합니다.",
-            "correctionReason": "usually 뒤에는 진행형보다 기본 현재형을 쓰는 편이 자연스럽습니다.",
-            "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "usually 뒤에는 진행형보다 기본 현재형을 쓰는 편이 자연스럽습니다.",
+            "betterExpression": "In the morning, I usually drink water and check my schedule.",
         })
 
         self.service.generate_turn_feedback(
@@ -436,11 +422,8 @@ class ConversationServiceTest(unittest.TestCase):
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "한국어로 비유하자면 '퇴근 후 편안해질 수 있어서요'가 더 자연스러워요.",
-            "correctionPoint": "can 뒤 동사 형태가 어색합니다.",
-            "correctionReason": "can 뒤에는 원형 동사를 써야 합니다.",
-            "plusOneExpression": "I enjoy evenings because I can relax after work.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "can 뒤에는 원형 동사를 써야 합니다.",
+            "betterExpression": "I enjoy evenings because I can relax after work.",
         })
 
         self.service.generate_turn_feedback(
@@ -451,16 +434,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("동작 표현이 어색하게", cached.koreanAnalogy)
         self.assertNotIn("더 자연스러", cached.koreanAnalogy)
 
-    def test_turn_feedback_repairs_memorable_part_plus_one_and_issue_label(self):
+    def test_turn_feedback_repairs_memorable_part_better_expression_and_detail(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "NEEDS_IMPROVEMENT",
             "koreanAnalogy": "한국어로 비유하자면 '가장 기억에 남는 부분은 밤에 바다를 보다였어요'처럼 어색하게 들려요.",
-            "correctionPoint": "Most memorable part was seeing the sea at night.",
-            "correctionReason": "see를 seeing으로 바꾸면 자연스럽습니다.",
-            "plusOneExpression": "Most memorable part was seeing the sea at night.",
-            "praiseSummary": None,
-            "praiseReason": None,
+            "feedbackDetail": "see를 seeing으로 바꾸면 자연스럽습니다.",
+            "betterExpression": "Most memorable part was seeing the sea at night.",
         })
 
         self.service.generate_turn_feedback(
@@ -468,9 +448,9 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.plusOneExpression, "The most memorable part was seeing the sea at night.")
-        self.assertIn("관사", cached.correctionPoint)
-        self.assertNotIn("Most memorable part", cached.correctionPoint)
+        self.assertEqual(cached.betterExpression, "The most memorable part was seeing the sea at night.")
+        self.assertIn("관사", cached.feedbackDetail)
+        self.assertNotIn("Most memorable part", cached.feedbackDetail)
 
     def test_session_feedback_uses_cached_turn_feedbacks_in_expected_order(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -480,21 +460,15 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5001,
                 "feedbackType": "GOOD",
                 "koreanAnalogy": "한국어로 비유하자면 '요리는 가끔 해요'처럼 자연스럽게 들려요.",
-                "correctionPoint": None,
-                "correctionReason": None,
-                "plusOneExpression": None,
-                "praiseSummary": "빈도 표현이 자연스러웠어요.",
-                "praiseReason": "질문에 바로 답했고 의미가 분명했어요.",
+                "feedbackDetail": "빈도 표현이 자연스러웠고, 질문에 바로 답해 의미가 분명했어요.",
+                "betterExpression": None,
             },
             {
                 "turnId": 5000,
                 "feedbackType": "GOOD",
                 "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-                "correctionPoint": None,
-                "correctionReason": None,
-                "plusOneExpression": None,
-                "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-                "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                "betterExpression": None,
             },
             {
                 "sessionId": 1000,
@@ -531,11 +505,8 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5000,
                 "feedbackType": "GOOD",
                 "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-                "correctionPoint": None,
-                "correctionReason": None,
-                "plusOneExpression": None,
-                "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-                "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                "betterExpression": None,
             },
             {
                 "sessionId": 1000,
@@ -570,21 +541,15 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5000,
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면 '아침에 물 마시는 중이고 일정도 확인해요'처럼 뜻은 보이지만 어색해요.",
-                "correctionPoint": "동사 형태가 어색합니다.",
-                "correctionReason": "usually 뒤에는 진행형보다 현재형이 자연스럽습니다.",
-                "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
-                "praiseSummary": None,
-                "praiseReason": None,
+                "feedbackDetail": "usually 뒤에는 진행형보다 현재형이 자연스럽습니다.",
+                "betterExpression": "In the morning, I usually drink water and check my schedule.",
             },
             {
                 "turnId": 5001,
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면 '자유 시간에 책 읽기 위해 시간을 보내요'처럼 뜻은 알겠지만 어색해요.",
-                "correctionPoint": "spend time과 read의 연결이 어색합니다.",
-                "correctionReason": "spend free time reading처럼 동명사로 연결해야 자연스럽습니다.",
-                "plusOneExpression": "I spend my free time reading books.",
-                "praiseSummary": None,
-                "praiseReason": None,
+                "feedbackDetail": "spend free time reading처럼 동명사로 연결해야 자연스럽습니다.",
+                "betterExpression": "I spend my free time reading books.",
             },
             {
                 "sessionId": 1000,
@@ -627,11 +592,8 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5000,
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면 '아침에 물 마시는 중이고 일정도 확인해요'처럼 뜻은 보이지만 어색해요.",
-                "correctionPoint": "시간 표현의 관사와 동사 형태가 어색합니다.",
-                "correctionReason": "In the morning처럼 관사를 붙이고 usually 뒤에는 drink를 쓰는 편이 자연스럽습니다.",
-                "plusOneExpression": "In the morning, I usually drink water and check my schedule.",
-                "praiseSummary": None,
-                "praiseReason": None,
+                "feedbackDetail": "In the morning처럼 관사를 붙이고 usually 뒤에는 drink를 쓰는 편이 자연스럽습니다.",
+                "betterExpression": "In the morning, I usually drink water and check my schedule.",
             },
             {
                 "sessionId": 1000,
@@ -684,11 +646,8 @@ class ConversationServiceTest(unittest.TestCase):
                 turnId=5000,
                 feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
                 koreanAnalogy="한국어로 비유하자면 '피자 좋아요'처럼 들려요.",
-                correctionPoint=None,
-                correctionReason="이유",
-                plusOneExpression="I like pizza.",
-                praiseSummary=None,
-                praiseReason=None,
+                feedbackDetail="이유",
+                betterExpression=None,
             )
 
         with self.assertRaises(ValidationError):
@@ -696,11 +655,8 @@ class ConversationServiceTest(unittest.TestCase):
                 turnId=5000,
                 feedbackType=FeedbackType.GOOD,
                 koreanAnalogy="한국어로 비유하자면 '피자 좋아요'처럼 들려요.",
-                correctionPoint=None,
-                correctionReason=None,
-                plusOneExpression=None,
-                praiseSummary="좋아요.",
-                praiseReason=None,
+                feedbackDetail="좋아요.",
+                betterExpression="I like pizza.",
             )
 
     def test_feedback_data_rejects_fields_from_other_feedback_type(self):
@@ -710,26 +666,20 @@ class ConversationServiceTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             TurnFeedbackData(
                 turnId=5000,
-                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-                koreanAnalogy="한국어로 비유하자면 '조금 날카롭게 들려요'처럼 들려요.",
-                correctionPoint="표현이 너무 직접적이에요.",
-                correctionReason="가벼운 대화에서는 상대를 몰아붙이는 느낌이 날 수 있어요.",
-                plusOneExpression="I wonder why you are curious about it.",
-                praiseSummary="의미는 전달했어요.",
-                praiseReason=None,
-            )
-
-        with self.assertRaises(ValidationError):
-            TurnFeedbackData(
-                turnId=5000,
                 feedbackType=FeedbackType.GOOD,
                 koreanAnalogy="한국어로 비유하자면 '저는 피자가 좋아요'처럼 들려요.",
-                correctionPoint="더 구체적으로 말할 수 있어요.",
-                correctionReason=None,
-                plusOneExpression=None,
-                praiseSummary="이유를 잘 붙였어요.",
-                praiseReason="질문에 바로 답했어요.",
+                feedbackDetail="이유를 잘 붙였고 질문에 바로 답했어요.",
+                betterExpression="I like pizza because it is spicy.",
             )
+
+        valid = TurnFeedbackData(
+            turnId=5000,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="한국어로 비유하자면 '조금 날카롭게 들려요'처럼 들려요.",
+            feedbackDetail="상대에게 따지는 느낌이 날 수 있어서 더 부드럽게 물어보는 편이 좋아요.",
+            betterExpression="I wonder why you are curious about it.",
+        )
+        self.assertEqual(valid.betterExpression, "I wonder why you are curious about it.")
 
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest
@@ -759,11 +709,8 @@ class ConversationServiceTest(unittest.TestCase):
             "turnId": 5000,
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-            "correctionPoint": None,
-            "correctionReason": None,
-            "plusOneExpression": None,
-            "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-            "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+            "betterExpression": None,
         })
         self.service.generate_turn_feedback(self._turn_feedback_request())
 

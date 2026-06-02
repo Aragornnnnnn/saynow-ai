@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## turn-feedback 필드 단순화
+
+- [x] `feedbackDetail` 중심 계약을 검증하는 RED 테스트를 추가한다.
+- [x] `TurnFeedbackData` 모델을 `feedbackType`, `koreanAnalogy`, `feedbackDetail`, `betterExpression` 구조로 단순화한다.
+- [x] `turn-feedback` 프롬프트와 self-check를 새 필드 계약에 맞춘다.
+- [x] 기존 후처리와 세션 총평 보정이 새 필드를 사용하도록 바꾼다.
+- [x] route/service focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [ ] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 3차 MVP AI 계약 구현
 
 - [x] 3차 MVP 기준 문서에서 AI 서버가 맡는 범위를 확정한다.

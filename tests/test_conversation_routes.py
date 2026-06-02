@@ -49,11 +49,8 @@ class ConversationRoutesTest(unittest.TestCase):
                     turnId=5000,
                     feedbackType=FeedbackType.GOOD,
                     koreanAnalogy="한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-                    correctionPoint=None,
-                    correctionReason=None,
-                    plusOneExpression=None,
-                    praiseSummary="이유를 because로 자연스럽게 붙였어요.",
-                    praiseReason="좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                    feedbackDetail="이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                    betterExpression=None,
                 )
             ],
         )
@@ -172,7 +169,8 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(body["nativeScore"], 82)
         self.assertEqual(body["nativeLevelLabel"], "유학생 수준")
         self.assertEqual(body["turnFeedbacks"][0]["feedbackType"], "GOOD")
-        self.assertIsNone(body["turnFeedbacks"][0]["correctionPoint"])
+        self.assertIn("feedbackDetail", body["turnFeedbacks"][0])
+        self.assertIsNone(body["turnFeedbacks"][0]["betterExpression"])
 
     def test_session_feedback_route_returns_not_ready_error(self):
         captured = []

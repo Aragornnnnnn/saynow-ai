@@ -57,11 +57,8 @@
       "turnId": 5000,
       "feedbackType": "GOOD",
       "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
-      "correctionPoint": null,
-      "correctionReason": null,
-      "plusOneExpression": null,
-      "praiseSummary": "이유를 because로 자연스럽게 붙였어요.",
-      "praiseReason": "좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요."
+      "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+      "betterExpression": null
     }
   ]
 }
@@ -75,7 +72,7 @@
 
 3차 MVP의 최우선 목표는 응답 속도나 토큰 절감이 아니라 품질입니다. 턴별 피드백은 문법만 보지 않고 뉘앙스, 공손함, 상황 적절성, 어휘 선택, 질문에 대한 답변 적절성을 함께 판단합니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `correctionPoint`, `correctionReason`, `plusOneExpression`을 반드시 포함합니다. `GOOD`에는 `koreanAnalogy`, `praiseSummary`, `praiseReason`을 반드시 포함합니다.
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `feedbackDetail`, `betterExpression`을 반드시 포함합니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`을 반드시 포함하고 `betterExpression`은 `null`로 둡니다.
 
 ## Error Policy
 

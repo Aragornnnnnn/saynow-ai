@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-03 턴 피드백 화면 계약은 필드 수를 줄이는 방향으로 다시 잡는다. `NEEDS_IMPROVEMENT`는 한국어 비유, 고쳐야 하는 포인트와 이유를 합친 설명, 더 나은 표현만 필요하고, `GOOD`은 한국어 비유와 잘한 정도 및 이유만 필요하다. 따라서 AI 응답은 `feedbackType`, `koreanAnalogy`, `feedbackDetail`, `betterExpression`으로 단순화하고, `betterExpression`은 `NEEDS_IMPROVEMENT`에서만 내려준다.
+- 2026-06-03 구현 결과, `TurnFeedbackData`에서 `correctionPoint`, `correctionReason`, `plusOneExpression`, `praiseSummary`, `praiseReason`을 제거하고 `feedbackDetail`, `betterExpression`으로 통합했다. `GOOD`은 `betterExpression=null`, `NEEDS_IMPROVEMENT`는 `betterExpression` 필수로 검증한다. 턴 피드백 프롬프트, 캐시된 세션 피드백 JSON, 후처리 보정, README 예시도 같은 계약으로 맞췄다.
+- 2026-06-03 검증은 RED 테스트 `tests.test_conversation_service.ConversationServiceTest.test_turn_feedback_accepts_simplified_needs_improvement_shape` 실패 확인 후 GREEN으로 전환했다. 이후 `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_service tests.test_conversation_routes` 37개, 전체 `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'` 49개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests`, `git diff --check`가 모두 통과했다.
+
 - 2026-06-02 3차 MVP AI 작업은 BE 구현을 제외하고 `saynow-ai` 내부 API, 프롬프트, 캐시, 테스트만 대상으로 한다. 기준 문서는 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP.md`이며, 최우선 목표는 응답 속도나 토큰 절감이 아니라 사용자가 납득할 수 있는 피드백 품질이다.
 - 2026-06-02 3차 MVP에서는 AI가 슬롯을 채우거나 다음 질문을 결정하지 않는다. 백엔드가 다음 고정 질문을 `nextQuestion`으로 넘기면 AI는 직전 사용자 발화에 대한 짧은 맞장구와 고정 질문을 자연스럽게 이어 붙여 `aiQuestion`, `translatedQuestion`을 반환한다.
 - 2026-06-02 턴별 피드백은 발화 직후 `/api/v1/conversation/turn-feedback`에서 생성하고 AI 서버 캐시에 저장한다. 백엔드는 즉시 DB에 저장하지 않고, `/api/v1/conversation/session-feedback` 호출 시 AI 캐시에 있는 턴별 피드백을 받아 세션 최종 피드백과 함께 저장한다.

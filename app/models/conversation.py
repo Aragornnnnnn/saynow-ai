@@ -110,19 +110,13 @@ class TurnFeedbackData(BaseModel):
     turnId: int = Field(gt=0)
     feedbackType: FeedbackType
     koreanAnalogy: str
-    correctionPoint: str | None = None
-    correctionReason: str | None = None
-    plusOneExpression: str | None = None
-    praiseSummary: str | None = None
-    praiseReason: str | None = None
+    feedbackDetail: str
+    betterExpression: str | None = None
 
     @field_validator(
         "koreanAnalogy",
-        "correctionPoint",
-        "correctionReason",
-        "plusOneExpression",
-        "praiseSummary",
-        "praiseReason",
+        "feedbackDetail",
+        "betterExpression",
     )
     @classmethod
     def optional_text_fields_must_not_be_blank(cls, value: str | None) -> str | None:
@@ -131,27 +125,12 @@ class TurnFeedbackData(BaseModel):
     @model_validator(mode="after")
     def feedback_fields_must_match_type(self):
         if self.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
-            required_values = [
-                self.correctionPoint,
-                self.correctionReason,
-                self.plusOneExpression,
-            ]
-            if any(value is None or not value.strip() for value in required_values):
-                raise ValueError("correction fields are required for NEEDS_IMPROVEMENT feedback")
-            if self.praiseSummary is not None or self.praiseReason is not None:
-                raise ValueError("praise fields must be null for NEEDS_IMPROVEMENT feedback")
+            if self.betterExpression is None or not self.betterExpression.strip():
+                raise ValueError("betterExpression is required for NEEDS_IMPROVEMENT feedback")
             return self
 
-        required_values = [self.praiseSummary, self.praiseReason]
-        if any(value is None or not value.strip() for value in required_values):
-            raise ValueError("praise fields are required for GOOD feedback")
-        correction_values = [
-            self.correctionPoint,
-            self.correctionReason,
-            self.plusOneExpression,
-        ]
-        if any(value is not None for value in correction_values):
-            raise ValueError("correction fields must be null for GOOD feedback")
+        if self.betterExpression is not None:
+            raise ValueError("betterExpression must be null for GOOD feedback")
         return self
 
 
