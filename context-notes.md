@@ -1,5 +1,10 @@
 # 작업 맥락 기록
 
+- 2026-06-03 GitHub Wiki 갱신은 `/private/tmp/saynow-ai-wiki`에 `https://github.com/Aragornnnnnn/saynow-ai.wiki.git`를 clone해서 진행한다. Wiki의 `Home`, `API Reference`, `AI 대화 워크플로우와 턴 분류 정책`, `Release Notes`는 아직 2차 MVP 슬롯, RAG, SSE 피드백 계약을 많이 담고 있어 3차 MVP 기준과 맞지 않았다.
+- 2026-06-03 Wiki 최신화 기준은 현재 `app/models/conversation.py`, `app/api/routes/conversation.py`, develop AI live OpenAPI, 최신 smoke JSON `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260603T043002Z.json`이다. 3차 MVP 현재 API는 `next-question`, `turn-feedback`, `session-feedback`, `guide`이며 `/feedback`, `/feedback/stream`은 등록하지 않는다.
+- 2026-06-03 GitHub Wiki에 `3차 MVP AI 계약과 품질 검증` 페이지를 추가하고, `Home`, `API Reference`, `Release Notes`, `_Sidebar`를 3차 MVP 기준으로 갱신했다. `AI 대화 워크플로우와 턴 분류 정책`과 `Assistance RAG`는 2차 MVP 기록임을 상단에 명시했다. Wiki 커밋은 `86286b7 docs: 3차 MVP AI 위키 최신화`이고 `origin/master`에 push했다.
+- 2026-06-03 Wiki 문서는 humanizer 기준으로 짧은 문장, 표 중심, 의미 보존 방식으로 점검했다. 새 문서와 수정 문서에서 한국어 문장이 콜론으로 끝나는 케이스는 없었고, `git diff --cached --check`도 통과했다.
+
 - 2026-06-03 최신 커밋 `f21bcb2`를 `origin/develop`에 push했고, develop AI 배포 GitHub Actions run `26863659780`이 34초 만에 성공했다. 배포 후 `http://43.202.146.182:8080/health`는 `{"status":"ok"}`를 반환했다.
 - 2026-06-03 배포 후 `/openapi.json`의 `TurnFeedbackData` 필드는 `betterExpression`, `feedbackDetail`, `feedbackType`, `koreanAnalogy`, `turnId`로 바뀌었다. 이전 live smoke에서 보였던 `correctionPoint`, `correctionReason`, `plusOneExpression`, `praiseSummary`, `praiseReason` 구계약은 더 이상 노출되지 않았다.
 - 2026-06-03 배포 후 현재 시나리오 3개, 12턴 live smoke를 재실행했고 결과 JSON은 `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260603T043002Z.json`이다. 자동 이슈는 22건에서 0건으로 줄었고, GOOD/NEEDS 분류는 12개 모두 예상과 일치했다.

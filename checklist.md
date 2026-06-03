@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## GitHub Wiki 3차 MVP 최신화
+
+- [x] GitHub Wiki repo를 별도 clone한다.
+- [x] 기존 Wiki 문서와 현재 3차 MVP 코드 계약 차이를 확인한다.
+- [x] API Reference, Home, Release Notes, Sidebar를 최신 계약에 맞게 갱신한다.
+- [x] humanizer 기준으로 한국어 문장을 점검한다.
+- [x] Wiki 변경분을 커밋하고 push한다.
+- [x] 본 repo 작업 기록을 커밋한다.
+
 ## 최신 커밋 배포 후 현재 시나리오 재검증
 
 - [x] 최신 커밋을 `origin/develop`에 push한다.
