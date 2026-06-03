@@ -338,6 +338,8 @@ def _turn_feedback_system_prompt() -> str:
             "koreanAnalogy is required for every response and should explain how the English sounds through a Korean analogy. "
             "koreanAnalogy must start with '한국어로 비유하자면'. "
             "koreanAnalogy describes the original utterance's Korean-feel only; it must not explain the fix, say '더 자연스럽습니다', or act like a grammar note. "
+            "For NEEDS_IMPROVEMENT, koreanAnalogy should use one intentionally awkward Korean example plus one short feeling explanation. "
+            "Grammar reasons belong in feedbackDetail, not koreanAnalogy. "
             "feedbackDetail is required for every response. "
             "For NEEDS_IMPROVEMENT, feedbackDetail must explain the correction point and the reason in one natural Korean explanation. "
             "For NEEDS_IMPROVEMENT, betterExpression is required and must correct or improve the user's same utterance while preserving the user's intent. "
@@ -871,6 +873,10 @@ def _looks_like_because_spicy_clause_issue(normalized_utterance: str) -> bool:
     return re.search(r"\bbecause\s+spicy\b", normalized_utterance) is not None
 
 
+def _looks_like_sushi_never_eaten_issue(normalized_utterance: str) -> bool:
+    return "want try sushi next" in normalized_utterance and "never eat it before" in normalized_utterance
+
+
 def _looks_like_clear_travel_plan_answer(user_utterance: str) -> bool:
     normalized = f" {_normalize_visible_text(user_utterance)} "
     patterns = [
@@ -928,6 +934,8 @@ def _repair_better_expression(
         return "I cook sometimes, but I am not good at cooking."
     if "in morning" in utterance and "usually drinking" in utterance:
         return "In the morning, I usually drink water and check my schedule."
+    if _looks_like_sushi_never_eaten_issue(utterance):
+        return "I want to try sushi next because I have never eaten it before."
     if "spend free time to read" in utterance:
         return "I spend my free time reading books."
     if "can relaxing after work" in utterance:
@@ -950,6 +958,8 @@ def _repair_needs_feedback_detail(
         return "능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다."
     if "in morning" in utterance and "usually drinking" in utterance:
         return "특정한 아침 시간을 말할 때는 In the morning처럼 관사를 붙이고, usually 뒤 습관은 drink로 말하는 편이 자연스럽습니다."
+    if _looks_like_sushi_never_eaten_issue(utterance):
+        return "want 뒤에는 to try를 붙이고, 먹어 본 경험은 I have never eaten it before처럼 현재완료로 말해야 자연스럽습니다."
     if "spend free time to read" in utterance:
         return "spend time은 뒤에 동명사를 붙여 I spend my free time reading처럼 말해야 자연스럽습니다."
     if "can relaxing after work" in utterance:
@@ -983,6 +993,18 @@ def _repair_korean_analogy(
             )
 
     korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
+    if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
+        if _looks_like_sushi_never_eaten_issue(utterance):
+            return (
+                "한국어로 비유하자면, '다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어'처럼 "
+                "뜻은 보이지만 문장 연결이 덜 다듬어진 느낌이에요."
+            )
+        if "spend free time to read" in utterance:
+            return (
+                "한국어로 비유하자면, '여가 시간을 책 읽기 위해 보내요'처럼 "
+                "뜻은 통하지만 일상 대답보다는 번역문처럼 딱딱하게 들려요."
+            )
+
     if not _is_correction_like_korean_analogy(korean_analogy):
         return korean_analogy
 
@@ -990,11 +1012,6 @@ def _repair_korean_analogy(
         return (
             "한국어로 비유하자면, '아침에 보통 물 마시는 중이고 일정도 확인해요'처럼 "
             "뜻은 보이지만 말끝이 덜 정리되어 들려요."
-        )
-    if "spend free time to read" in utterance:
-        return (
-            "한국어로 비유하자면, '자유 시간에 책 읽기 위해 시간을 보내요'처럼 "
-            "뜻은 알겠지만 조사와 연결이 어색하게 들려요."
         )
     if "can relaxing after work" in utterance:
         return (

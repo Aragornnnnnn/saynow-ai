@@ -365,6 +365,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I like pizza because it is spicy.", system_prompt)
         self.assertIn("I like pizza because spicy.", system_prompt)
         self.assertIn("Why do you wanna know that?", system_prompt)
+        self.assertIn("intentionally awkward Korean example", system_prompt)
+        self.assertIn("short feeling explanation", system_prompt)
+        self.assertIn("Grammar reasons belong in feedbackDetail", system_prompt)
 
     def test_turn_feedback_repairs_good_misclassification_for_actionable_grammar_issue(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -612,6 +615,47 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertIn("동작 표현이 어색하게", cached.koreanAnalogy)
         self.assertNotIn("더 자연스러", cached.koreanAnalogy)
+
+    def test_turn_feedback_repairs_sushi_never_eat_korean_analogy_to_awkward_example(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": (
+                "한국어로 비유하자면, \"나는 초밥을 다음에 먹고 싶어\"라고 말할 때, "
+                "\"나는 초밥을 먹어본 적이 없어\"라고 말하는 것과 비슷하게, "
+                "문장이 조금 어색하게 들립니다."
+            ),
+            "feedbackDetail": "want 뒤에는 to try를 쓰고, 경험은 have never eaten으로 말해야 합니다.",
+            "betterExpression": "I want to try sushi next because I have never eaten it before.",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I want try sushi next because I never eat it before.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어", cached.koreanAnalogy)
+        self.assertIn("문장 연결이 덜 다듬어진", cached.koreanAnalogy)
+        self.assertNotIn("라고 말할 때", cached.koreanAnalogy)
+        self.assertNotIn("말하는 것과 비슷", cached.koreanAnalogy)
+
+    def test_turn_feedback_repairs_free_time_korean_analogy_to_translation_like_example(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면, '나는 책을 읽기 위해 여가 시간을 보낸다'는 표현이 어색하게 들리는 것과 비슷해요.",
+            "feedbackDetail": "spend time 뒤에는 to read보다 reading을 쓰는 편이 자연스럽습니다.",
+            "betterExpression": "I spend my free time reading books.",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I spend free time to read books.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("여가 시간을 책 읽기 위해 보내요", cached.koreanAnalogy)
+        self.assertIn("번역문처럼 딱딱하게", cached.koreanAnalogy)
+        self.assertNotIn("표현이 어색하게 들리는 것과 비슷", cached.koreanAnalogy)
 
     def test_turn_feedback_repairs_memorable_part_better_expression_and_detail(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

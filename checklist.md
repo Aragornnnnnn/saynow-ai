@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## 한국어 비유 품질 개선
+
+- [x] 어색한 sushi/free-time 한국어 비유를 재현하는 RED 테스트를 추가한다.
+- [x] `koreanAnalogy` 프롬프트 기준을 “어색한 한국어 예시 + 짧은 느낌 설명”으로 보강한다.
+- [x] sushi와 free-time 후처리를 새 기준에 맞게 개선한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] GitHub 이슈 체크리스트를 갱신한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## GitHub Wiki 3차 MVP 최신화
 
 - [x] GitHub Wiki repo를 별도 clone한다.

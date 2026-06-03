@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-03 `koreanAnalogy`는 문법 설명 필드가 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드로 둔다. 이번 개선은 `I want try sushi next because I never eat it before.`와 `I spend free time to read books.`의 비유가 의미 풀이처럼 길어지거나 번역투 예시로 충분히 와닿지 않는 문제를 겨냥한다.
+- 2026-06-03 새 기준은 “일부러 어색한 한국어 예시 + 짧은 느낌 설명”이다. 문법 이유와 교정 근거는 `feedbackDetail`에 쓰고, `koreanAnalogy`에는 사용자가 바로 감을 잡을 수 있는 한국어식 어색함만 남긴다.
+- 2026-06-03 구현 결과, 턴 피드백 프롬프트에 `intentionally awkward Korean example`와 `short feeling explanation` 기준을 추가했다. 서버 후처리는 sushi 미경험 답변을 `다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어` 비유로, free-time 답변을 `여가 시간을 책 읽기 위해 보내요` 비유로 보정한다. 검증은 focused 3개, `tests.test_conversation_service` 44개, 전체 unittest 65개, `compileall app tests scripts`, `git diff --check`로 통과했다.
+
 - 2026-06-03 GitHub Wiki 갱신은 `/private/tmp/saynow-ai-wiki`에 `https://github.com/Aragornnnnnn/saynow-ai.wiki.git`를 clone해서 진행한다. Wiki의 `Home`, `API Reference`, `AI 대화 워크플로우와 턴 분류 정책`, `Release Notes`는 아직 2차 MVP 슬롯, RAG, SSE 피드백 계약을 많이 담고 있어 3차 MVP 기준과 맞지 않았다.
 - 2026-06-03 Wiki 최신화 기준은 현재 `app/models/conversation.py`, `app/api/routes/conversation.py`, develop AI live OpenAPI, 최신 smoke JSON `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260603T043002Z.json`이다. 3차 MVP 현재 API는 `next-question`, `turn-feedback`, `session-feedback`, `guide`이며 `/feedback`, `/feedback/stream`은 등록하지 않는다.
 - 2026-06-03 GitHub Wiki에 `3차 MVP AI 계약과 품질 검증` 페이지를 추가하고, `Home`, `API Reference`, `Release Notes`, `_Sidebar`를 3차 MVP 기준으로 갱신했다. `AI 대화 워크플로우와 턴 분류 정책`과 `Assistance RAG`는 2차 MVP 기록임을 상단에 명시했다. Wiki 커밋은 `86286b7 docs: 3차 MVP AI 위키 최신화`이고 `origin/master`에 push했다.
