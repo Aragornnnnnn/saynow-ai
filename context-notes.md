@@ -1,5 +1,14 @@
 # 작업 맥락 기록
 
+- 2026-06-03 최신 커밋 `f21bcb2`를 `origin/develop`에 push했고, develop AI 배포 GitHub Actions run `26863659780`이 34초 만에 성공했다. 배포 후 `http://43.202.146.182:8080/health`는 `{"status":"ok"}`를 반환했다.
+- 2026-06-03 배포 후 `/openapi.json`의 `TurnFeedbackData` 필드는 `betterExpression`, `feedbackDetail`, `feedbackType`, `koreanAnalogy`, `turnId`로 바뀌었다. 이전 live smoke에서 보였던 `correctionPoint`, `correctionReason`, `plusOneExpression`, `praiseSummary`, `praiseReason` 구계약은 더 이상 노출되지 않았다.
+- 2026-06-03 배포 후 현재 시나리오 3개, 12턴 live smoke를 재실행했고 결과 JSON은 `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260603T043002Z.json`이다. 자동 이슈는 22건에서 0건으로 줄었고, GOOD/NEEDS 분류는 12개 모두 예상과 일치했다.
+- 2026-06-03 배포 후 점수/라벨은 최신 GOOD 비율 기준을 따랐다. 음식 2 GOOD/2 NEEDS는 `70/기초 회화 연습 단계`, 여행 3 GOOD/1 NEEDS는 `85/유학생 느낌`, 일상 1 GOOD/3 NEEDS는 `60/문장 뼈대 연습 단계`로 내려왔다.
+- 2026-06-03 배포 후 이전 개선 후보도 대부분 해결됐다. 떡볶이 GOOD 피드백은 음식, 시점, 동행만 칭찬했고, college friends 이후 next-question은 `Traveling with college friends sounds memorable.`로 바뀌었으며, sleeping habit GOOD 피드백은 `sleeping habit`과 `sleep too late`에 묶였다. 남은 사람 검토 후보는 여행 3번 GOOD 설명의 `소중한 경험`, 음식 세션 summary의 번역투 한국어 예시, 일상 세션 summary의 `사용자는` 문체다.
+- 2026-06-03 재사용을 위해 `scripts/current_scenario_smoke.py`를 추가했다. 첨부 시나리오 JSON의 꼬리 `|`를 제거해 파싱하고, develop AI에 `next-question`, `turn-feedback`, `session-feedback`를 순서대로 호출하며, null 필드를 제외한 결과 JSON을 `/private/tmp`에 저장한다.
+- 2026-06-03 Obsidian 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`에 `## 13. 최신 커밋 배포 후 현재 시나리오 재검증 2026-06-03` 섹션을 추가했다.
+- 2026-06-03 최신 커밋 배포 후 fresh verification도 통과했다. `/private/tmp/saynow-ai-venv/bin/python -m unittest tests.test_conversation_service`는 42개, `/private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`는 63개, `/private/tmp/saynow-ai-venv/bin/python -m compileall app tests scripts`, `git diff --check`가 모두 exit 0이었다.
+
 - 2026-06-03 최신 현재 시나리오 데이터 재검증은 `/Users/sangmin8817/.codex/attachments/049d2a95-1263-4ab8-b1e0-e2a8ceabbb13/pasted-text.txt`의 Free Talk 3개 시나리오, 12턴을 `http://43.202.146.182:8080` develop AI 서버에 직접 호출해 진행했다. 결과 JSON은 `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260602T164627Z.json`이다.
 - 2026-06-03 develop AI live smoke 결과, 12턴의 GOOD/NEEDS 분류는 예상과 모두 일치했지만 자동 이슈는 22건이었다. 이슈의 핵심은 최신 코드 품질 실패가 아니라 develop 서버 배포 미반영으로 보인다. `/openapi.json`의 `TurnFeedbackData`가 아직 `correctionPoint`, `correctionReason`, `plusOneExpression`, `praiseSummary`, `praiseReason` 계약을 노출했고, 실제 응답도 같은 예전 필드를 반환했다.
 - 2026-06-03 develop AI 서버에서는 이전에 보정한 품질 후보도 다시 개선 전처럼 관찰됐다. 음식 3번 GOOD 피드백은 친구와 먹은 떡볶이를 다시 “소중한 시간”으로 해석했고, 여행 3번 뒤 next-question은 `That sounds like a fun trip!`를 반복했으며, 일상 4번 GOOD 피드백은 sleeping habit 답변인데도 “뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌” 비유를 냈다.

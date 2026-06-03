@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 최신 커밋 배포 후 현재 시나리오 재검증
+
+- [x] 최신 커밋을 `origin/develop`에 push한다.
+- [x] develop AI 배포 GitHub Actions run 성공을 확인한다.
+- [x] 배포 후 `/health`와 `/openapi.json`에서 최신 필드 계약을 확인한다.
+- [x] 현재 시나리오 3개, 12턴 live smoke를 다시 실행한다.
+- [x] 배포 후 결과를 Obsidian 문서에 추가한다.
+- [x] 테스트와 diff check를 확인한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 최신 현재 시나리오 데이터 재검증과 문서화
 
 - [x] 첨부 시나리오 데이터와 기존 결과 JSON을 다시 확인한다.
