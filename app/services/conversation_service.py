@@ -1,4 +1,5 @@
 # 3차 MVP 프리톡 대화 API의 LLM 호출과 피드백 캐시를 담당한다.
+from dataclasses import dataclass
 from functools import wraps
 import json
 import re
@@ -34,7 +35,16 @@ from app.services.safety_guard import (
 
 
 logger = get_logger("conversation")
-_turn_feedback_cache: dict[int, dict[int, TurnFeedbackData]] = {}
+_TURN_FEEDBACK_CACHE_TTL_SECONDS = 3 * 60 * 60
+
+
+@dataclass(frozen=True)
+class _TurnFeedbackCacheEntry:
+    feedback: TurnFeedbackData
+    expires_at: float
+
+
+_turn_feedback_cache: dict[int, dict[int, _TurnFeedbackCacheEntry]] = {}
 _turn_feedback_cache_lock = RLock()
 _SESSION_SCORE_BANDS = (
     (90, 90, 95, "원어민에 가까운 자연스러움"),
@@ -175,13 +185,15 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
     summary = _postprocess_session_feedback_summary(summary, turn_feedbacks)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
-    return SessionFeedbackResponse(
+    response = SessionFeedbackResponse(
         sessionId=summary.sessionId,
         nativeScore=summary.nativeScore,
         nativeLevelLabel=summary.nativeLevelLabel,
         summary=summary.summary,
         turnFeedbacks=turn_feedbacks,
     )
+    _delete_turn_feedback_cache(request.sessionId)
+    return response
 
 
 @_record_workflow_duration("guide")
@@ -218,19 +230,34 @@ def clear_turn_feedback_cache() -> None:
         _turn_feedback_cache.clear()
 
 
-def get_cached_turn_feedback(session_id: int, turn_id: int) -> TurnFeedbackData | None:
+def get_cached_turn_feedback(session_id: int, turn_id: int, *, now: float | None = None) -> TurnFeedbackData | None:
+    current_time = _cache_now() if now is None else now
     with _turn_feedback_cache_lock:
-        return _turn_feedback_cache.get(session_id, {}).get(turn_id)
+        _purge_expired_turn_feedbacks_locked(current_time)
+        entry = _turn_feedback_cache.get(session_id, {}).get(turn_id)
+        return entry.feedback if entry else None
 
 
-def _store_turn_feedback(session_id: int, feedback: TurnFeedbackData) -> None:
+def _store_turn_feedback(session_id: int, feedback: TurnFeedbackData, *, now: float | None = None) -> None:
+    current_time = _cache_now() if now is None else now
     with _turn_feedback_cache_lock:
+        _purge_expired_turn_feedbacks_locked(current_time)
         session_feedbacks = _turn_feedback_cache.setdefault(session_id, {})
-        session_feedbacks[feedback.turnId] = feedback
+        session_feedbacks[feedback.turnId] = _TurnFeedbackCacheEntry(
+            feedback=feedback,
+            expires_at=current_time + _TURN_FEEDBACK_CACHE_TTL_SECONDS,
+        )
 
 
-def _get_expected_turn_feedbacks(session_id: int, expected_turn_ids: list[int]) -> list[TurnFeedbackData]:
+def _get_expected_turn_feedbacks(
+    session_id: int,
+    expected_turn_ids: list[int],
+    *,
+    now: float | None = None,
+) -> list[TurnFeedbackData]:
+    current_time = _cache_now() if now is None else now
     with _turn_feedback_cache_lock:
+        _purge_expired_turn_feedbacks_locked(current_time)
         session_feedbacks = _turn_feedback_cache.get(session_id, {})
         missing_turn_ids = [
             turn_id
@@ -239,7 +266,29 @@ def _get_expected_turn_feedbacks(session_id: int, expected_turn_ids: list[int]) 
         ]
         if missing_turn_ids:
             raise TurnFeedbackNotReadyError(missing_turn_ids)
-        return [session_feedbacks[turn_id] for turn_id in expected_turn_ids]
+        return [session_feedbacks[turn_id].feedback for turn_id in expected_turn_ids]
+
+
+def _delete_turn_feedback_cache(session_id: int) -> None:
+    with _turn_feedback_cache_lock:
+        _turn_feedback_cache.pop(session_id, None)
+
+
+def _cache_now() -> float:
+    return time.monotonic()
+
+
+def _purge_expired_turn_feedbacks_locked(now: float) -> None:
+    for session_id, session_feedbacks in list(_turn_feedback_cache.items()):
+        expired_turn_ids = [
+            turn_id
+            for turn_id, entry in session_feedbacks.items()
+            if entry.expires_at <= now
+        ]
+        for turn_id in expired_turn_ids:
+            del session_feedbacks[turn_id]
+        if not session_feedbacks:
+            del _turn_feedback_cache[session_id]
 
 
 def _next_question_system_prompt() -> str:

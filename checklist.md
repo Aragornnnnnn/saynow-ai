@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AI 턴 피드백 캐시 TTL 정리
+
+- [x] 캐시 TTL을 3시간으로 두는 기준을 `context-notes.md`에 기록한다.
+- [x] 3시간이 지난 턴 피드백이 조회와 최종 피드백 생성에서 제외되는 RED 테스트를 추가한다.
+- [x] `session-feedback` 성공 후 해당 세션 캐시가 삭제되는 RED 테스트를 추가한다.
+- [x] 실패한 `session-feedback` 요청은 재시도를 위해 캐시를 보존하도록 구현한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 3차 MVP Obsidian 문서 정리
 
 - [x] 상위 문서와 하위 문서의 전체 구조를 확인한다.

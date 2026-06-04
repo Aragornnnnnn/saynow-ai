@@ -1003,6 +1003,69 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.missing_turn_ids, [5000])
 
+    def test_cached_turn_feedback_expires_after_three_hours(self):
+        from app.models.conversation import TurnFeedbackData
+
+        feedback = TurnFeedbackData.model_validate({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
+            "feedbackDetail": "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다.",
+            "betterExpression": None,
+        })
+        ttl_seconds = 3 * 60 * 60
+
+        self.assertEqual(self.service._TURN_FEEDBACK_CACHE_TTL_SECONDS, ttl_seconds)
+        self.service._store_turn_feedback(1000, feedback, now=100.0)
+
+        self.assertIsNotNone(
+            self.service.get_cached_turn_feedback(1000, 5000, now=100.0 + ttl_seconds - 1)
+        )
+        self.assertIsNone(
+            self.service.get_cached_turn_feedback(1000, 5000, now=100.0 + ttl_seconds + 1)
+        )
+        with self.assertRaises(self.service.TurnFeedbackNotReadyError) as raised:
+            self.service._get_expected_turn_feedbacks(1000, [5000], now=100.0 + ttl_seconds + 1)
+
+        self.assertEqual(raised.exception.missing_turn_ids, [5000])
+
+    def test_session_feedback_clears_cached_turn_feedbacks_after_success(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        expected_turn_ids = self._cache_turn_feedbacks(["GOOD", "GOOD"])
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "sessionId": 1000,
+            "nativeScore": 88,
+            "nativeLevelLabel": "유학생 수준",
+            "summary": "질문에 맞게 답했고 이유도 자연스럽게 이어졌어요.",
+        })
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": expected_turn_ids,
+        })
+
+        self.service.generate_session_feedback(request)
+
+        for turn_id in expected_turn_ids:
+            self.assertIsNone(self.service.get_cached_turn_feedback(1000, turn_id))
+
+    def test_session_feedback_keeps_cached_turn_feedbacks_when_generation_fails(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        expected_turn_ids = self._cache_turn_feedbacks(["GOOD"])
+        self.service.chat = lambda *args, **kwargs: "not json"
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": expected_turn_ids,
+        })
+
+        with self.assertRaises(self.service.ConversationGenerationError):
+            self.service.generate_session_feedback(request)
+
+        self.assertIsNotNone(self.service.get_cached_turn_feedback(1000, expected_turn_ids[0]))
+
     def test_feedback_data_validates_type_specific_required_fields(self):
         from pydantic import ValidationError
         from app.models.conversation import FeedbackType, TurnFeedbackData

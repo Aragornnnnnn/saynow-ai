@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-04 AI 턴 피드백 캐시는 3차 MVP에서 세션 안의 임시 전달 장치지만, TTL과 성공 후 삭제가 없으면 AI 서버 프로세스가 살아 있는 동안 세션별 피드백이 계속 쌓인다. 사용자가 중간에 멈출 수 있으므로 TTL은 너무 짧게 잡지 않고 3시간으로 둔다.
+- 2026-06-04 정상 완료 세션은 `session-feedback` 응답을 만든 뒤 해당 `sessionId`의 캐시를 바로 삭제한다. `session-feedback` 생성이나 검증이 실패한 경우에는 재시도할 수 있도록 캐시를 보존한다.
+- 2026-06-04 TTL 보정은 RED 테스트 2개와 실패 시 캐시 보존 테스트 1개로 고정했다. 검증은 focused 3개, `tests.test_conversation_service` 47개, 전체 unittest 68개, `compileall app tests scripts`, `git diff --check`로 통과했다.
+
 - 2026-06-04 Obsidian 문서 정리는 GitHub 이슈 #44로 관리한다. 상위 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP.md`는 1014줄이고, 하위 검증 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`는 3186줄이다. 하위 문서에는 이전 smoke 원문 JSON이 여러 번 붙어 있어 읽기 부담이 크고, 상위 문서에는 `correctionPoint`, `praiseSummary` 같은 구 피드백 필드가 남아 있다.
 - 2026-06-04 정리 기준은 상위 문서가 제품/계약/운영 기준을 맡고, 하위 문서가 최신 품질 검증 결과와 원본 JSON 경로를 맡는 구조다. raw JSON 전문은 문서에 반복해서 붙이지 않고 `/private/tmp` 경로로 남긴다. 수치, 날짜, 커밋, 브랜치명, API 필드명, 테스트 명령은 의미 보존 대상으로 본다.
 - 2026-06-04 Obsidian 상위 문서는 396줄, 하위 품질 문서는 160줄로 줄였다. 상위 문서는 한 줄 결론, 문서 지도, 제품 방향, 대화 흐름, 데이터 모델, API 계약, AI 품질 기준, 구현 기록, 최신 검증 결과 순서로 재구성했다. 하위 문서는 최신 develop live smoke와 시나리오별 결과, 한국어 비유 보정 확인, 남은 품질 후보, 이전 raw JSON 경로 중심으로 정리했다. Mermaid는 상위 문서의 대화 흐름과 데이터 모델 2개만 유지했다.
