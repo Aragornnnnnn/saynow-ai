@@ -1,5 +1,10 @@
 # 작업 맥락 기록
 
+- 2026-06-04 Obsidian 문서 정리는 GitHub 이슈 #44로 관리한다. 상위 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP.md`는 1014줄이고, 하위 검증 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`는 3186줄이다. 하위 문서에는 이전 smoke 원문 JSON이 여러 번 붙어 있어 읽기 부담이 크고, 상위 문서에는 `correctionPoint`, `praiseSummary` 같은 구 피드백 필드가 남아 있다.
+- 2026-06-04 정리 기준은 상위 문서가 제품/계약/운영 기준을 맡고, 하위 문서가 최신 품질 검증 결과와 원본 JSON 경로를 맡는 구조다. raw JSON 전문은 문서에 반복해서 붙이지 않고 `/private/tmp` 경로로 남긴다. 수치, 날짜, 커밋, 브랜치명, API 필드명, 테스트 명령은 의미 보존 대상으로 본다.
+- 2026-06-04 Obsidian 상위 문서는 396줄, 하위 품질 문서는 160줄로 줄였다. 상위 문서는 한 줄 결론, 문서 지도, 제품 방향, 대화 흐름, 데이터 모델, API 계약, AI 품질 기준, 구현 기록, 최신 검증 결과 순서로 재구성했다. 하위 문서는 최신 develop live smoke와 시나리오별 결과, 한국어 비유 보정 확인, 남은 품질 후보, 이전 raw JSON 경로 중심으로 정리했다. Mermaid는 상위 문서의 대화 흐름과 데이터 모델 2개만 유지했다.
+- 2026-06-04 정리 전 원본은 `/private/tmp/saynow_3mvp_parent_before_humanizer_20260604.md`와 `/private/tmp/saynow_3mvp_quality_doc_before_humanizer_20260604.md`에 백업했다. 문서 펜스 검증 결과 상위 문서와 하위 문서 모두 코드 펜스가 균형을 맞췄고, 최신 live smoke 경로 `/private/tmp/saynow_3mvp_current_scenario_latest_smoke_20260604T043725Z.json`, 코드 커밋 `4dfc057`, 문서 커밋 `cf5a42a`, Wiki 커밋 `d54599b`를 보존했다.
+
 - 2026-06-04 작업 사항 문서 최신화는 GitHub 이슈 #43으로 따로 관리한다. 범위는 2026-06-03 말에 끝난 한국어 비유 품질 보정, 브랜치 이름 정리(`deploy/3-mvp-develop` -> `feat/3-mvp`), `origin/develop`과 `origin/feat/3-mvp` push 상태를 Obsidian과 GitHub Wiki에 남기는 것이다.
 - 2026-06-04 문서 문장은 `humanizer` 기준으로 짧게 쪼개고, 번역투 표현인 `~에 대해`, `~통해`, `할 수 있다` 남발을 줄인다. 다만 커밋 해시, 브랜치명, 테스트 명령, 경로는 의미 보존을 위해 그대로 둔다.
 - 2026-06-04 Obsidian 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`에 `## 14. 한국어 비유 품질 보정과 브랜치 정리 2026-06-04`를 추가했다. GitHub Wiki는 `3차-MVP-AI-계약과-품질-검증.md`와 `Release-Notes.md`를 갱신했고, Wiki 커밋 `d54599b docs: 3차 MVP 작업 사항 최신화`를 `origin/master`에 push했다.
