@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-04 작업 사항 문서 최신화는 GitHub 이슈 #43으로 따로 관리한다. 범위는 2026-06-03 말에 끝난 한국어 비유 품질 보정, 브랜치 이름 정리(`deploy/3-mvp-develop` -> `feat/3-mvp`), `origin/develop`과 `origin/feat/3-mvp` push 상태를 Obsidian과 GitHub Wiki에 남기는 것이다.
+- 2026-06-04 문서 문장은 `humanizer` 기준으로 짧게 쪼개고, 번역투 표현인 `~에 대해`, `~통해`, `할 수 있다` 남발을 줄인다. 다만 커밋 해시, 브랜치명, 테스트 명령, 경로는 의미 보존을 위해 그대로 둔다.
+- 2026-06-04 Obsidian 문서 `/Users/sangmin8817/기타 자료/Obsidian/SayNow/3차 MVP/현재 시나리오 데이터 품질 테스트 2026-06-03.md`에 `## 14. 한국어 비유 품질 보정과 브랜치 정리 2026-06-04`를 추가했다. GitHub Wiki는 `3차-MVP-AI-계약과-품질-검증.md`와 `Release-Notes.md`를 갱신했고, Wiki 커밋 `d54599b docs: 3차 MVP 작업 사항 최신화`를 `origin/master`에 push했다.
+
 - 2026-06-03 `koreanAnalogy`는 문법 설명 필드가 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드로 둔다. 이번 개선은 `I want try sushi next because I never eat it before.`와 `I spend free time to read books.`의 비유가 의미 풀이처럼 길어지거나 번역투 예시로 충분히 와닿지 않는 문제를 겨냥한다.
 - 2026-06-03 새 기준은 “일부러 어색한 한국어 예시 + 짧은 느낌 설명”이다. 문법 이유와 교정 근거는 `feedbackDetail`에 쓰고, `koreanAnalogy`에는 사용자가 바로 감을 잡을 수 있는 한국어식 어색함만 남긴다.
 - 2026-06-03 구현 결과, 턴 피드백 프롬프트에 `intentionally awkward Korean example`와 `short feeling explanation` 기준을 추가했다. 서버 후처리는 sushi 미경험 답변을 `다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어` 비유로, free-time 답변을 `여가 시간을 책 읽기 위해 보내요` 비유로 보정한다. 검증은 focused 3개, `tests.test_conversation_service` 44개, 전체 unittest 65개, `compileall app tests scripts`, `git diff --check`로 통과했다.

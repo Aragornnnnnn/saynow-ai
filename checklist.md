@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 3차 MVP 작업 사항 문서 최신화
+
+- [x] Obsidian 3차 MVP 하위 문서에 최신 작업 사항을 추가한다.
+- [x] GitHub Wiki의 3차 MVP 품질 검증 문서를 갱신한다.
+- [x] GitHub Wiki Release Notes에 이번 변경을 기록한다.
+- [x] humanizer 기준으로 한국어 문장을 점검한다.
+- [x] Wiki 변경분을 커밋하고 push한다.
+- [x] GitHub 이슈 #43 체크리스트를 갱신하고 완료 처리한다.
+- [x] 본 repo 작업 기록을 커밋한다.
+
 ## 한국어 비유 품질 개선
 
 - [x] 어색한 sushi/free-time 한국어 비유를 재현하는 RED 테스트를 추가한다.
