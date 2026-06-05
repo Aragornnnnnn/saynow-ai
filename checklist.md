@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 프롬프트 품질 개선
+
+- [x] `prompt-engineering-patterns` 기준으로 턴 피드백과 세션 highlight 프롬프트 개선점을 점검한다.
+- [x] `feedbackDetail`이 짧은 before→after와 한국어 이유를 요구하는 RED 테스트를 추가한다.
+- [x] 세션 `highlightMessage`가 근거 우선순위를 따르도록 RED 테스트를 추가한다.
+- [x] 턴 피드백 프롬프트에 구계약 필드 금지와 최소 의미 단위 교정 형식을 추가한다.
+- [x] 세션 피드백 프롬프트에 `benchmarkMessage`, gamifiable `detectedPatterns`, 반복 주제 우선순위를 추가한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## nativeScoreBreakdown 응답 제거
 
 - [x] 공개 `session-feedback` 응답에서 `nativeScoreBreakdown`이 없어야 하는 RED 테스트를 확인한다.

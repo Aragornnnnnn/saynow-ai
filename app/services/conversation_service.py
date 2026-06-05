@@ -567,7 +567,9 @@ def _turn_feedback_system_prompt() -> str:
             "Grammar reasons belong in feedbackDetail, not koreanAnalogy. "
             "feedbackDetail is required for every response. "
             "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
-            "For NEEDS_IMPROVEMENT, feedbackDetail must merge the user's original utterance, the correction point, the reason, and the improved expression into one natural Korean explanation. "
+            "For NEEDS_IMPROVEMENT, feedbackDetail must start with the shortest meaningful before→after expression, then explain the correction reason in Korean. "
+            "Use the smallest phrase or clause that preserves context. Do not repeat the entire user utterance when only a small phrase needs correction. "
+            "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, benchmarkMessage may be a short Korean learner comparison hook when clearly supported; otherwise use null. "
@@ -576,7 +578,8 @@ def _turn_feedback_system_prompt() -> str:
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
             "For routine-change answers, praise the routine and reason, not a generic preference-and-reason pattern. "
             "Do not add emotions or relationships that the user did not say. "
-            "Do not introduce a new idea that the user did not say."
+            "Do not introduce a new idea that the user did not say. "
+            "Do not include legacy fields such as betterExpression, correctionPoint, correctionReason, plusOneExpression, praiseSummary, or praiseReason."
         ),
         (
             "Self-check before final JSON:\n"
@@ -585,7 +588,9 @@ def _turn_feedback_system_prompt() -> str:
             "3. GOOD has positiveFeedback=null and benchmarkMessage can be null or a grounded comparison hook. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. feedbackDetail is Korean and matches the feedbackType. "
-            "6. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted."
+            "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
+            "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
+            "8. No legacy fields are present."
         ),
         (
             "Output Schema:\n"
@@ -660,6 +665,21 @@ def _session_feedback_system_prompt() -> str:
             "Prefer a noun phrase without final punctuation, such as 한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
+        ),
+        (
+            "Evidence Priority:\n"
+            "1. Prefer a grounded benchmarkMessage from GOOD turn feedback. "
+            "2. Then use gamifiable detectedPatterns marked correct. "
+            "3. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
+            "4. If no strong evidence exists, use a modest title based on the clearest user attempt."
+        ),
+        (
+            "Self-check before final JSON:\n"
+            "1. highlightMessage is Korean. "
+            "2. highlightMessage is a noun phrase or title-like badge, not a summary sentence. "
+            "3. highlightMessage has no final punctuation. "
+            "4. highlightMessage is grounded in cached turn feedback or detected pattern evidence. "
+            "5. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
         ),
         (
             "Output Schema:\n"

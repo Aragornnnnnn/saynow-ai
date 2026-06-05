@@ -318,7 +318,7 @@ class ConversationServiceTest(unittest.TestCase):
             "koreanAnalogy": "한국어로 비유하자면 '이게 무엇인지 모르겠어요'의 어순이 살짝 꼬인 느낌이에요.",
             "positiveFeedback": "어려운 간접의문문 구조를 써 보려는 시도 자체가 좋아요.",
             "feedbackDetail": (
-                "I don't know what is it → 간접의문문에서는 평서문 어순을 써야 해서 "
+                "what is it → what it is. 간접의문문에서는 평서문 어순을 써야 해서 "
                 "I don't know what it is라고 말하면 자연스러워요."
             ),
             "benchmarkMessage": None,
@@ -371,6 +371,17 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("konglish", system_prompt)
         self.assertIn("detectedPatterns", system_prompt)
         self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
+
+    def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
+        system_prompt = self.service._turn_feedback_system_prompt()
+
+        self.assertIn("shortest meaningful before→after expression", system_prompt)
+        self.assertIn("Do not repeat the entire user utterance", system_prompt)
+        self.assertIn("what is it → what it is", system_prompt)
+        self.assertIn("Do not include legacy fields", system_prompt)
+        self.assertIn("betterExpression", system_prompt)
+        self.assertIn("correctionPoint", system_prompt)
+        self.assertIn("correctionReason", system_prompt)
 
     def test_session_feedback_prompt_includes_cached_detected_patterns(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -869,8 +880,17 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("highlightMessage", system_prompt)
         self.assertIn("title-like badge phrase", system_prompt)
         self.assertIn("without final punctuation", system_prompt)
-        self.assertNotIn("nativeLevelLabel", system_prompt)
+        self.assertIn("Do not include nativeScore", system_prompt)
+        self.assertIn("nativeLevelLabel", system_prompt)
         self.assertNotIn("GOOD ratio", system_prompt)
+
+    def test_session_feedback_prompt_prioritizes_grounded_highlight_evidence(self):
+        system_prompt = self.service._session_feedback_system_prompt()
+
+        self.assertIn("Evidence Priority", system_prompt)
+        self.assertIn("benchmarkMessage", system_prompt)
+        self.assertIn("gamifiable detectedPatterns", system_prompt)
+        self.assertIn("Do not include nativeScore", system_prompt)
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(

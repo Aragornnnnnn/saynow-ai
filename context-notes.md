@@ -8,6 +8,7 @@
 - 2026-06-06 `nativeScore`는 더 이상 캐시된 `GOOD` 비율만으로 만들지 않는다. 턴별 사용자 발화를 기준으로 시도 단어수, 문장 복잡도, 이해 가능성을 계산하고, 세션에서는 각각 20%, 30%, 50% 가중 평균으로 합산한다. 이해 가능성은 최종 사용자 체감에 가장 직접적인 지표라 가장 큰 비중을 둔다.
 - 2026-06-06 `summary`는 총평 목적에서 벗어나 `highlightMessage`로 바꾼다. 이 필드는 문장형 설명보다 칭호나 배지에 가까운 후킹 문구다. 예시는 `한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람`처럼 마침표 없는 명사구가 더 적합하다.
 - 2026-06-06 턴별 `betterExpression`은 제거하고 `feedbackDetail` 하나에 원문, 교정 포인트, 이유, 개선 표현을 함께 담는다. `NEEDS_IMPROVEMENT`에도 사용자가 도전한 점을 짚는 `positiveFeedback`을 필수로 준다. `GOOD`에는 잘한 이유는 기존 `feedbackDetail`에 유지하고, 근거가 있을 때만 `benchmarkMessage`에 한국인 학습자 비교 문구를 담는다.
+- 2026-06-06 `prompt-engineering-patterns` 기준으로 턴 피드백 프롬프트를 다시 조정했다. `NEEDS_IMPROVEMENT.feedbackDetail`은 전체 발화를 반복하지 않고, 가장 짧은 의미 단위의 before→after 표현과 한국어 이유를 함께 담는 형식으로 유도한다. 세션 `highlightMessage`는 `benchmarkMessage`, gamifiable `detectedPatterns`, 반복된 구체 주제 순서로 근거를 고르게 했다.
 
 - 2026-06-04 AI 턴 피드백 캐시는 3차 MVP에서 세션 안의 임시 전달 장치지만, TTL과 성공 후 삭제가 없으면 AI 서버 프로세스가 살아 있는 동안 세션별 피드백이 계속 쌓인다. 사용자가 중간에 멈출 수 있으므로 TTL은 너무 짧게 잡지 않고 3시간으로 둔다.
 - 2026-06-04 정상 완료 세션은 `session-feedback` 응답을 만든 뒤 해당 `sessionId`의 캐시를 바로 삭제한다. `session-feedback` 생성이나 검증이 실패한 경우에는 재시도할 수 있도록 캐시를 보존한다.
