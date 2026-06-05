@@ -42,7 +42,7 @@ class ConversationRoutesTest(unittest.TestCase):
         conversation.generate_session_feedback = lambda request: SessionFeedbackResponse(
             sessionId=request.sessionId,
             nativeScore=82,
-            highlightMessage="한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
+            highlightMessage="한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람",
             turnFeedbacks=[
                 TurnFeedbackData(
                     turnId=5000,
@@ -167,7 +167,7 @@ class ConversationRoutesTest(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["sessionId"], 1000)
         self.assertEqual(body["nativeScore"], 82)
-        self.assertEqual(body["highlightMessage"], "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
+        self.assertEqual(body["highlightMessage"], "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람")
         self.assertNotIn("nativeScoreBreakdown", body)
         self.assertNotIn("nativeLevelLabel", body)
         self.assertNotIn("summary", body)

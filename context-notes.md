@@ -1,18 +1,20 @@
 # 작업 맥락 기록
 
+- 2026-06-06 세션 `highlightMessage` 정량 hook 우선순위는 GOOD에서 사용자가 잘한 포인트를 먼저 쓰는 것으로 확정했다. 1순위는 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 GOOD `benchmarkMessage`나 GOOD correct `detectedPatterns`에서 나온 칭찬형 hook이다. 이런 포인트가 없을 때만 NEEDS_IMPROVEMENT의 incorrect/attempted `detectedPatterns`를 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 도전형 hook으로 쓴다.
+- 2026-06-06 실제 OpenAI smoke 재검증에서 GOOD a/an 턴과 NEEDS 간접의문문 턴이 함께 있을 때 최종 API 응답은 `highlightMessage=한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`으로 나왔다. GOOD 정량 재료가 없는 단일 NEEDS 케이스에서는 모델 원문이 `간접의문문 어순에 도전한 사람`이어도 서버 최종 응답은 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`으로 정규화됐다.
 - 2026-06-06 실제 OpenAI smoke에서 `highlightMessage`가 `피자와 매운 맛에 대한 선호를 잘 표현한 사람`처럼 정량 근거 없는 일반 칭찬으로 내려왔다. 이 필드의 목적은 총평이 아니라 다음 발화별 피드백을 보게 만드는 hook이므로, gamifiable `detectedPatterns`나 `benchmarkMessage`에 `korean_pct` 근거가 있으면 `%`가 들어간 칭호형 문구를 우선한다.
 - 2026-06-06 `koreanAnalogy`는 `뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌` 같은 메타 설명이 아니라, 원래 영어가 한국어로 어떻게 들리는지 보여주는 인용형 비유여야 한다. 기본 형식은 `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.`로 둔다.
 - 2026-06-06 raw JSON에서 `koreanAnalogy` 안의 큰따옴표는 `\"`로 보일 수 있다. 이는 JSON 문자열 내부 큰따옴표를 표현하기 위한 escape이며, 클라이언트가 JSON을 파싱해 렌더링하면 역슬래시는 화면에 보이지 않는다.
 - 2026-06-06 LLM이 `detectedPatterns`를 누락해도 `I don't know what is it.`처럼 서버가 확실히 감지할 수 있는 간접의문문 어순 오류는 내부 캐시에 `indirect_question_word_order`로 보강한다. 이렇게 해야 세션 `highlightMessage`가 정량 hook으로 안정적으로 보정된다.
 - 2026-06-06 간접의문문 NEEDS 피드백에서 LLM이 `positiveFeedback`을 `좋은 시도였어요!`처럼 일반 칭찬으로만 내려주면 `간접의문문처럼 어려운 구조를 직접 써 보려는 시도 자체가 좋아요.`로 보정한다. NEEDS에서도 사용자가 도전한 구체 포인트를 짚어야 발화별 피드백을 읽을 이유가 생긴다.
-- 2026-06-06 실제 OpenAI smoke 재검증 결과는 `/private/tmp/saynow_session_feedback_llm_smoke_20260605T175134Z.json`에 저장했다. 최종 응답은 `highlightMessage=한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람`, NEEDS `koreanAnalogy=한국어로 비유하자면, "그게 뭔지 모르겠어"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.`, NEEDS `positiveFeedback=간접의문문처럼 어려운 구조를 직접 써 보려는 시도 자체가 좋아요.`였다.
+- 2026-06-06 이전 OpenAI smoke 재검증 결과는 `/private/tmp/saynow_session_feedback_llm_smoke_20260605T175134Z.json`에 저장했다. 이후 `highlightMessage` 정책은 GOOD 정량 칭찬 hook을 NEEDS 도전 hook보다 우선하는 기준으로 다시 조정했다.
 - 2026-06-06 한국인 오류 패턴 데이터는 1차 구현에서 BE DB가 아니라 AI 서버 seed JSON을 source of truth로 둔다. 외부 응답 계약은 유지하고, LLM이 추가로 반환하는 `detectedPatterns`는 응답 검증 전에 분리해 AI 서버 캐시에만 저장한다.
 - 2026-06-06 `breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 기본적으로 교정 폭격 대상이 아니라 게임화와 칭찬 소재로 쓴다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT` 우선 후보로 둔다.
 - 2026-06-06 `nativeScoreBreakdown`은 외부 응답으로 내리지 않고 내부 계산값으로만 둔다. 단어 수만 보지 않고 패턴 시도 여부를 보정값으로 활용하며, 어려운 구조를 회피하지 않고 시도한 경우 sentence complexity에 보너스를 주고 의미를 깨는 오류는 comprehensibility에서 더 크게 깎는다.
 
 - 2026-06-06 세션 피드백의 `nativeLevelLabel`은 제거한다. `nativeScore`는 FE의 `원어민 ← 사용자 → 토종 한국인 평균` 수준 UI에 쓰는 0-100 점수로 유지한다. 100에 가까울수록 원어민 쪽에 가깝고, FE가 왼쪽을 원어민으로 둘 때는 `100 - nativeScore`를 위치 계산에 쓴다.
 - 2026-06-06 `nativeScore`는 더 이상 캐시된 `GOOD` 비율만으로 만들지 않는다. 턴별 사용자 발화를 기준으로 시도 단어수, 문장 복잡도, 이해 가능성을 계산하고, 세션에서는 각각 20%, 30%, 50% 가중 평균으로 합산한다. 이해 가능성은 최종 사용자 체감에 가장 직접적인 지표라 가장 큰 비중을 둔다.
-- 2026-06-06 `summary`는 총평 목적에서 벗어나 `highlightMessage`로 바꾼다. 이 필드는 문장형 설명보다 칭호나 배지에 가까운 후킹 문구다. 예시는 `한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람`처럼 마침표 없는 명사구가 더 적합하다.
+- 2026-06-06 `summary`는 총평 목적에서 벗어나 `highlightMessage`로 바꾼다. 이 필드는 문장형 설명보다 칭호나 배지에 가까운 후킹 문구다. GOOD 정량 포인트가 있으면 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 잘한 포인트를 먼저 쓴다.
 - 2026-06-06 턴별 `betterExpression`은 제거하고 `feedbackDetail` 하나에 원문, 교정 포인트, 이유, 개선 표현을 함께 담는다. `NEEDS_IMPROVEMENT`에도 사용자가 도전한 점을 짚는 `positiveFeedback`을 필수로 준다. `GOOD`에는 잘한 이유는 기존 `feedbackDetail`에 유지하고, 근거가 있을 때만 `benchmarkMessage`에 한국인 학습자 비교 문구를 담는다.
 - 2026-06-06 `prompt-engineering-patterns` 기준으로 턴 피드백 프롬프트를 다시 조정했다. `NEEDS_IMPROVEMENT.feedbackDetail`은 전체 발화를 반복하지 않고, 가장 짧은 의미 단위의 before→after 표현과 한국어 이유를 함께 담는 형식으로 유도한다. 세션 `highlightMessage`는 `benchmarkMessage`, gamifiable `detectedPatterns`, 반복된 구체 주제 순서로 근거를 고르게 했다.
 

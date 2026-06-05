@@ -694,16 +694,19 @@ def _session_feedback_system_prompt() -> str:
             "highlightMessage must be written in Korean. "
             "It is a title-like badge phrase, not a full summary sentence. "
             "It must hook the user into reading turn-level feedback. "
-            "Prefer a quantitative noun phrase with a percentage number and without final punctuation, such as 한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람. "
+            "Prefer a quantitative noun phrase about what the user did well, such as 한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람. "
+            "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
+            "Return the phrase without final punctuation. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
         ),
         (
             "Evidence Priority:\n"
             "1. Prefer a grounded benchmarkMessage from GOOD turn feedback because it already contains a quantitative hook. "
-            "2. Then use gamifiable detectedPatterns marked correct, incorrect, or attempted. The title must include a percentage number when koreanPct is available. "
-            "3. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
-            "4. If no quantitative evidence exists, use a modest title based on the clearest user attempt."
+            "2. Then use gamifiable detectedPatterns from GOOD turns when they are marked correct. "
+            "3. If no GOOD quantitative hook exists, use gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook. The title must include a percentage number when koreanPct is available. "
+            "4. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
+            "5. If no quantitative evidence exists, use a modest title based on the clearest user attempt."
         ),
         (
             "Self-check before final JSON:\n"
@@ -1412,7 +1415,7 @@ def _postprocess_highlight_message(
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str:
     quantitative_hook = _quantitative_highlight_message(turn_feedback_entries)
-    if quantitative_hook and not _contains_percentage(highlight_message):
+    if quantitative_hook:
         return quantitative_hook
     turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
     if not _is_korean_text(highlight_message):
@@ -1462,14 +1465,42 @@ def _quantitative_highlight_message(
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str | None:
     for entry in turn_feedback_entries:
-        if entry.feedback.benchmarkMessage and _contains_percentage(entry.feedback.benchmarkMessage):
+        if (
+            entry.feedback.feedbackType == FeedbackType.GOOD
+            and entry.feedback.benchmarkMessage
+            and _contains_percentage(entry.feedback.benchmarkMessage)
+        ):
             return re.sub(r"[.!。]+$", "", entry.feedback.benchmarkMessage).strip()
     for entry in turn_feedback_entries:
+        if entry.feedback.feedbackType != FeedbackType.GOOD:
+            continue
+        for detected_pattern in entry.detected_patterns:
+            pattern = detected_pattern.pattern
+            if (
+                detected_pattern.status == "correct"
+                and pattern.gamifiable
+                and pattern.korean_pct is not None
+            ):
+                return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+    for entry in turn_feedback_entries:
+        if entry.feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+            continue
         for detected_pattern in entry.detected_patterns:
             pattern = detected_pattern.pattern
             if pattern.gamifiable and pattern.korean_pct is not None:
-                return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+                return _attempt_highlight_message(pattern.korean_pct, pattern.display_name)
     return None
+
+
+def _attempt_highlight_message(korean_pct: float, display_name: str) -> str:
+    normalized_name = display_name.replace(" 어순", "")
+    return f"한국인 {_format_percentage(korean_pct)}%가 헷갈리는 {normalized_name}에 도전한 사람"
+
+
+def _format_percentage(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return str(value)
 
 
 def _clamp_score(score: int, min_score: int, max_score: int) -> int:

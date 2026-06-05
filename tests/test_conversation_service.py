@@ -917,7 +917,7 @@ class ConversationServiceTest(unittest.TestCase):
             },
             {
                 "sessionId": 1000,
-                "highlightMessage": "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
+                "highlightMessage": "한국인 40%가 헷갈리는 간접의문문에 도전한 사람",
             },
         ]
         self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
@@ -933,7 +933,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
+        self.assertEqual(result.highlightMessage, "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람")
         self.assertEqual(result.nativeScore, 74)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
@@ -958,7 +958,64 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not include nativeScore", system_prompt)
         self.assertIn("must include a percentage number", system_prompt)
 
-    def test_session_feedback_replaces_weak_highlight_with_quantitative_detected_pattern_hook(self):
+    def test_session_feedback_prefers_good_benchmark_over_needs_pattern_hook(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"사과 하나를 먹었어요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "a/an이 필요한 자리에서 an apple을 정확히 쓴 점이 좋아요.",
+                "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+                "detectedPatterns": [
+                    {
+                        "errorType": "article_a_omission",
+                        "status": "correct",
+                        "evidence": "an apple",
+                    }
+                ],
+            },
+            {
+                "turnId": 5001,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "한국어로 비유하자면, \"그게 뭔지 모르겠어\"라고 어순이 살짝 꼬인 말처럼 들려요.",
+                "positiveFeedback": "헷갈리는 간접의문문 구조를 직접 써 보려는 시도는 좋아요.",
+                "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [
+                    {
+                        "errorType": "indirect_question_word_order",
+                        "status": "incorrect",
+                        "evidence": "what is it",
+                    }
+                ],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인 40%가 헷갈리는 간접의문문에 도전한 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(turn_id=5000, user_utterance="I ate an apple because I was hungry.")
+        )
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(turn_id=5001, user_utterance="I don't know what is it.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000, 5001],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+
+    def test_session_feedback_replaces_weak_highlight_with_needs_attempt_hook_when_no_good_benchmark(self):
         from app.models.conversation import SessionFeedbackRequest
 
         responses = [
@@ -995,7 +1052,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람")
+        self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문에 도전한 사람")
         self.assertIn("%", result.highlightMessage)
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):

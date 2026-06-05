@@ -2,6 +2,8 @@
 
 ## 피드백 LLM smoke 후속 보정
 
+- [x] `highlightMessage`는 GOOD 정량 칭찬 hook을 최우선으로 쓰고, GOOD hook이 없을 때만 NEEDS 도전 hook을 쓰는 기준을 RED 테스트로 고정한다.
+- [x] NEEDS fallback 문구를 `바로잡을 사람`이 아니라 `도전한 사람` 계열로 보정한다.
 - [x] 실제 LLM smoke에서 약한 `highlightMessage`와 메타 설명형 `koreanAnalogy`가 나온 문제를 RED 테스트로 고정한다.
 - [x] `highlightMessage`가 가능한 경우 정량 수치 기반 칭호형 hook으로 보정되도록 seed와 후처리를 보강한다.
 - [x] `koreanAnalogy`가 `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식의 한국어 인용 비유를 따르도록 프롬프트와 후처리를 보강한다.
