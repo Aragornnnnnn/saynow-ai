@@ -1,5 +1,17 @@
 # 작업 체크리스트
 
+## 세션 피드백 응답 계약 개편
+
+- [x] `highlightMessage`가 칭호형 후킹 문구라는 기준을 `context-notes.md`에 기록한다.
+- [x] `nativeLevelLabel`, `summary`, `betterExpression` 제거와 새 필드 계약을 검증하는 RED 테스트를 추가한다.
+- [x] 턴 피드백 캐시에 시도 단어수, 문장 복잡도, 이해 가능성 점수 구성요소를 저장하는 RED 테스트를 추가한다.
+- [x] `session-feedback` 응답 모델과 라우트 계약을 새 명세에 맞게 변경한다.
+- [x] `nativeScore`를 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50% 기준으로 계산한다.
+- [x] `NEEDS_IMPROVEMENT`에는 `positiveFeedback`과 통합 `feedbackDetail`을 제공하고, `GOOD`에는 `benchmarkMessage`를 nullable로 제공한다.
+- [x] README 피드백 명세를 새 응답 계약으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## AI 턴 피드백 캐시 TTL 정리
 
 - [x] 캐시 TTL을 3시간으로 두는 기준을 `context-notes.md`에 기록한다.

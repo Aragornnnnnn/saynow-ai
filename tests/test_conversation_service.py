@@ -96,9 +96,10 @@ class ConversationServiceTest(unittest.TestCase):
         for offset, feedback_type in enumerate(feedback_types):
             turn_id = 5000 + offset
             expected_turn_ids.append(turn_id)
-            better_expression = None
+            positive_feedback = None
+            benchmark_message = None
             if feedback_type == "NEEDS_IMPROVEMENT":
-                better_expression = "I usually drink water in the morning."
+                positive_feedback = "어려운 문장 구조를 시도한 점이 좋아요."
             self.service._store_turn_feedback(
                 1000,
                 TurnFeedbackData.model_validate({
@@ -106,7 +107,8 @@ class ConversationServiceTest(unittest.TestCase):
                     "feedbackType": feedback_type,
                     "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
                     "feedbackDetail": "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다.",
-                    "betterExpression": better_expression,
+                    "positiveFeedback": positive_feedback,
+                    "benchmarkMessage": benchmark_message,
                 }),
             )
         return expected_turn_ids
@@ -123,9 +125,7 @@ class ConversationServiceTest(unittest.TestCase):
         expected_turn_ids = self._cache_turn_feedbacks(feedback_types)
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "sessionId": 1000,
-            "nativeScore": llm_score,
-            "nativeLevelLabel": llm_label,
-            "summary": "질문에 맞춰 답하려는 힘이 보였어요. 다음에는 어색한 표현을 한 문장씩 고쳐 말해 보세요.",
+            "highlightMessage": "핵심 질문에 자연스럽게 답한 사람",
         })
         request = SessionFeedbackRequest.model_validate({
             "sessionId": 1000,
@@ -308,7 +308,32 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertIn("방어적", cached.feedbackDetail)
-        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
+        self.assertIn("시도", cached.positiveFeedback)
+
+    def test_turn_feedback_accepts_positive_feedback_and_merged_detail_without_better_expression(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면 '이게 무엇인지 모르겠어요'의 어순이 살짝 꼬인 느낌이에요.",
+            "positiveFeedback": "어려운 간접의문문 구조를 써 보려는 시도 자체가 좋아요.",
+            "feedbackDetail": (
+                "I don't know what is it → 간접의문문에서는 평서문 어순을 써야 해서 "
+                "I don't know what it is라고 말하면 자연스러워요."
+            ),
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIn("간접의문문", cached.positiveFeedback)
+        self.assertIn("I don't know what it is", cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+        self.assertFalse(hasattr(cached, "betterExpression"))
 
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}
@@ -332,7 +357,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.feedbackStatus, "PREPARING")
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
         self.assertIn("quality is more important than speed or token savings", captured["system"])
         self.assertIn("koreanAnalogy", captured["system"])
         self.assertIn("Copy it exactly", captured["system"])
@@ -352,7 +377,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.betterExpression)
+        self.assertFalse(hasattr(cached, "betterExpression"))
         self.assertIn("because", cached.feedbackDetail)
 
     def test_turn_feedback_prompt_defines_good_needs_decision_gates(self):
@@ -384,7 +409,6 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.betterExpression, "I like pizza because it is spicy.")
         self.assertIn("because 뒤", cached.feedbackDetail)
         self.assertIn("it is spicy", cached.feedbackDetail)
 
@@ -403,7 +427,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
         self.assertIn("방어적", cached.feedbackDetail)
         self.assertIn("몰아붙이", cached.feedbackDetail)
 
@@ -457,7 +481,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.betterExpression)
+        self.assertFalse(hasattr(cached, "betterExpression"))
         self.assertIn("좋아하는 음식과 이유", cached.feedbackDetail)
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
@@ -476,7 +500,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.betterExpression)
+        self.assertFalse(hasattr(cached, "betterExpression"))
         self.assertIn("Vancouver", cached.feedbackDetail)
         self.assertIn("여행지와 의도", cached.feedbackDetail)
 
@@ -495,7 +519,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.betterExpression, "I cook sometimes, but I am not good at cooking.")
+        self.assertIn("I cook sometimes, but I am not good at cooking", cached.feedbackDetail)
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
     def test_turn_feedback_repairs_blunt_wanna_know_that_better_expression(self):
@@ -512,7 +536,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
         self.assertIn("방어적", cached.feedbackDetail)
         self.assertIn("몰아붙이", cached.feedbackDetail)
 
@@ -552,7 +576,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.betterExpression)
+        self.assertFalse(hasattr(cached, "betterExpression"))
         self.assertIn("수면 습관", cached.koreanAnalogy)
         self.assertIn("sleeping habit", cached.feedbackDetail)
         self.assertIn("sleep too late", cached.feedbackDetail)
@@ -671,9 +695,8 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.betterExpression, "The most memorable part was seeing the sea at night.")
+        self.assertIn("The most memorable part was seeing the sea at night", cached.feedbackDetail)
         self.assertIn("관사", cached.feedbackDetail)
-        self.assertNotIn("Most memorable part", cached.feedbackDetail)
 
     def test_session_feedback_uses_cached_turn_feedbacks_in_expected_order(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -716,19 +739,65 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 90)
-        self.assertEqual(result.nativeLevelLabel, "원어민에 가까운 자연스러움")
+        self.assertEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeScoreBreakdown.attemptedWordScore, 56)
+        self.assertEqual(result.nativeScoreBreakdown.sentenceComplexityScore, 60)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
         self.assertEqual([feedback.turnId for feedback in result.turnFeedbacks], [5000, 5001])
 
-    def test_session_feedback_prompt_delegates_score_label_to_server_ratio_policy(self):
+    def test_session_feedback_returns_native_score_breakdown_and_title_like_highlight(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
+                "benchmarkMessage": "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람",
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I like pizza because it is spicy.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
+        self.assertGreater(result.nativeScoreBreakdown.attemptedWordScore, 0)
+        self.assertGreater(result.nativeScoreBreakdown.sentenceComplexityScore, 0)
+        self.assertEqual(
+            result.nativeScore,
+            round(
+                result.nativeScoreBreakdown.attemptedWordScore * 0.2
+                + result.nativeScoreBreakdown.sentenceComplexityScore * 0.3
+                + result.nativeScoreBreakdown.comprehensibilityScore * 0.5
+            ),
+        )
+        self.assertFalse(hasattr(result, "nativeLevelLabel"))
+        self.assertFalse(hasattr(result, "summary"))
+
+    def test_session_feedback_prompt_delegates_highlight_to_model_and_score_to_server(self):
         system_prompt = self.service._session_feedback_system_prompt()
 
-        self.assertIn("The server will calibrate nativeScore", system_prompt)
-        self.assertIn("GOOD ratio", system_prompt)
-        self.assertIn("원어민에 가까운 자연스러움", system_prompt)
-        self.assertNotIn("토종 한국인 느낌", system_prompt)
-        self.assertNotIn("영어 유치원 수준", system_prompt)
-        self.assertNotIn("재미교포 느낌", system_prompt)
+        self.assertIn("highlightMessage", system_prompt)
+        self.assertIn("title-like badge phrase", system_prompt)
+        self.assertIn("without final punctuation", system_prompt)
+        self.assertNotIn("nativeLevelLabel", system_prompt)
+        self.assertNotIn("GOOD ratio", system_prompt)
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(
@@ -736,8 +805,8 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=72,
         )
 
-        self.assertEqual(result.nativeScore, 90)
-        self.assertEqual(result.nativeLevelLabel, "원어민에 가까운 자연스러움")
+        self.assertEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
 
     def test_session_feedback_maps_four_turns_with_three_good_to_study_abroad_band(self):
         result = self._session_feedback_result_for_types(
@@ -745,8 +814,8 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=95,
         )
 
-        self.assertEqual(result.nativeScore, 89)
-        self.assertEqual(result.nativeLevelLabel, "유학생 느낌")
+        self.assertEqual(result.nativeScore, 70)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 84)
 
     def test_session_feedback_maps_five_turns_with_three_good_to_basic_conversation_band(self):
         result = self._session_feedback_result_for_types(
@@ -755,8 +824,8 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="원어민에 가까운 자연스러움",
         )
 
-        self.assertEqual(result.nativeScore, 81)
-        self.assertEqual(result.nativeLevelLabel, "기초 회화 연습 단계")
+        self.assertEqual(result.nativeScore, 68)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 80)
 
     def test_session_feedback_maps_four_turns_with_one_good_to_sentence_structure_band(self):
         result = self._session_feedback_result_for_types(
@@ -765,8 +834,8 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="원어민에 가까운 자연스러움",
         )
 
-        self.assertEqual(result.nativeScore, 69)
-        self.assertEqual(result.nativeLevelLabel, "문장 뼈대 연습 단계")
+        self.assertEqual(result.nativeScore, 64)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 71)
 
     def test_session_feedback_maps_five_all_needs_to_basic_correction_band(self):
         result = self._session_feedback_result_for_types(
@@ -781,8 +850,8 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="유학생 느낌",
         )
 
-        self.assertEqual(result.nativeScore, 59)
-        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
+        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
 
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -816,9 +885,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertIn("말", result.summary)
-        self.assertNotIn("You did well", result.summary)
-        self.assertRegex(result.summary, r"[가-힣]")
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertNotIn("You did well", result.highlightMessage)
 
     def test_session_feedback_softens_document_style_korean_summary(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -853,10 +921,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertNotIn("구성하는 데 있어", result.summary)
-        self.assertNotIn("자연스러움을 높일 수 있습니다", result.summary)
-        self.assertIn("기본적인 뜻은 전달했어요", result.summary)
-        self.assertIn("더 자연스럽게 들립니다", result.summary)
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertNotIn("구성하는 데 있어", result.highlightMessage)
+        self.assertNotIn("자연스러움을 높일 수 있습니다", result.highlightMessage)
 
     def test_session_feedback_softens_live_smoke_routine_summary_style(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -891,11 +958,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertNotIn("설명하는 데 있어", result.summary)
-        self.assertNotIn("것입니다", result.summary)
-        self.assertNotIn("하지만,", result.summary)
-        self.assertIn("설명하려고 한 점", result.summary)
-        self.assertIn("더 자연스럽게 들립니다", result.summary)
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertNotIn("설명하는 데 있어", result.highlightMessage)
+        self.assertNotIn("것입니다", result.highlightMessage)
 
     def test_session_feedback_uses_basic_correction_band_when_all_turn_feedbacks_need_improvement(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -944,10 +1009,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertLessEqual(result.nativeScore, 59)
-        self.assertGreaterEqual(result.nativeScore, 50)
-        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
-        self.assertIn("대부분의 턴에서", result.summary)
+        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
+        self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
     def test_session_feedback_uses_single_turn_summary_when_only_one_needs_improvement(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -982,12 +1046,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertLessEqual(result.nativeScore, 59)
-        self.assertGreaterEqual(result.nativeScore, 50)
-        self.assertEqual(result.nativeLevelLabel, "기초 문장 교정 단계")
-        self.assertIn("이번 턴에서는", result.summary)
-        self.assertNotIn("대부분의 턴", result.summary)
-        self.assertIn("In the morning", result.summary)
+        self.assertEqual(result.nativeScore, 65)
+        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
+        self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
     def test_session_feedback_raises_not_ready_when_expected_turn_is_missing(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1011,7 +1072,8 @@ class ConversationServiceTest(unittest.TestCase):
             "feedbackType": "GOOD",
             "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
             "feedbackDetail": "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다.",
-            "betterExpression": None,
+            "positiveFeedback": None,
+            "benchmarkMessage": None,
         })
         ttl_seconds = 3 * 60 * 60
 
@@ -1076,7 +1138,7 @@ class ConversationServiceTest(unittest.TestCase):
                 feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
                 koreanAnalogy="한국어로 비유하자면 '피자 좋아요'처럼 들려요.",
                 feedbackDetail="이유",
-                betterExpression=None,
+                benchmarkMessage=None,
             )
 
         with self.assertRaises(ValidationError):
@@ -1084,8 +1146,9 @@ class ConversationServiceTest(unittest.TestCase):
                 turnId=5000,
                 feedbackType=FeedbackType.GOOD,
                 koreanAnalogy="한국어로 비유하자면 '피자 좋아요'처럼 들려요.",
+                positiveFeedback="시도한 점이 좋아요.",
                 feedbackDetail="좋아요.",
-                betterExpression="I like pizza.",
+                benchmarkMessage=None,
             )
 
     def test_feedback_data_rejects_fields_from_other_feedback_type(self):
@@ -1105,10 +1168,11 @@ class ConversationServiceTest(unittest.TestCase):
             turnId=5000,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy="한국어로 비유하자면 '조금 날카롭게 들려요'처럼 들려요.",
-            feedbackDetail="상대에게 따지는 느낌이 날 수 있어서 더 부드럽게 물어보는 편이 좋아요.",
-            betterExpression="I wonder why you are curious about it.",
+            positiveFeedback="질문 의도를 확인하려고 한 점은 좋아요.",
+            feedbackDetail="상대에게 따지는 느낌이 날 수 있어서 I wonder why you are curious about it.처럼 물어보는 편이 좋아요.",
+            benchmarkMessage=None,
         )
-        self.assertEqual(valid.betterExpression, "I wonder why you are curious about it.")
+        self.assertIn("I wonder why you are curious about it", valid.feedbackDetail)
 
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest

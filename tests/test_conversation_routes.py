@@ -20,6 +20,7 @@ class ConversationRoutesTest(unittest.TestCase):
             TurnFeedbackCreationResponse,
             TurnFeedbackData,
             TurnFeedbackStatus,
+            NativeScoreBreakdown,
         )
 
         self.client = TestClient(app)
@@ -42,15 +43,20 @@ class ConversationRoutesTest(unittest.TestCase):
         conversation.generate_session_feedback = lambda request: SessionFeedbackResponse(
             sessionId=request.sessionId,
             nativeScore=82,
-            nativeLevelLabel="유학생 수준",
-            summary="하고 싶은 말을 끝까지 전달하는 힘이 좋았어요. 간접의문문 어순만 조금 다듬으면 더 자연스러워요.",
+            nativeScoreBreakdown=NativeScoreBreakdown(
+                attemptedWordScore=76,
+                sentenceComplexityScore=68,
+                comprehensibilityScore=91,
+            ),
+            highlightMessage="한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
             turnFeedbacks=[
                 TurnFeedbackData(
                     turnId=5000,
                     feedbackType=FeedbackType.GOOD,
                     koreanAnalogy="한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
+                    positiveFeedback=None,
                     feedbackDetail="이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
-                    betterExpression=None,
+                    benchmarkMessage="한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람",
                 )
             ],
         )
@@ -167,10 +173,17 @@ class ConversationRoutesTest(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["sessionId"], 1000)
         self.assertEqual(body["nativeScore"], 82)
-        self.assertEqual(body["nativeLevelLabel"], "유학생 수준")
+        self.assertEqual(body["highlightMessage"], "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
+        self.assertEqual(body["nativeScoreBreakdown"]["comprehensibilityScore"], 91)
+        self.assertNotIn("nativeLevelLabel", body)
+        self.assertNotIn("summary", body)
         self.assertEqual(body["turnFeedbacks"][0]["feedbackType"], "GOOD")
         self.assertIn("feedbackDetail", body["turnFeedbacks"][0])
-        self.assertIsNone(body["turnFeedbacks"][0]["betterExpression"])
+        self.assertNotIn("betterExpression", body["turnFeedbacks"][0])
+        self.assertEqual(
+            body["turnFeedbacks"][0]["benchmarkMessage"],
+            "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람",
+        )
 
     def test_session_feedback_route_returns_not_ready_error(self):
         captured = []

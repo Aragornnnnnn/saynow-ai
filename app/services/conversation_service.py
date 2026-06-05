@@ -16,11 +16,12 @@ from app.models.conversation import (
     FeedbackType,
     GuideChatRequest,
     GuideChatResponse,
+    NativeScoreBreakdown,
     NextQuestionRequest,
     NextQuestionResponse,
     SessionFeedbackRequest,
     SessionFeedbackResponse,
-    SessionFeedbackSummaryResponse,
+    SessionFeedbackHighlightResponse,
     TurnFeedbackCreationResponse,
     TurnFeedbackData,
     TurnFeedbackRequest,
@@ -41,18 +42,12 @@ _TURN_FEEDBACK_CACHE_TTL_SECONDS = 3 * 60 * 60
 @dataclass(frozen=True)
 class _TurnFeedbackCacheEntry:
     feedback: TurnFeedbackData
+    native_score_breakdown: NativeScoreBreakdown
     expires_at: float
 
 
 _turn_feedback_cache: dict[int, dict[int, _TurnFeedbackCacheEntry]] = {}
 _turn_feedback_cache_lock = RLock()
-_SESSION_SCORE_BANDS = (
-    (90, 90, 95, "원어민에 가까운 자연스러움"),
-    (75, 82, 89, "유학생 느낌"),
-    (50, 70, 81, "기초 회화 연습 단계"),
-    (25, 60, 69, "문장 뼈대 연습 단계"),
-    (0, 50, 59, "기초 문장 교정 단계"),
-)
 
 
 def _record_workflow_duration(workflow: str):
@@ -130,6 +125,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
 
     stage_started_at = time.perf_counter()
     data = _parse_json_object(raw, workflow=workflow)
+    _normalize_turn_feedback_data_before_validation(data)
     try:
         feedback = TurnFeedbackData.model_validate(data)
     except ValidationError as exc:
@@ -143,7 +139,8 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         )
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
-    _store_turn_feedback(request.sessionId, feedback)
+    native_score_breakdown = _score_turn_feedback(request, feedback)
+    _store_turn_feedback(request.sessionId, feedback, native_score_breakdown=native_score_breakdown)
     _log_workflow_stage_duration(workflow, "parse_validate_store", stage_started_at)
 
     return TurnFeedbackCreationResponse(
@@ -156,7 +153,8 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
 @_record_workflow_duration("session_feedback")
 def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbackResponse:
     workflow = "session_feedback"
-    turn_feedbacks = _get_expected_turn_feedbacks(request.sessionId, request.expectedTurnIds)
+    turn_feedback_entries = _get_expected_turn_feedback_entries(request.sessionId, request.expectedTurnIds)
+    turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
 
     stage_started_at = time.perf_counter()
     raw = _call_chat(
@@ -170,26 +168,29 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
 
     stage_started_at = time.perf_counter()
     data = _parse_json_object(raw, workflow=workflow)
+    _normalize_session_feedback_data_before_validation(data, turn_feedbacks)
     try:
-        summary = SessionFeedbackSummaryResponse.model_validate(data)
+        highlight = SessionFeedbackHighlightResponse.model_validate(data)
     except ValidationError as exc:
         logger.error("세션 피드백 응답 계약 검증 실패 | sessionId=%s error=%s", request.sessionId, exc)
         raise ConversationGenerationError("session feedback response does not match contract") from exc
-    if summary.sessionId != request.sessionId:
+    if highlight.sessionId != request.sessionId:
         logger.error(
             "세션 피드백 ID 불일치 | request_session_id=%s response_session_id=%s",
             request.sessionId,
-            summary.sessionId,
+            highlight.sessionId,
         )
         raise ConversationGenerationError("session feedback id does not match request session id")
-    summary = _postprocess_session_feedback_summary(summary, turn_feedbacks)
+    native_score_breakdown = _aggregate_native_score_breakdown(turn_feedback_entries)
+    native_score = _native_score_from_breakdown(native_score_breakdown)
+    highlight_message = _postprocess_highlight_message(highlight.highlightMessage, turn_feedbacks)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     response = SessionFeedbackResponse(
-        sessionId=summary.sessionId,
-        nativeScore=summary.nativeScore,
-        nativeLevelLabel=summary.nativeLevelLabel,
-        summary=summary.summary,
+        sessionId=highlight.sessionId,
+        nativeScore=native_score,
+        nativeScoreBreakdown=native_score_breakdown,
+        highlightMessage=highlight_message,
         turnFeedbacks=turn_feedbacks,
     )
     _delete_turn_feedback_cache(request.sessionId)
@@ -238,13 +239,20 @@ def get_cached_turn_feedback(session_id: int, turn_id: int, *, now: float | None
         return entry.feedback if entry else None
 
 
-def _store_turn_feedback(session_id: int, feedback: TurnFeedbackData, *, now: float | None = None) -> None:
+def _store_turn_feedback(
+    session_id: int,
+    feedback: TurnFeedbackData,
+    *,
+    native_score_breakdown: NativeScoreBreakdown | None = None,
+    now: float | None = None,
+) -> None:
     current_time = _cache_now() if now is None else now
     with _turn_feedback_cache_lock:
         _purge_expired_turn_feedbacks_locked(current_time)
         session_feedbacks = _turn_feedback_cache.setdefault(session_id, {})
         session_feedbacks[feedback.turnId] = _TurnFeedbackCacheEntry(
             feedback=feedback,
+            native_score_breakdown=native_score_breakdown or _fallback_turn_score_breakdown(feedback),
             expires_at=current_time + _TURN_FEEDBACK_CACHE_TTL_SECONDS,
         )
 
@@ -255,6 +263,18 @@ def _get_expected_turn_feedbacks(
     *,
     now: float | None = None,
 ) -> list[TurnFeedbackData]:
+    return [
+        entry.feedback
+        for entry in _get_expected_turn_feedback_entries(session_id, expected_turn_ids, now=now)
+    ]
+
+
+def _get_expected_turn_feedback_entries(
+    session_id: int,
+    expected_turn_ids: list[int],
+    *,
+    now: float | None = None,
+) -> list[_TurnFeedbackCacheEntry]:
     current_time = _cache_now() if now is None else now
     with _turn_feedback_cache_lock:
         _purge_expired_turn_feedbacks_locked(current_time)
@@ -266,7 +286,7 @@ def _get_expected_turn_feedbacks(
         ]
         if missing_turn_ids:
             raise TurnFeedbackNotReadyError(missing_turn_ids)
-        return [session_feedbacks[turn_id].feedback for turn_id in expected_turn_ids]
+        return [session_feedbacks[turn_id] for turn_id in expected_turn_ids]
 
 
 def _delete_turn_feedback_cache(session_id: int) -> None:
@@ -276,6 +296,109 @@ def _delete_turn_feedback_cache(session_id: int) -> None:
 
 def _cache_now() -> float:
     return time.monotonic()
+
+
+def _score_turn_feedback(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> NativeScoreBreakdown:
+    words = _english_words(request.turn.userUtterance)
+    return NativeScoreBreakdown(
+        attemptedWordScore=_attempted_word_score(words),
+        sentenceComplexityScore=_sentence_complexity_score(request.turn.userUtterance, words),
+        comprehensibilityScore=_comprehensibility_score(feedback),
+    )
+
+
+def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
+    return NativeScoreBreakdown(
+        attemptedWordScore=60,
+        sentenceComplexityScore=55,
+        comprehensibilityScore=_comprehensibility_score(feedback),
+    )
+
+
+def _english_words(user_utterance: str) -> list[str]:
+    return re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", user_utterance)
+
+
+def _attempted_word_score(words: list[str]) -> int:
+    return _clamp_score(round(len(words) * 8), 0, 100)
+
+
+def _sentence_complexity_score(user_utterance: str, words: list[str]) -> int:
+    normalized = f" {_normalize_visible_text(user_utterance)} "
+    score = 35
+    if len(words) >= 6:
+        score += 10
+    if len(words) >= 10:
+        score += 10
+    if any(marker in normalized for marker in [" because ", " since ", " and ", " but ", " so "]):
+        score += 15
+    if _contains_indirect_question_pattern(normalized):
+        score += 20
+    if any(marker in normalized for marker in [" would ", " could ", " should ", " have ", " has "]):
+        score += 10
+    return _clamp_score(score, 0, 100)
+
+
+def _contains_indirect_question_pattern(normalized_utterance: str) -> bool:
+    return any(
+        marker in normalized_utterance
+        for marker in [
+            " know what ",
+            " know where ",
+            " know why ",
+            " know how ",
+            " wonder what ",
+            " wonder where ",
+            " wonder why ",
+            " wonder how ",
+        ]
+    )
+
+
+def _comprehensibility_score(feedback: TurnFeedbackData) -> int:
+    if feedback.feedbackType == FeedbackType.GOOD:
+        return 90
+    return 65
+
+
+def _aggregate_native_score_breakdown(
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
+) -> NativeScoreBreakdown:
+    if not turn_feedback_entries:
+        return NativeScoreBreakdown(
+            attemptedWordScore=0,
+            sentenceComplexityScore=0,
+            comprehensibilityScore=0,
+        )
+    return NativeScoreBreakdown(
+        attemptedWordScore=round(
+            sum(entry.native_score_breakdown.attemptedWordScore for entry in turn_feedback_entries)
+            / len(turn_feedback_entries)
+        ),
+        sentenceComplexityScore=round(
+            sum(entry.native_score_breakdown.sentenceComplexityScore for entry in turn_feedback_entries)
+            / len(turn_feedback_entries)
+        ),
+        comprehensibilityScore=round(
+            sum(entry.native_score_breakdown.comprehensibilityScore for entry in turn_feedback_entries)
+            / len(turn_feedback_entries)
+        ),
+    )
+
+
+def _native_score_from_breakdown(native_score_breakdown: NativeScoreBreakdown) -> int:
+    return _clamp_score(
+        round(
+            native_score_breakdown.attemptedWordScore * 0.2
+            + native_score_breakdown.sentenceComplexityScore * 0.3
+            + native_score_breakdown.comprehensibilityScore * 0.5
+        ),
+        0,
+        100,
+    )
 
 
 def _purge_expired_turn_feedbacks_locked(now: float) -> None:
@@ -390,10 +513,12 @@ def _turn_feedback_system_prompt() -> str:
             "For NEEDS_IMPROVEMENT, koreanAnalogy should use one intentionally awkward Korean example plus one short feeling explanation. "
             "Grammar reasons belong in feedbackDetail, not koreanAnalogy. "
             "feedbackDetail is required for every response. "
-            "For NEEDS_IMPROVEMENT, feedbackDetail must explain the correction point and the reason in one natural Korean explanation. "
-            "For NEEDS_IMPROVEMENT, betterExpression is required and must correct or improve the user's same utterance while preserving the user's intent. "
+            "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
+            "For NEEDS_IMPROVEMENT, feedbackDetail must merge the user's original utterance, the correction point, the reason, and the improved expression into one natural Korean explanation. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
-            "For GOOD, betterExpression must be null. "
+            "For GOOD, positiveFeedback must be null. "
+            "For GOOD, benchmarkMessage may be a short Korean learner comparison hook when clearly supported; otherwise use null. "
+            "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
             "For routine-change answers, praise the routine and reason, not a generic preference-and-reason pattern. "
@@ -403,15 +528,15 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
-            "2. GOOD has no betterExpression and NEEDS_IMPROVEMENT has betterExpression. "
-            "3. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
-            "4. feedbackDetail is Korean and matches the feedbackType. "
-            "5. betterExpression preserves the user's original intent."
+            "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
+            "3. GOOD has positiveFeedback=null and benchmarkMessage can be null or a grounded comparison hook. "
+            "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
+            "5. feedbackDetail is Korean and matches the feedbackType."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","feedbackDetail":"...","betterExpression":null}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":null}. '
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
     ])
@@ -432,41 +557,60 @@ def _turn_feedback_user_prompt(request: TurnFeedbackRequest) -> str:
     )
 
 
+def _normalize_turn_feedback_data_before_validation(data: dict[str, Any]) -> None:
+    feedback_type = data.get("feedbackType")
+    legacy_better_expression = data.pop("betterExpression", None)
+    if feedback_type == FeedbackType.NEEDS_IMPROVEMENT or feedback_type == FeedbackType.NEEDS_IMPROVEMENT.value:
+        data.setdefault("positiveFeedback", "어려운 표현을 직접 말해 보려는 시도 자체가 좋아요.")
+        data["benchmarkMessage"] = None
+        if isinstance(legacy_better_expression, str) and legacy_better_expression.strip():
+            feedback_detail = str(data.get("feedbackDetail") or "").strip()
+            if legacy_better_expression not in feedback_detail:
+                data["feedbackDetail"] = f"{feedback_detail} {legacy_better_expression}처럼 말하면 더 자연스러워요.".strip()
+        return
+
+    if feedback_type == FeedbackType.GOOD or feedback_type == FeedbackType.GOOD.value:
+        data["positiveFeedback"] = None
+        data.setdefault("benchmarkMessage", None)
+
+
+def _normalize_session_feedback_data_before_validation(
+    data: dict[str, Any],
+    turn_feedbacks: list[TurnFeedbackData],
+) -> None:
+    if "highlightMessage" in data:
+        return
+    legacy_summary = data.get("summary")
+    if isinstance(legacy_summary, str) and legacy_summary.strip():
+        data["highlightMessage"] = legacy_summary
+        return
+    data["highlightMessage"] = _default_highlight_message(turn_feedbacks)
+
+
 def _session_feedback_system_prompt() -> str:
     return "\n\n".join([
         (
             "Role:\n"
-            "You generate the final session-level feedback summary for a Korean learner's English free talk session."
+            "You generate the final session-level highlight badge phrase for a Korean learner's English free talk session."
         ),
         (
             "Priority:\n"
             "For this MVP, quality is more important than speed or token savings. "
-            "The final feedback must be grounded in the cached turn-level feedback, not generic encouragement."
+            "The final highlight must be grounded in the cached turn-level feedback, not generic encouragement."
         ),
         _safety_system_policy(),
         (
-            "Scoring Policy:\n"
-            "nativeScore is a draft integer from 0 to 100. "
-            "The server will calibrate nativeScore and nativeLevelLabel after validation using the cached turn feedback GOOD ratio. "
-            "Do not score only grammar. Consider communicative clarity, naturalness, nuance, politeness, word choice, and answer sustainability. "
-            "Use these server ratio bands as the draft guide: GOOD ratio >= 90% means 90-95 and 원어민에 가까운 자연스러움; "
-            "GOOD ratio >= 75% means 82-89 and 유학생 느낌; "
-            "GOOD ratio >= 50% means 70-81 and 기초 회화 연습 단계; "
-            "GOOD ratio >= 25% means 60-69 and 문장 뼈대 연습 단계; "
-            "GOOD ratio < 25% means 50-59 and 기초 문장 교정 단계. "
-            "Your main job is to write the Korean summary; the server is authoritative for the final score and label."
-        ),
-        (
-            "Summary Policy:\n"
-            "summary must be written in Korean. "
-            "summary must start with what the user did well, then give one concrete improvement direction. "
+            "Highlight Policy:\n"
+            "highlightMessage must be written in Korean. "
+            "It is a title-like badge phrase, not a full summary sentence. "
+            "Prefer a noun phrase without final punctuation, such as 한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"sessionId":"copy the exact Session ID from the user message","nativeScore":"integer 0-100","nativeLevelLabel":"...","summary":"..."}. '
+            '{"sessionId":"copy the exact Session ID from the user message","highlightMessage":"..."}. '
             "Do not include turnFeedbacks in the model output because the server attaches cached turn feedbacks."
         ),
     ])
@@ -716,10 +860,6 @@ def _postprocess_turn_feedback(
         if feedback_detail != feedback.feedbackDetail:
             updates["feedbackDetail"] = feedback_detail
 
-    better_expression = _repair_better_expression(request, feedback)
-    if better_expression and better_expression != feedback.betterExpression:
-        updates["betterExpression"] = better_expression
-
     feedback_detail = _repair_needs_feedback_detail(request, feedback)
     if feedback_detail and feedback_detail != feedback.feedbackDetail:
         updates["feedbackDetail"] = feedback_detail
@@ -746,9 +886,10 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             ),
             feedbackDetail=(
                 "because 뒤에는 spicy만 두기보다 it is spicy처럼 주어와 동사를 붙여 "
-                "이유를 문장으로 말해야 자연스럽습니다."
+                "이유를 문장으로 말해야 자연스럽습니다. I like pizza because it is spicy.처럼 말하면 의도가 분명해요."
             ),
-            betterExpression="I like pizza because it is spicy.",
+            positiveFeedback="좋아하는 음식과 이유를 한 문장으로 말하려고 한 점은 좋아요.",
+            benchmarkMessage=None,
         )
     if "wanna know that" in utterance:
         return TurnFeedbackData(
@@ -757,9 +898,10 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             koreanAnalogy="한국어로 비유하자면, '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
             feedbackDetail=(
                 "질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 "
-                "상대를 몰아붙이거나 방어적으로 들릴 수 있어요."
+                "상대를 몰아붙이거나 방어적으로 들릴 수 있어요. I wonder why you are curious about it.처럼 말하면 더 부드럽습니다."
             ),
-            betterExpression="I wonder why you are curious about it.",
+            positiveFeedback="상대의 질문 의도를 확인하려고 한 시도는 대화 흐름을 이해하려는 좋은 신호예요.",
+            benchmarkMessage=None,
         )
     if "not good in cook" in utterance:
         return TurnFeedbackData(
@@ -769,8 +911,12 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
                 "한국어로 비유하자면, '요리는 가끔 하지만 요리 안에 잘하지는 않아요'처럼 "
                 "뜻은 보이지만 표현 연결이 어색해요."
             ),
-            feedbackDetail="능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다.",
-            betterExpression="I cook sometimes, but I am not good at cooking.",
+            feedbackDetail=(
+                "능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다. "
+                "I cook sometimes, but I am not good at cooking.처럼 말하면 더 정확해요."
+            ),
+            positiveFeedback="요리 빈도와 실력을 함께 말하려고 한 점은 좋아요.",
+            benchmarkMessage=None,
         )
     return None
 
@@ -865,7 +1011,7 @@ def _is_detail_only_overcorrection(
         return False
     feedback_text = " ".join(
         value or ""
-        for value in [feedback.feedbackDetail, feedback.betterExpression]
+        for value in [feedback.feedbackDetail]
     ).lower()
     has_detail_complaint = any(
         marker in feedback_text
@@ -949,7 +1095,8 @@ def _good_feedback_for_clear_reason_answer(
             "좋아하는 것과 이유가 바로 이어져 담백하게 들려요."
         ),
         feedbackDetail="좋아하는 음식과 이유를 한 문장으로 분명하게 말했고, because로 이유를 붙여 상대가 답변의 핵심을 바로 이해할 수 있어요.",
-        betterExpression=None,
+        positiveFeedback=None,
+        benchmarkMessage="한국인 학습자가 자주 놓치는 이유 연결을 자연스럽게 해낸 사람",
     )
 
 
@@ -966,7 +1113,8 @@ def _good_feedback_for_clear_travel_plan_answer(
             "가고 싶은 여행지가 바로 보여 자연스럽게 들려요."
         ),
         feedbackDetail=f"{destination}에 가고 싶은 계획을 한 문장으로 또렷하게 말했고, 여행지와 의도가 바로 보여 질문자가 대화를 이어가기 쉬워요.",
-        betterExpression=None,
+        positiveFeedback=None,
+        benchmarkMessage=None,
     )
 
 
@@ -975,7 +1123,7 @@ def _repair_better_expression(
     feedback: TurnFeedbackData,
 ) -> str | None:
     if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
-        return feedback.betterExpression
+        return None
     utterance = _normalize_visible_text(request.turn.userUtterance)
     if "wanna know that" in utterance:
         return "I wonder why you are curious about it."
@@ -991,7 +1139,7 @@ def _repair_better_expression(
         return "I enjoy evenings because I can relax after work."
     if "most memorable part was see the sea at night" in utterance:
         return "The most memorable part was seeing the sea at night."
-    return feedback.betterExpression
+    return None
 
 
 def _repair_needs_feedback_detail(
@@ -1002,19 +1150,19 @@ def _repair_needs_feedback_detail(
         return feedback.feedbackDetail
     utterance = _normalize_visible_text(request.turn.userUtterance)
     if "wanna know that" in utterance:
-        return "질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 상대를 몰아붙이거나 방어적으로 들릴 수 있어요."
+        return "질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 상대를 몰아붙이거나 방어적으로 들릴 수 있어요. I wonder why you are curious about it.처럼 말하면 더 부드럽습니다."
     if "not good in cook" in utterance:
-        return "능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다."
+        return "능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다. I cook sometimes, but I am not good at cooking.처럼 말하면 더 정확해요."
     if "in morning" in utterance and "usually drinking" in utterance:
-        return "특정한 아침 시간을 말할 때는 In the morning처럼 관사를 붙이고, usually 뒤 습관은 drink로 말하는 편이 자연스럽습니다."
+        return "특정한 아침 시간을 말할 때는 In the morning처럼 관사를 붙이고, usually 뒤 습관은 drink로 말하는 편이 자연스럽습니다. In the morning, I usually drink water and check my schedule.처럼 말하면 자연스러워요."
     if _looks_like_sushi_never_eaten_issue(utterance):
-        return "want 뒤에는 to try를 붙이고, 먹어 본 경험은 I have never eaten it before처럼 현재완료로 말해야 자연스럽습니다."
+        return "want 뒤에는 to try를 붙이고, 먹어 본 경험은 I have never eaten it before처럼 현재완료로 말해야 자연스럽습니다. I want to try sushi next because I have never eaten it before.처럼 말하면 좋아요."
     if "spend free time to read" in utterance:
-        return "spend time은 뒤에 동명사를 붙여 I spend my free time reading처럼 말해야 자연스럽습니다."
+        return "spend time은 뒤에 동명사를 붙여 I spend my free time reading처럼 말해야 자연스럽습니다. I spend my free time reading books.처럼 말하면 정확해요."
     if "can relaxing after work" in utterance:
-        return "can 뒤에는 relaxing이 아니라 원형 동사 relax를 써야 자연스럽습니다."
+        return "can 뒤에는 relaxing이 아니라 원형 동사 relax를 써야 자연스럽습니다. I enjoy evenings because I can relax after work.처럼 말하면 자연스러워요."
     if "most memorable part was see the sea at night" in utterance:
-        return "명사구를 시작할 때는 관사 The를 붙이고, was 뒤에는 see 대신 seeing을 써야 문장이 자연스럽습니다."
+        return "명사구를 시작할 때는 관사 The를 붙이고, was 뒤에는 see 대신 seeing을 써야 문장이 자연스럽습니다. The most memorable part was seeing the sea at night.처럼 말하면 정확해요."
     return feedback.feedbackDetail
 
 
@@ -1095,68 +1243,47 @@ def _is_correction_like_korean_analogy(korean_analogy: str) -> bool:
     return any(marker in korean_analogy for marker in correction_markers)
 
 
-def _postprocess_session_feedback_summary(
-    summary: SessionFeedbackSummaryResponse,
+def _postprocess_highlight_message(
+    highlight_message: str,
     turn_feedbacks: list[TurnFeedbackData],
-) -> SessionFeedbackSummaryResponse:
-    min_score, max_score, native_level_label = _session_feedback_score_band(turn_feedbacks)
-    native_score = _clamp_score(summary.nativeScore, min_score, max_score)
-    summary_text = summary.summary
-    total_count = len(turn_feedbacks)
-    needs_count = sum(
-        1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
-    )
-
-    if needs_count == total_count and total_count > 0:
-        if total_count == 1:
-            summary_text = _single_needs_improvement_session_summary(turn_feedbacks[0])
-        else:
-            summary_text = (
-                "대부분의 턴에서 뜻은 전달됐지만 동사 형태, 관사, 전치사 연결처럼 한국어식 직역이 반복됐어요. "
-                "다음에는 턴별 betterExpression을 한 문장씩 소리 내어 다시 말하면서 문장 뼈대를 먼저 익혀 보세요."
-            )
-    elif needs_count * 2 >= total_count and total_count > 0:
-        if not _is_korean_text(summary_text):
-            summary_text = (
-                "하고 싶은 말은 전달했지만 여러 턴에서 어색한 연결이 반복됐어요. "
-                "다음에는 자주 틀린 동사 형태와 전치사를 먼저 고쳐 말하는 연습을 해 보세요."
-            )
-    elif not _is_korean_text(summary_text):
-        if needs_count > 0:
-            summary_text = (
-                "하고 싶은 말은 전달했지만 몇몇 표현에서 한국어식 직역이 보였어요. "
-                "다음에는 턴별 피드백의 교정 표현을 한 문장씩 바로 바꿔 말하는 연습을 해 보세요."
-            )
-        else:
-            summary_text = (
-                "하고 싶은 말을 분명하게 전달했고, 질문에 맞춰 자연스럽게 답했어요. "
-                "다음에는 답변마다 짧은 예시를 하나 더 붙이면 대화가 더 풍성해질 수 있어요."
-            )
-    summary_text = _repair_session_summary_style(summary_text)
-    return SessionFeedbackSummaryResponse(
-        sessionId=summary.sessionId,
-        nativeScore=native_score,
-        nativeLevelLabel=native_level_label,
-        summary=summary_text,
-    )
+) -> str:
+    if not _is_korean_text(highlight_message):
+        return _default_highlight_message(turn_feedbacks)
+    repaired = _repair_legacy_highlight_style(highlight_message).strip()
+    repaired = re.sub(r"[.!。]+$", "", repaired).strip()
+    if len(repaired) > 80 or _looks_like_sentence_summary(repaired):
+        return _default_highlight_message(turn_feedbacks)
+    return repaired
 
 
-def _session_feedback_score_band(turn_feedbacks: list[TurnFeedbackData]) -> tuple[int, int, str]:
-    total_count = len(turn_feedbacks)
-    if total_count == 0:
-        return _SESSION_SCORE_BANDS[-1][1:]
-    good_count = sum(1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.GOOD)
-    for min_good_percent, min_score, max_score, label in _SESSION_SCORE_BANDS:
-        if good_count * 100 >= total_count * min_good_percent:
-            return min_score, max_score, label
-    return _SESSION_SCORE_BANDS[-1][1:]
+def _looks_like_sentence_summary(highlight_message: str) -> bool:
+    sentence_markers = [
+        "다음에는",
+        "개선",
+        "연습해",
+        "좋았어요.",
+        "했어요.",
+        "합니다",
+        "입니다",
+        "해요.",
+    ]
+    return any(marker in highlight_message for marker in sentence_markers)
+
+
+def _default_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str:
+    if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
+        return "어려운 표현에 도전한 사람"
+    for feedback in turn_feedbacks:
+        if feedback.benchmarkMessage:
+            return re.sub(r"[.!。]+$", "", feedback.benchmarkMessage).strip()
+    return "핵심 질문에 자연스럽게 답한 사람"
 
 
 def _clamp_score(score: int, min_score: int, max_score: int) -> int:
     return max(min_score, min(score, max_score))
 
 
-def _repair_session_summary_style(summary_text: str) -> str:
+def _repair_legacy_highlight_style(highlight_text: str) -> str:
     replacements = {
         "이번 세션에서 문장을 구성하는 데 있어 기본적인 의사 전달은 잘 하셨습니다.": (
             "이번 세션에서는 기본적인 뜻은 전달했어요."
@@ -1177,19 +1304,10 @@ def _repair_session_summary_style(summary_text: str) -> str:
         " 그러나 ": " 다만 ",
         " 하지만, ": " 다만 ",
     }
-    repaired = summary_text
+    repaired = highlight_text
     for source, target in replacements.items():
         repaired = repaired.replace(source, target)
     return repaired
-
-
-def _single_needs_improvement_session_summary(feedback: TurnFeedbackData) -> str:
-    feedback_detail = feedback.feedbackDetail or "문장의 뜻은 보이지만 영어식 연결이 덜 자연스럽습니다."
-    better_expression = feedback.betterExpression or "조금 더 자연스러운 문장"
-    return (
-        f"이번 턴에서는 뜻은 전달됐지만 {feedback_detail} "
-        f"다음에는 '{better_expression}'처럼 한 번 바꿔 말해 보세요."
-    )
 
 
 def _is_korean_text(value: str) -> bool:

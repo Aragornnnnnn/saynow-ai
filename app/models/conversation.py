@@ -107,16 +107,20 @@ class FeedbackType(StrEnum):
 
 
 class TurnFeedbackData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     turnId: int = Field(gt=0)
     feedbackType: FeedbackType
     koreanAnalogy: str
+    positiveFeedback: str | None = None
     feedbackDetail: str
-    betterExpression: str | None = None
+    benchmarkMessage: str | None = None
 
     @field_validator(
         "koreanAnalogy",
+        "positiveFeedback",
         "feedbackDetail",
-        "betterExpression",
+        "benchmarkMessage",
     )
     @classmethod
     def optional_text_fields_must_not_be_blank(cls, value: str | None) -> str | None:
@@ -125,12 +129,14 @@ class TurnFeedbackData(BaseModel):
     @model_validator(mode="after")
     def feedback_fields_must_match_type(self):
         if self.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
-            if self.betterExpression is None or not self.betterExpression.strip():
-                raise ValueError("betterExpression is required for NEEDS_IMPROVEMENT feedback")
+            if self.positiveFeedback is None or not self.positiveFeedback.strip():
+                raise ValueError("positiveFeedback is required for NEEDS_IMPROVEMENT feedback")
+            if self.benchmarkMessage is not None:
+                raise ValueError("benchmarkMessage must be null for NEEDS_IMPROVEMENT feedback")
             return self
 
-        if self.betterExpression is not None:
-            raise ValueError("betterExpression must be null for GOOD feedback")
+        if self.positiveFeedback is not None:
+            raise ValueError("positiveFeedback must be null for GOOD feedback")
         return self
 
 
@@ -151,20 +157,33 @@ class SessionFeedbackRequest(BaseModel):
         return value
 
 
-class SessionFeedbackSummaryResponse(BaseModel):
+class SessionFeedbackHighlightResponse(BaseModel):
     sessionId: int = Field(gt=0)
-    nativeScore: int = Field(ge=0, le=100)
-    nativeLevelLabel: str
-    summary: str
+    highlightMessage: str
 
-    @field_validator("nativeLevelLabel", "summary")
+    @field_validator("highlightMessage")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class SessionFeedbackResponse(SessionFeedbackSummaryResponse):
+class NativeScoreBreakdown(BaseModel):
+    attemptedWordScore: int = Field(ge=0, le=100)
+    sentenceComplexityScore: int = Field(ge=0, le=100)
+    comprehensibilityScore: int = Field(ge=0, le=100)
+
+
+class SessionFeedbackResponse(BaseModel):
+    sessionId: int = Field(gt=0)
+    nativeScore: int = Field(ge=0, le=100)
+    nativeScoreBreakdown: NativeScoreBreakdown
+    highlightMessage: str
     turnFeedbacks: list[TurnFeedbackData]
+
+    @field_validator("highlightMessage")
+    @classmethod
+    def highlight_message_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
 
 
 class GuideChatRequest(BaseModel):
