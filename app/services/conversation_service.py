@@ -35,6 +35,7 @@ from app.services.safety_guard import (
 )
 from app.services.error_pattern_catalog import (
     DetectedErrorPattern,
+    get_error_pattern,
     parse_detected_patterns,
     prompt_error_pattern_catalog,
 )
@@ -146,6 +147,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         )
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
+    detected_patterns = _infer_missing_detected_patterns(request, feedback, detected_patterns)
     native_score_breakdown = _score_turn_feedback(request, feedback, detected_patterns)
     _store_turn_feedback(
         request.sessionId,
@@ -195,7 +197,7 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
         raise ConversationGenerationError("session feedback id does not match request session id")
     native_score_breakdown = _aggregate_native_score_breakdown(turn_feedback_entries)
     native_score = _native_score_from_breakdown(native_score_breakdown)
-    highlight_message = _postprocess_highlight_message(highlight.highlightMessage, turn_feedbacks)
+    highlight_message = _postprocess_highlight_message(highlight.highlightMessage, turn_feedback_entries)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     response = SessionFeedbackResponse(
@@ -325,6 +327,32 @@ def _score_turn_feedback(
             detected_patterns,
         ),
         comprehensibilityScore=_comprehensibility_score(feedback, detected_patterns),
+    )
+
+
+def _infer_missing_detected_patterns(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+    detected_patterns: tuple[DetectedErrorPattern, ...],
+) -> tuple[DetectedErrorPattern, ...]:
+    if any(pattern.error_type == "indirect_question_word_order" for pattern in detected_patterns):
+        return detected_patterns
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return detected_patterns
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if not _contains_indirect_question_pattern(utterance):
+        return detected_patterns
+    pattern = get_error_pattern("indirect_question_word_order")
+    if pattern is None:
+        return detected_patterns
+    return (
+        *detected_patterns,
+        DetectedErrorPattern(
+            error_type="indirect_question_word_order",
+            status="incorrect",
+            evidence="what is it",
+            pattern=pattern,
+        ),
     )
 
 
@@ -562,8 +590,11 @@ def _turn_feedback_system_prompt() -> str:
             "Field Policy:\n"
             "koreanAnalogy is required for every response and should explain how the English sounds through a Korean analogy. "
             "koreanAnalogy must start with '한국어로 비유하자면'. "
+            "koreanAnalogy must follow this format: 한국어로 비유하자면, \"...\"라고 ...하는 것과 같아요. "
+            "The quoted Korean sentence must show what the English sounds like in Korean. "
+            "Do not return a meta description such as '뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌'. "
             "koreanAnalogy describes the original utterance's Korean-feel only; it must not explain the fix, say '더 자연스럽습니다', or act like a grammar note. "
-            "For NEEDS_IMPROVEMENT, koreanAnalogy should use one intentionally awkward Korean example plus one short feeling explanation. "
+            "For NEEDS_IMPROVEMENT, koreanAnalogy should use one intentionally awkward Korean example as a quoted Korean sentence plus one short feeling explanation. "
             "Grammar reasons belong in feedbackDetail, not koreanAnalogy. "
             "feedbackDetail is required for every response. "
             "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
@@ -662,16 +693,17 @@ def _session_feedback_system_prompt() -> str:
             "Highlight Policy:\n"
             "highlightMessage must be written in Korean. "
             "It is a title-like badge phrase, not a full summary sentence. "
-            "Prefer a noun phrase without final punctuation, such as 한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람. "
+            "It must hook the user into reading turn-level feedback. "
+            "Prefer a quantitative noun phrase with a percentage number and without final punctuation, such as 한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
         ),
         (
             "Evidence Priority:\n"
-            "1. Prefer a grounded benchmarkMessage from GOOD turn feedback. "
-            "2. Then use gamifiable detectedPatterns marked correct. "
+            "1. Prefer a grounded benchmarkMessage from GOOD turn feedback because it already contains a quantitative hook. "
+            "2. Then use gamifiable detectedPatterns marked correct, incorrect, or attempted. The title must include a percentage number when koreanPct is available. "
             "3. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
-            "4. If no strong evidence exists, use a modest title based on the clearest user attempt."
+            "4. If no quantitative evidence exists, use a modest title based on the clearest user attempt."
         ),
         (
             "Self-check before final JSON:\n"
@@ -679,7 +711,8 @@ def _session_feedback_system_prompt() -> str:
             "2. highlightMessage is a noun phrase or title-like badge, not a summary sentence. "
             "3. highlightMessage has no final punctuation. "
             "4. highlightMessage is grounded in cached turn feedback or detected pattern evidence. "
-            "5. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
+            "5. When a koreanPct value is available, highlightMessage must include a percentage number. "
+            "6. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
         ),
         (
             "Output Schema:\n"
@@ -954,6 +987,10 @@ def _postprocess_turn_feedback(
     feedback_detail = _repair_needs_feedback_detail(request, feedback)
     if feedback_detail and feedback_detail != feedback.feedbackDetail:
         updates["feedbackDetail"] = feedback_detail
+
+    positive_feedback = _repair_needs_positive_feedback(request, feedback)
+    if positive_feedback and positive_feedback != feedback.positiveFeedback:
+        updates["positiveFeedback"] = positive_feedback
 
     if not updates:
         return feedback
@@ -1257,6 +1294,33 @@ def _repair_needs_feedback_detail(
     return feedback.feedbackDetail
 
 
+def _repair_needs_positive_feedback(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str | None:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return feedback.positiveFeedback
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if not _contains_indirect_question_pattern(utterance):
+        return feedback.positiveFeedback
+    if not _is_generic_positive_feedback(feedback.positiveFeedback):
+        return feedback.positiveFeedback
+    return "간접의문문처럼 어려운 구조를 직접 써 보려는 시도 자체가 좋아요."
+
+
+def _is_generic_positive_feedback(positive_feedback: str | None) -> bool:
+    if positive_feedback is None:
+        return True
+    text = _normalize_visible_text(positive_feedback)
+    generic_markers = [
+        "좋은 시도",
+        "좋은 시도였어요",
+        "시도한 점이 좋아요",
+        "노력이 느껴져요",
+    ]
+    return len(text) <= 20 or any(marker in text for marker in generic_markers)
+
+
 def _ensure_korean_analogy_prefix(korean_analogy: str) -> str:
     if korean_analogy.startswith("한국어로 비유하자면"):
         return korean_analogy
@@ -1282,15 +1346,20 @@ def _repair_korean_analogy(
 
     korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
     if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
+        if _contains_indirect_question_pattern(utterance):
+            return (
+                '한국어로 비유하자면, "그게 뭔지 모르겠어"라고 말하려다 '
+                "어순이 살짝 꼬인 문장으로 말하는 것과 같아요."
+            )
         if _looks_like_sushi_never_eaten_issue(utterance):
             return (
-                "한국어로 비유하자면, '다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어'처럼 "
-                "뜻은 보이지만 문장 연결이 덜 다듬어진 느낌이에요."
+                '한국어로 비유하자면, "다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어"라고 '
+                "문장 연결이 덜 다듬어진 채 말하는 것과 같아요."
             )
         if "spend free time to read" in utterance:
             return (
-                "한국어로 비유하자면, '여가 시간을 책 읽기 위해 보내요'처럼 "
-                "뜻은 통하지만 일상 대답보다는 번역문처럼 딱딱하게 들려요."
+                '한국어로 비유하자면, "여가 시간을 책 읽기 위해 보내요"라고 '
+                "일상 대답보다 번역문처럼 딱딱하게 말하는 것과 같아요."
             )
 
     if not _is_correction_like_korean_analogy(korean_analogy):
@@ -1312,13 +1381,17 @@ def _repair_korean_analogy(
             "뜻은 바로 보이지만 문장 뼈대가 덜 다듬어진 느낌이에요."
         )
     return (
-        "한국어로 비유하자면, 뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌이라 "
-        "말의 결이 덜 매끄럽게 들려요."
+        '한국어로 비유하자면, "말하고 싶은 뜻은 알겠는데 순서가 살짝 꼬였어요"라고 '
+        "덜 정리된 문장으로 말하는 것과 같아요."
     )
 
 
 def _is_correction_like_korean_analogy(korean_analogy: str) -> bool:
     correction_markers = [
+        "뜻은 보이지만",
+        "영어 순서로 옮긴 느낌",
+        "말의 결이 덜 매끄럽",
+        "메타 설명",
         "더 자연스럽",
         "더 자연스러",
         "문법",
@@ -1336,15 +1409,23 @@ def _is_correction_like_korean_analogy(korean_analogy: str) -> bool:
 
 def _postprocess_highlight_message(
     highlight_message: str,
-    turn_feedbacks: list[TurnFeedbackData],
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str:
+    quantitative_hook = _quantitative_highlight_message(turn_feedback_entries)
+    if quantitative_hook and not _contains_percentage(highlight_message):
+        return quantitative_hook
+    turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
     if not _is_korean_text(highlight_message):
-        return _default_highlight_message(turn_feedbacks)
+        return _default_highlight_message(turn_feedback_entries)
     repaired = _repair_legacy_highlight_style(highlight_message).strip()
     repaired = re.sub(r"[.!。]+$", "", repaired).strip()
     if len(repaired) > 80 or _looks_like_sentence_summary(repaired):
-        return _default_highlight_message(turn_feedbacks)
+        return _default_highlight_message(turn_feedback_entries)
     return repaired
+
+
+def _contains_percentage(value: str) -> bool:
+    return bool(re.search(r"\d+(?:\.\d+)?%", value))
 
 
 def _looks_like_sentence_summary(highlight_message: str) -> bool:
@@ -1361,13 +1442,34 @@ def _looks_like_sentence_summary(highlight_message: str) -> bool:
     return any(marker in highlight_message for marker in sentence_markers)
 
 
-def _default_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str:
+def _default_highlight_message(turn_feedback_entries: list[_TurnFeedbackCacheEntry] | list[TurnFeedbackData]) -> str:
+    if turn_feedback_entries and isinstance(turn_feedback_entries[0], _TurnFeedbackCacheEntry):
+        quantitative_hook = _quantitative_highlight_message(turn_feedback_entries)
+        if quantitative_hook:
+            return quantitative_hook
+        turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
+    else:
+        turn_feedbacks = turn_feedback_entries
     if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
         return "어려운 표현에 도전한 사람"
     for feedback in turn_feedbacks:
         if feedback.benchmarkMessage:
             return re.sub(r"[.!。]+$", "", feedback.benchmarkMessage).strip()
     return "핵심 질문에 자연스럽게 답한 사람"
+
+
+def _quantitative_highlight_message(
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
+) -> str | None:
+    for entry in turn_feedback_entries:
+        if entry.feedback.benchmarkMessage and _contains_percentage(entry.feedback.benchmarkMessage):
+            return re.sub(r"[.!。]+$", "", entry.feedback.benchmarkMessage).strip()
+    for entry in turn_feedback_entries:
+        for detected_pattern in entry.detected_patterns:
+            pattern = detected_pattern.pattern
+            if pattern.gamifiable and pattern.korean_pct is not None:
+                return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+    return None
 
 
 def _clamp_score(score: int, min_score: int, max_score: int) -> int:

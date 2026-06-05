@@ -1,5 +1,19 @@
 [
   {
+    "error_type": "indirect_question_word_order",
+    "display_name": "간접의문문 어순",
+    "korean_pct": 40,
+    "breaks_meaning": false,
+    "correction_priority": "low",
+    "gamifiable": true,
+    "level_tone": "중급은 질문 형태를 문장 안에 넣을 때 의문문 어순을 그대로 유지하기 쉽다고 설명한다.",
+    "feedback_copy": "한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람",
+    "example_wrong": "I don't know what is it.",
+    "example_right": "I don't know what it is.",
+    "denominator_type": "attempt",
+    "source": "SayNow 기획 가설"
+  },
+  {
     "error_type": "article_a_omission",
     "display_name": "부정관사 a/an",
     "korean_pct": 79,

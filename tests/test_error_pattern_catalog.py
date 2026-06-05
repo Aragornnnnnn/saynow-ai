@@ -32,6 +32,18 @@ class ErrorPatternCatalogTest(unittest.TestCase):
         self.assertEqual(pattern.correction_priority, "high")
         self.assertFalse(pattern.gamifiable)
 
+    def test_loads_indirect_question_word_order_as_quantitative_hook_pattern(self):
+        from app.services.error_pattern_catalog import get_error_pattern, prompt_error_pattern_catalog
+
+        pattern = get_error_pattern("indirect_question_word_order")
+        prompt_catalog = prompt_error_pattern_catalog()
+
+        self.assertIsNotNone(pattern)
+        self.assertEqual(pattern.korean_pct, 40)
+        self.assertTrue(pattern.gamifiable)
+        self.assertIn("간접의문문", pattern.feedback_copy)
+        self.assertIn("korean_pct=40", prompt_catalog)
+
 
 if __name__ == "__main__":
     unittest.main()

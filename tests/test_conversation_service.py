@@ -383,6 +383,71 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("correctionPoint", system_prompt)
         self.assertIn("correctionReason", system_prompt)
 
+    def test_turn_feedback_prompt_requires_quoted_korean_analogy_sentence_format(self):
+        system_prompt = self.service._turn_feedback_system_prompt()
+
+        self.assertIn('한국어로 비유하자면, "..."라고 ...하는 것과 같아요', system_prompt)
+        self.assertIn("Do not return a meta description", system_prompt)
+        self.assertIn("the English sounds like", system_prompt)
+
+    def test_turn_feedback_repairs_meta_description_korean_analogy_to_quoted_analogy(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면, 뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌이라 말의 결이 덜 매끄럽게 들려요.",
+            "positiveFeedback": "헷갈리는 간접의문문 구조를 직접 써 보려는 시도는 좋아요.",
+            "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn('"그게 뭔지 모르겠어"', cached.koreanAnalogy)
+        self.assertIn("라고", cached.koreanAnalogy)
+        self.assertIn("하는 것과 같아요", cached.koreanAnalogy)
+        self.assertNotIn("한국어 단어를 영어 순서로 옮긴 느낌", cached.koreanAnalogy)
+
+    def test_turn_feedback_infers_indirect_question_pattern_when_model_omits_detected_patterns(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면, 뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌이라 말의 결이 덜 매끄럽게 들려요.",
+            "positiveFeedback": "헷갈리는 간접의문문 구조를 직접 써 보려는 시도는 좋아요.",
+            "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        entry = self.service._get_expected_turn_feedback_entries(1000, [5000])[0]
+
+        self.assertEqual(entry.detected_patterns[0].error_type, "indirect_question_word_order")
+        self.assertEqual(entry.detected_patterns[0].status, "incorrect")
+        self.assertEqual(entry.detected_patterns[0].evidence, "what is it")
+
+    def test_turn_feedback_repairs_generic_indirect_question_positive_feedback(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면, \"이 음식이 뭔지 모르겠어요\"라고 말하는 것과 같아요.",
+            "positiveFeedback": "좋은 시도였어요!",
+            "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("간접의문문", cached.positiveFeedback)
+        self.assertIn("어려운 구조", cached.positiveFeedback)
+        self.assertNotEqual(cached.positiveFeedback, "좋은 시도였어요!")
+
     def test_session_feedback_prompt_includes_cached_detected_patterns(self):
         from app.models.conversation import SessionFeedbackRequest
 
@@ -891,6 +956,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("benchmarkMessage", system_prompt)
         self.assertIn("gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
+        self.assertIn("must include a percentage number", system_prompt)
+
+    def test_session_feedback_replaces_weak_highlight_with_quantitative_detected_pattern_hook(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "한국어로 비유하자면, \"그게 뭔지 모르겠어\"라고 어순이 살짝 꼬인 말처럼 들려요.",
+                "positiveFeedback": "헷갈리는 간접의문문 구조를 직접 써 보려는 시도는 좋아요.",
+                "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [
+                    {
+                        "errorType": "indirect_question_word_order",
+                        "status": "incorrect",
+                        "evidence": "what is it",
+                    }
+                ],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "피자와 매운 맛에 대한 선호를 잘 표현한 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람")
+        self.assertIn("%", result.highlightMessage)
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(

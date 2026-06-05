@@ -50,20 +50,20 @@
 {
   "sessionId": 1000,
   "nativeScore": 78,
-  "highlightMessage": "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
+  "highlightMessage": "한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람",
   "turnFeedbacks": [
     {
       "turnId": 5000,
       "feedbackType": "GOOD",
-      "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
+      "koreanAnalogy": "한국어로 비유하자면, \"저는 피자가 좋아요. 매워서요\"라고 자연스럽게 이유를 붙여 말하는 것과 같아요.",
       "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
       "positiveFeedback": null,
-      "benchmarkMessage": "한국인의 40%가 헷갈리는 이유 연결을 자연스럽게 해낸 사람"
+      "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람"
     },
     {
       "turnId": 5001,
       "feedbackType": "NEEDS_IMPROVEMENT",
-      "koreanAnalogy": "한국어로 비유하자면 '그게 뭔지 모르겠어'를 '뭔지' 어순 그대로 영어에 옮긴 느낌이에요.",
+      "koreanAnalogy": "한국어로 비유하자면, \"그게 뭔지 모르겠어\"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.",
       "positiveFeedback": "어려운 간접의문문 구조에 도전한 점이 좋아요. 틀렸더라도 그 시도 자체가 다음 단계로 가는 재료예요.",
       "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
       "benchmarkMessage": null
@@ -82,7 +82,9 @@
 
 `nativeScore`는 0-100 점수이며 100에 가까울수록 원어민 쪽에 가깝습니다. 세션 점수는 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50%를 내부 합산해 계산합니다.
 
-`highlightMessage`는 전체 총평이 아니라 칭호나 배지처럼 보이는 후킹 문구입니다. 문장형 설명보다 `한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람` 같은 마침표 없는 명사구를 우선합니다.
+`highlightMessage`는 전체 총평이 아니라 발화별 피드백을 열어 보게 만드는 칭호형 후킹 문구입니다. 근거가 있으면 `한국인 40%가 헷갈리는 간접의문문 어순을 바로잡을 사람`처럼 정량 수치를 포함한 마침표 없는 명사구를 우선합니다.
+
+`koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식을 우선합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
 `NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`을 반드시 포함하고, 근거가 있는 경우에만 `benchmarkMessage`를 제공합니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
 
