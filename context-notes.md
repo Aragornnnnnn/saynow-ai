@@ -2,7 +2,7 @@
 
 - 2026-06-06 한국인 오류 패턴 데이터는 1차 구현에서 BE DB가 아니라 AI 서버 seed JSON을 source of truth로 둔다. 외부 응답 계약은 유지하고, LLM이 추가로 반환하는 `detectedPatterns`는 응답 검증 전에 분리해 AI 서버 캐시에만 저장한다.
 - 2026-06-06 `breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 기본적으로 교정 폭격 대상이 아니라 게임화와 칭찬 소재로 쓴다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT` 우선 후보로 둔다.
-- 2026-06-06 `nativeScoreBreakdown`은 단어 수만 보지 않고 패턴 시도 여부를 보정값으로 활용한다. 어려운 구조를 회피하지 않고 시도한 경우 sentence complexity에 보너스를 주고, 의미를 깨는 오류는 comprehensibility에서 더 크게 깎는다.
+- 2026-06-06 `nativeScoreBreakdown`은 외부 응답으로 내리지 않고 내부 계산값으로만 둔다. 단어 수만 보지 않고 패턴 시도 여부를 보정값으로 활용하며, 어려운 구조를 회피하지 않고 시도한 경우 sentence complexity에 보너스를 주고 의미를 깨는 오류는 comprehensibility에서 더 크게 깎는다.
 
 - 2026-06-06 세션 피드백의 `nativeLevelLabel`은 제거한다. `nativeScore`는 FE의 `원어민 ← 사용자 → 토종 한국인 평균` 수준 UI에 쓰는 0-100 점수로 유지한다. 100에 가까울수록 원어민 쪽에 가깝고, FE가 왼쪽을 원어민으로 둘 때는 `100 - nativeScore`를 위치 계산에 쓴다.
 - 2026-06-06 `nativeScore`는 더 이상 캐시된 `GOOD` 비율만으로 만들지 않는다. 턴별 사용자 발화를 기준으로 시도 단어수, 문장 복잡도, 이해 가능성을 계산하고, 세션에서는 각각 20%, 30%, 50% 가중 평균으로 합산한다. 이해 가능성은 최종 사용자 체감에 가장 직접적인 지표라 가장 큰 비중을 둔다.

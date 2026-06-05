@@ -6,7 +6,7 @@
 
 - 직전 사용자 발화에 대한 짧은 맞장구와 백엔드가 전달한 다음 고정 질문을 하나의 `aiQuestion`으로 연결합니다.
 - 사용자 발화 1개에 대한 턴별 피드백을 생성하고 AI 서버 프로세스 메모리 캐시에 최대 3시간 보관합니다.
-- 최종 피드백 생성 시 캐시된 턴별 피드백을 모아 `nativeScore`, `nativeScoreBreakdown`, `highlightMessage`와 함께 반환합니다.
+- 최종 피드백 생성 시 캐시된 턴별 피드백을 모아 `nativeScore`, `highlightMessage`와 함께 반환합니다.
 - 영어 학습 가이드 질문은 기존 `guide` API로 계속 처리합니다.
 
 슬롯 완료 판정, 세션/턴 생성, DB 저장, NPS, 최종 완료 상태 관리는 백엔드 책임입니다.
@@ -50,11 +50,6 @@
 {
   "sessionId": 1000,
   "nativeScore": 78,
-  "nativeScoreBreakdown": {
-    "attemptedWordScore": 72,
-    "sentenceComplexityScore": 76,
-    "comprehensibilityScore": 82
-  },
   "highlightMessage": "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
   "turnFeedbacks": [
     {
@@ -85,7 +80,7 @@
 
 3차 MVP의 최우선 목표는 응답 속도나 토큰 절감이 아니라 품질입니다. 턴별 피드백은 문법만 보지 않고 뉘앙스, 공손함, 상황 적절성, 어휘 선택, 질문에 대한 답변 적절성을 함께 판단합니다.
 
-`nativeScore`는 0-100 점수이며 100에 가까울수록 원어민 쪽에 가깝습니다. 세션 점수는 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50%를 합산해 계산하고, 각 구성요소는 `nativeScoreBreakdown`에 함께 내려줍니다.
+`nativeScore`는 0-100 점수이며 100에 가까울수록 원어민 쪽에 가깝습니다. 세션 점수는 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50%를 내부 합산해 계산합니다.
 
 `highlightMessage`는 전체 총평이 아니라 칭호나 배지처럼 보이는 후킹 문구입니다. 문장형 설명보다 `한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람` 같은 마침표 없는 명사구를 우선합니다.
 
@@ -99,7 +94,7 @@
 
 `breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 의미가 통하면 교정 폭격 대신 `benchmarkMessage`와 `highlightMessage`의 게임화 소재로 씁니다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT`의 우선 교정 후보로 둡니다.
 
-`detectedPatterns`는 `nativeScoreBreakdown`에도 반영됩니다. 어려운 구조를 시도한 경우 `sentenceComplexityScore`에 가산하고, 의미를 깨는 오류는 `comprehensibilityScore`에서 더 크게 감점합니다.
+`detectedPatterns`는 내부 점수 계산에도 반영됩니다. 어려운 구조를 시도한 경우 문장 복잡도에 가산하고, 의미를 깨는 오류는 이해 가능성에서 더 크게 감점합니다.
 
 ## Error Policy
 

@@ -20,7 +20,6 @@ class ConversationRoutesTest(unittest.TestCase):
             TurnFeedbackCreationResponse,
             TurnFeedbackData,
             TurnFeedbackStatus,
-            NativeScoreBreakdown,
         )
 
         self.client = TestClient(app)
@@ -43,11 +42,6 @@ class ConversationRoutesTest(unittest.TestCase):
         conversation.generate_session_feedback = lambda request: SessionFeedbackResponse(
             sessionId=request.sessionId,
             nativeScore=82,
-            nativeScoreBreakdown=NativeScoreBreakdown(
-                attemptedWordScore=76,
-                sentenceComplexityScore=68,
-                comprehensibilityScore=91,
-            ),
             highlightMessage="한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람",
             turnFeedbacks=[
                 TurnFeedbackData(
@@ -174,7 +168,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(body["sessionId"], 1000)
         self.assertEqual(body["nativeScore"], 82)
         self.assertEqual(body["highlightMessage"], "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
-        self.assertEqual(body["nativeScoreBreakdown"]["comprehensibilityScore"], 91)
+        self.assertNotIn("nativeScoreBreakdown", body)
         self.assertNotIn("nativeLevelLabel", body)
         self.assertNotIn("summary", body)
         self.assertEqual(body["turnFeedbacks"][0]["feedbackType"], "GOOD")

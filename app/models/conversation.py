@@ -176,7 +176,6 @@ class NativeScoreBreakdown(BaseModel):
 class SessionFeedbackResponse(BaseModel):
     sessionId: int = Field(gt=0)
     nativeScore: int = Field(ge=0, le=100)
-    nativeScoreBreakdown: NativeScoreBreakdown
     highlightMessage: str
     turnFeedbacks: list[TurnFeedbackData]
 

@@ -1,5 +1,13 @@
 # 작업 체크리스트
 
+## nativeScoreBreakdown 응답 제거
+
+- [x] 공개 `session-feedback` 응답에서 `nativeScoreBreakdown`이 없어야 하는 RED 테스트를 확인한다.
+- [x] 내부 점수 계산 로직은 유지하고 `SessionFeedbackResponse` 모델과 반환 생성부에서만 필드를 제거한다.
+- [x] README와 작업 맥락 기록에서 `nativeScoreBreakdown`을 내부 계산값으로 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 한국인 오류 패턴 seed 기반 피드백 활용
 
 - [x] AI 서버 seed JSON을 source of truth로 두는 결정을 `context-notes.md`에 기록한다.

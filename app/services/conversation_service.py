@@ -201,7 +201,6 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
     response = SessionFeedbackResponse(
         sessionId=highlight.sessionId,
         nativeScore=native_score,
-        nativeScoreBreakdown=native_score_breakdown,
         highlightMessage=highlight_message,
         turnFeedbacks=turn_feedbacks,
     )

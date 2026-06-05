@@ -824,12 +824,10 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.nativeScore, 74)
-        self.assertEqual(result.nativeScoreBreakdown.attemptedWordScore, 56)
-        self.assertEqual(result.nativeScoreBreakdown.sentenceComplexityScore, 60)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual([feedback.turnId for feedback in result.turnFeedbacks], [5000, 5001])
 
-    def test_session_feedback_returns_native_score_breakdown_and_title_like_highlight(self):
+    def test_session_feedback_returns_native_score_and_title_like_highlight_without_breakdown(self):
         from app.models.conversation import SessionFeedbackRequest
 
         responses = [
@@ -860,17 +858,8 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인의 40%가 헷갈리는 간접의문문 어순을 피해간 사람")
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
-        self.assertGreater(result.nativeScoreBreakdown.attemptedWordScore, 0)
-        self.assertGreater(result.nativeScoreBreakdown.sentenceComplexityScore, 0)
-        self.assertEqual(
-            result.nativeScore,
-            round(
-                result.nativeScoreBreakdown.attemptedWordScore * 0.2
-                + result.nativeScoreBreakdown.sentenceComplexityScore * 0.3
-                + result.nativeScoreBreakdown.comprehensibilityScore * 0.5
-            ),
-        )
+        self.assertEqual(result.nativeScore, 74)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
         self.assertFalse(hasattr(result, "summary"))
 
@@ -890,7 +879,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 74)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 90)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_three_good_to_study_abroad_band(self):
         result = self._session_feedback_result_for_types(
@@ -899,7 +888,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 70)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 84)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_five_turns_with_three_good_to_basic_conversation_band(self):
         result = self._session_feedback_result_for_types(
@@ -909,7 +898,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 68)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 80)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_one_good_to_sentence_structure_band(self):
         result = self._session_feedback_result_for_types(
@@ -919,7 +908,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 64)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 71)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_five_all_needs_to_basic_correction_band(self):
         result = self._session_feedback_result_for_types(
@@ -935,7 +924,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 61)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1094,7 +1083,7 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.nativeScore, 61)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
     def test_session_feedback_uses_single_turn_summary_when_only_one_needs_improvement(self):
@@ -1131,7 +1120,7 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.nativeScore, 65)
-        self.assertEqual(result.nativeScoreBreakdown.comprehensibilityScore, 65)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
     def test_session_feedback_raises_not_ready_when_expected_turn_is_missing(self):
