@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## 한국인 오류 패턴 seed 기반 피드백 활용
+
+- [x] AI 서버 seed JSON을 source of truth로 두는 결정을 `context-notes.md`에 기록한다.
+- [x] 오류 패턴 catalog 로더가 a/an, 의미 파괴 여부, 게임화 문구를 읽는 RED 테스트를 추가한다.
+- [x] 턴 피드백 LLM 응답의 `detectedPatterns`를 외부 응답에서 분리해 내부 캐시에 저장하는 RED 테스트를 추가한다.
+- [x] `breaks_meaning`, `gamifiable`, `korean_pct`가 프롬프트와 점수 계산에 반영되도록 구현한다.
+- [x] README에 seed catalog와 내부 `detectedPatterns` 활용 방식을 기록한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 세션 피드백 응답 계약 개편
 
 - [x] `highlightMessage`가 칭호형 후킹 문구라는 기준을 `context-notes.md`에 기록한다.

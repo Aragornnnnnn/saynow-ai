@@ -91,6 +91,16 @@
 
 `NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`에는 원 발화, 교정 포인트, 이유, 개선 표현을 하나로 합쳐 담고, `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`을 반드시 포함하고, 근거가 있는 경우에만 `benchmarkMessage`를 제공합니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
 
+## 한국인 오류 패턴 seed
+
+1차 구현에서는 한국인 학습자 오류 패턴 데이터를 AI 서버 seed로 관리합니다. seed 파일은 `app/data/error_patterns.json`이고, catalog 로더는 `app/services/error_pattern_catalog.py`입니다.
+
+턴 피드백 LLM은 외부 응답 필드와 함께 내부 메타데이터인 `detectedPatterns`를 반환할 수 있습니다. AI 서버는 이 값을 `TurnFeedbackData` 검증 전에 분리해 캐시에만 저장하고, 백엔드 응답에는 노출하지 않습니다.
+
+`breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 의미가 통하면 교정 폭격 대신 `benchmarkMessage`와 `highlightMessage`의 게임화 소재로 씁니다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT`의 우선 교정 후보로 둡니다.
+
+`detectedPatterns`는 `nativeScoreBreakdown`에도 반영됩니다. 어려운 구조를 시도한 경우 `sentenceComplexityScore`에 가산하고, 의미를 깨는 오류는 `comprehensibilityScore`에서 더 크게 감점합니다.
+
 ## Error Policy
 
 - 잘못된 요청은 HTTP 400과 `{"code": "INVALID_REQUEST", "message": "잘못된 요청입니다."}`를 반환합니다.

@@ -335,6 +335,90 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.benchmarkMessage)
         self.assertFalse(hasattr(cached, "betterExpression"))
 
+    def test_turn_feedback_stores_detected_patterns_in_cache_without_exposing_them(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '사과 하나를 먹었어요'처럼 자연스럽게 들려요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "a/an이 필요한 자리에서 an apple을 정확히 쓴 점이 좋아요.",
+            "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+            "detectedPatterns": [
+                {
+                    "errorType": "article_a_omission",
+                    "status": "correct",
+                    "evidence": "an apple",
+                }
+            ],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I ate an apple because I was hungry.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+        entry = self.service._get_expected_turn_feedback_entries(1000, [5000])[0]
+
+        self.assertFalse(hasattr(cached, "detectedPatterns"))
+        self.assertEqual(entry.detected_patterns[0].error_type, "article_a_omission")
+        self.assertEqual(entry.detected_patterns[0].status, "correct")
+        self.assertGreaterEqual(entry.native_score_breakdown.sentenceComplexityScore, 70)
+
+    def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
+        system_prompt = self.service._turn_feedback_system_prompt()
+
+        self.assertIn("article_a_omission", system_prompt)
+        self.assertIn("breaks_meaning=false", system_prompt)
+        self.assertIn("konglish", system_prompt)
+        self.assertIn("detectedPatterns", system_prompt)
+        self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
+
+    def test_session_feedback_prompt_includes_cached_detected_patterns(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '사과 하나를 먹었어요'처럼 자연스럽게 들려요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "a/an이 필요한 자리에서 an apple을 정확히 쓴 점이 좋아요.",
+                "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+                "detectedPatterns": [
+                    {
+                        "errorType": "article_a_omission",
+                        "status": "correct",
+                        "evidence": "an apple",
+                    }
+                ],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+            },
+        ]
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["user"] = user
+            return json.dumps(responses.pop(0))
+
+        self.service.chat = capture_chat
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I ate an apple because I was hungry.")
+        )
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+        self.assertIn("Cached detected pattern JSON", captured["user"])
+        self.assertIn("article_a_omission", captured["user"])
+        self.assertIn("한국인 79%가 놓치는 a/an", captured["user"])
+
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
         captured = {}
 

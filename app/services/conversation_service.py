@@ -33,6 +33,11 @@ from app.services.safety_guard import (
     inspect_user_text,
     shared_safety_policy,
 )
+from app.services.error_pattern_catalog import (
+    DetectedErrorPattern,
+    parse_detected_patterns,
+    prompt_error_pattern_catalog,
+)
 
 
 logger = get_logger("conversation")
@@ -43,6 +48,7 @@ _TURN_FEEDBACK_CACHE_TTL_SECONDS = 3 * 60 * 60
 class _TurnFeedbackCacheEntry:
     feedback: TurnFeedbackData
     native_score_breakdown: NativeScoreBreakdown
+    detected_patterns: tuple[DetectedErrorPattern, ...]
     expires_at: float
 
 
@@ -125,6 +131,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
 
     stage_started_at = time.perf_counter()
     data = _parse_json_object(raw, workflow=workflow)
+    detected_patterns = parse_detected_patterns(data.pop("detectedPatterns", None))
     _normalize_turn_feedback_data_before_validation(data)
     try:
         feedback = TurnFeedbackData.model_validate(data)
@@ -139,8 +146,13 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         )
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
-    native_score_breakdown = _score_turn_feedback(request, feedback)
-    _store_turn_feedback(request.sessionId, feedback, native_score_breakdown=native_score_breakdown)
+    native_score_breakdown = _score_turn_feedback(request, feedback, detected_patterns)
+    _store_turn_feedback(
+        request.sessionId,
+        feedback,
+        native_score_breakdown=native_score_breakdown,
+        detected_patterns=detected_patterns,
+    )
     _log_workflow_stage_duration(workflow, "parse_validate_store", stage_started_at)
 
     return TurnFeedbackCreationResponse(
@@ -159,7 +171,7 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
     stage_started_at = time.perf_counter()
     raw = _call_chat(
         _session_feedback_system_prompt(),
-        _session_feedback_user_prompt(request, turn_feedbacks),
+        _session_feedback_user_prompt(request, turn_feedback_entries),
         max_tokens=512,
         temperature=0,
         workflow=workflow,
@@ -244,6 +256,7 @@ def _store_turn_feedback(
     feedback: TurnFeedbackData,
     *,
     native_score_breakdown: NativeScoreBreakdown | None = None,
+    detected_patterns: tuple[DetectedErrorPattern, ...] = (),
     now: float | None = None,
 ) -> None:
     current_time = _cache_now() if now is None else now
@@ -253,6 +266,7 @@ def _store_turn_feedback(
         session_feedbacks[feedback.turnId] = _TurnFeedbackCacheEntry(
             feedback=feedback,
             native_score_breakdown=native_score_breakdown or _fallback_turn_score_breakdown(feedback),
+            detected_patterns=detected_patterns,
             expires_at=current_time + _TURN_FEEDBACK_CACHE_TTL_SECONDS,
         )
 
@@ -301,12 +315,17 @@ def _cache_now() -> float:
 def _score_turn_feedback(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
+    detected_patterns: tuple[DetectedErrorPattern, ...] = (),
 ) -> NativeScoreBreakdown:
     words = _english_words(request.turn.userUtterance)
     return NativeScoreBreakdown(
         attemptedWordScore=_attempted_word_score(words),
-        sentenceComplexityScore=_sentence_complexity_score(request.turn.userUtterance, words),
-        comprehensibilityScore=_comprehensibility_score(feedback),
+        sentenceComplexityScore=_sentence_complexity_score(
+            request.turn.userUtterance,
+            words,
+            detected_patterns,
+        ),
+        comprehensibilityScore=_comprehensibility_score(feedback, detected_patterns),
     )
 
 
@@ -326,7 +345,11 @@ def _attempted_word_score(words: list[str]) -> int:
     return _clamp_score(round(len(words) * 8), 0, 100)
 
 
-def _sentence_complexity_score(user_utterance: str, words: list[str]) -> int:
+def _sentence_complexity_score(
+    user_utterance: str,
+    words: list[str],
+    detected_patterns: tuple[DetectedErrorPattern, ...] = (),
+) -> int:
     normalized = f" {_normalize_visible_text(user_utterance)} "
     score = 35
     if len(words) >= 6:
@@ -339,6 +362,14 @@ def _sentence_complexity_score(user_utterance: str, words: list[str]) -> int:
         score += 20
     if any(marker in normalized for marker in [" would ", " could ", " should ", " have ", " has "]):
         score += 10
+    if any(pattern.status in {"correct", "incorrect", "attempted"} for pattern in detected_patterns):
+        score += 10
+    if any(
+        pattern.status in {"correct", "incorrect", "attempted"}
+        and pattern.pattern.gamifiable
+        for pattern in detected_patterns
+    ):
+        score += 5
     return _clamp_score(score, 0, 100)
 
 
@@ -358,9 +389,22 @@ def _contains_indirect_question_pattern(normalized_utterance: str) -> bool:
     )
 
 
-def _comprehensibility_score(feedback: TurnFeedbackData) -> int:
+def _comprehensibility_score(
+    feedback: TurnFeedbackData,
+    detected_patterns: tuple[DetectedErrorPattern, ...] = (),
+) -> int:
+    if any(
+        pattern.status == "incorrect" and pattern.pattern.breaks_meaning
+        for pattern in detected_patterns
+    ):
+        return 45
     if feedback.feedbackType == FeedbackType.GOOD:
         return 90
+    if any(
+        pattern.status == "incorrect" and not pattern.pattern.breaks_meaning
+        for pattern in detected_patterns
+    ):
+        return 75
     return 65
 
 
@@ -498,12 +542,22 @@ def _turn_feedback_system_prompt() -> str:
             "Actionable Issue Gate: first check whether grammar, word choice, word order, tense, preposition, nuance, politeness, or relevance creates a real correction point. "
             "GOOD Gate: mark GOOD when the answer fits the AI question, the meaning is clear without guesswork, and there is no actionable correction point. "
             "NEEDS_IMPROVEMENT Gate: mark NEEDS_IMPROVEMENT only when there is an actionable issue and you can provide a better expression that preserves the user's intent. "
+            "Do not mark NEEDS_IMPROVEMENT only because of low-priority cosmetic patterns when the meaning is clear. "
+            "Low-priority patterns with breaks_meaning=false are usually benchmark or praise material, not correction targets. "
+            "High-priority patterns with breaks_meaning=true should be corrected first. "
             "More detail alone is not an actionable issue; a short direct answer can be GOOD. "
             "Boundary examples: 'I like pizza because it is spicy.' is GOOD; 'I would like to travel to Vancouver next.' is GOOD; "
             "'I like pizza because spicy.' is NEEDS_IMPROVEMENT because because needs a clause; "
             "'Why do you wanna know that?' is NEEDS_IMPROVEMENT because it can sound defensive or blunt in casual practice. "
             "When several issues exist, handle the most important one first. "
             "Use cautious wording such as can sound when the nuance depends on context."
+        ),
+        (
+            "Korean Learner Pattern Catalog:\n"
+            f"{prompt_error_pattern_catalog()}\n"
+            "Use this catalog to populate detectedPatterns. "
+            "When a gamifiable pattern is used correctly, benchmarkMessage may use the catalog copy. "
+            "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
             "Field Policy:\n"
@@ -531,12 +585,13 @@ def _turn_feedback_system_prompt() -> str:
             "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
             "3. GOOD has positiveFeedback=null and benchmarkMessage can be null or a grounded comparison hook. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
-            "5. feedbackDetail is Korean and matches the feedbackType."
+            "5. feedbackDetail is Korean and matches the feedbackType. "
+            "6. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":null}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":null,"detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
     ])
@@ -618,14 +673,30 @@ def _session_feedback_system_prompt() -> str:
 
 def _session_feedback_user_prompt(
     request: SessionFeedbackRequest,
-    turn_feedbacks: list[TurnFeedbackData],
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str:
+    turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
     good_count = sum(1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.GOOD)
     needs_count = sum(
         1 for feedback in turn_feedbacks if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
     )
     feedback_json = json.dumps(
         [feedback.model_dump(mode="json") for feedback in turn_feedbacks],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    detected_pattern_json = json.dumps(
+        [
+            {
+                "turnId": entry.feedback.turnId,
+                "patterns": [
+                    detected_pattern.to_prompt_dict()
+                    for detected_pattern in entry.detected_patterns
+                ],
+            }
+            for entry in turn_feedback_entries
+            if entry.detected_patterns
+        ],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -637,7 +708,8 @@ def _session_feedback_user_prompt(
         f"Scenario conversation goal: {request.scenario.conversationGoal}\n"
         f"Expected turn IDs: {request.expectedTurnIds}\n\n"
         f"Cached turn feedback counts: GOOD={good_count}, NEEDS_IMPROVEMENT={needs_count}\n\n"
-        f"Cached turn feedback JSON:\n{feedback_json}"
+        f"Cached turn feedback JSON:\n{feedback_json}\n\n"
+        f"Cached detected pattern JSON:\n{detected_pattern_json}"
     )
 
 
