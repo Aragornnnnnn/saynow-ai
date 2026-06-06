@@ -1571,10 +1571,33 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertIsNotNone(self.service.get_cached_turn_feedback(1000, expected_turn_ids[0]))
 
-    def test_session_feedback_retries_with_fallback_model_when_primary_model_call_fails(self):
+    def test_session_feedback_uses_gpt_4o_mini_without_fallback_when_primary_returns_json(self):
+        called_models = []
+
+        def return_valid_session_feedback(*args, **kwargs):
+            model = kwargs.get("model")
+            called_models.append(model)
+            return json.dumps({
+                "sessionId": 1000,
+                "highlightMessage": "핵심 질문에 자연스럽게 답한 사람",
+            })
+
         from app.models.conversation import SessionFeedbackRequest
 
         expected_turn_ids = self._cache_turn_feedbacks(["GOOD"])
+        self.service.chat = return_valid_session_feedback
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": expected_turn_ids,
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertEqual(called_models, ["gpt-4o-mini"])
+
+    def test_turn_feedback_retries_with_fallback_model_when_primary_model_call_fails(self):
         called_models = []
 
         def fail_primary_then_succeed(*args, **kwargs):
@@ -1583,26 +1606,23 @@ class ConversationServiceTest(unittest.TestCase):
             if model == "gpt-5.4-mini":
                 raise RuntimeError("primary model unavailable")
             return json.dumps({
-                "sessionId": 1000,
-                "highlightMessage": "핵심 질문에 자연스럽게 답한 사람",
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '피자 좋아요. 매워서요'처럼 담백하게 들려요.",
+                "feedbackDetail": "좋아하는 음식과 이유를 한 문장으로 자연스럽게 연결했어요.",
+                "benchmarkMessage": None,
             })
 
         self.service.chat = fail_primary_then_succeed
-        request = SessionFeedbackRequest.model_validate({
-            "sessionId": 1000,
-            "scenario": self._scenario(),
-            "expectedTurnIds": expected_turn_ids,
-        })
 
-        result = self.service.generate_session_feedback(request)
+        self.service.generate_turn_feedback(self._turn_feedback_request())
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached.feedbackType, "GOOD")
         self.assertEqual(called_models, ["gpt-5.4-mini", "gpt-4o-mini"])
 
-    def test_session_feedback_retries_with_fallback_model_when_primary_model_returns_non_json(self):
-        from app.models.conversation import SessionFeedbackRequest
-
-        expected_turn_ids = self._cache_turn_feedbacks(["GOOD"])
+    def test_turn_feedback_retries_with_fallback_model_when_primary_model_returns_non_json(self):
         called_models = []
 
         def return_invalid_json_for_primary(*args, **kwargs):
@@ -1611,20 +1631,20 @@ class ConversationServiceTest(unittest.TestCase):
             if model == "gpt-5.4-mini":
                 return "not json"
             return json.dumps({
-                "sessionId": 1000,
-                "highlightMessage": "핵심 질문에 자연스럽게 답한 사람",
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면 '피자 좋아요. 매워서요'처럼 담백하게 들려요.",
+                "feedbackDetail": "좋아하는 음식과 이유를 한 문장으로 자연스럽게 연결했어요.",
+                "benchmarkMessage": None,
             })
 
         self.service.chat = return_invalid_json_for_primary
-        request = SessionFeedbackRequest.model_validate({
-            "sessionId": 1000,
-            "scenario": self._scenario(),
-            "expectedTurnIds": expected_turn_ids,
-        })
 
-        result = self.service.generate_session_feedback(request)
+        self.service.generate_turn_feedback(self._turn_feedback_request())
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached.feedbackType, "GOOD")
         self.assertEqual(called_models, ["gpt-5.4-mini", "gpt-4o-mini"])
 
     def test_feedback_data_validates_type_specific_required_fields(self):

@@ -635,9 +635,10 @@
 
 ## workflow별 OpenAI 모델 라우팅
 
-- [x] `next-question`은 `gpt-4o-mini`, `turn-feedback`과 `session-feedback`은 `gpt-5.4-mini`를 기본 primary로 쓰는 설정 테스트를 추가한다.
-- [x] feedback primary 모델 호출 실패 시 `gpt-4o-mini` fallback으로 재시도하는 회귀 테스트를 추가한다.
-- [x] feedback primary 모델이 non-JSON을 반환해도 fallback으로 복구하는 회귀 테스트를 추가한다.
+- [x] `next-question`과 `session-feedback`은 `gpt-4o-mini`, `turn-feedback`은 `gpt-5.4-mini`를 기본 primary로 쓰는 설정 테스트를 추가한다.
+- [x] `turn-feedback` primary 모델 호출 실패 시 `gpt-4o-mini` fallback으로 재시도하는 회귀 테스트를 추가한다.
+- [x] `turn-feedback` primary 모델이 non-JSON을 반환해도 fallback으로 복구하는 회귀 테스트를 추가한다.
+- [x] `session-feedback`은 primary와 fallback이 모두 `gpt-4o-mini`라 별도 fallback 재시도 없이 한 번만 호출하는 회귀 테스트를 추가한다.
 - [x] OpenAI workflow별 모델 설정과 fallback 호출을 구현한다.
 - [x] README와 context note에 운영 설정 기준을 기록한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_next_question_model: str = "gpt-4o-mini"
     openai_turn_feedback_model: str = "gpt-5.4-mini"
-    openai_session_feedback_model: str = "gpt-5.4-mini"
+    openai_session_feedback_model: str = "gpt-4o-mini"
     openai_fallback_model: str = "gpt-4o-mini"
     llm_provider: str = "openai"
     upstage_api_key: str | None = None
