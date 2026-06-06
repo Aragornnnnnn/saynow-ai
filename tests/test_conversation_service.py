@@ -363,6 +363,31 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(entry.detected_patterns[0].status, "correct")
         self.assertGreaterEqual(entry.native_score_breakdown.sentenceComplexityScore, 70)
 
+    def test_good_turn_feedback_fills_missing_benchmark_message_from_detected_pattern(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '사과 하나를 먹었어요'처럼 자연스럽게 들려요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "a/an이 필요한 자리에서 an apple을 정확히 쓴 점이 좋아요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [
+                {
+                    "errorType": "article_a_omission",
+                    "status": "correct",
+                    "evidence": "an apple",
+                }
+            ],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I ate an apple because I was hungry.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
 

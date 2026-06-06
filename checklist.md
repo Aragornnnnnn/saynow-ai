@@ -2,6 +2,7 @@
 
 ## 피드백 LLM smoke 후속 보정
 
+- [x] GOOD 턴에서 정답 `detectedPatterns`가 있는데 `benchmarkMessage`가 null이면 seed copy로 턴별 `benchmarkMessage`를 채운다.
 - [x] `highlightMessage`는 GOOD 정량 칭찬 hook을 최우선으로 쓰고, GOOD hook이 없을 때만 NEEDS 도전 hook을 쓰는 기준을 RED 테스트로 고정한다.
 - [x] NEEDS fallback 문구를 `바로잡을 사람`이 아니라 `도전한 사람` 계열로 보정한다.
 - [x] 실제 LLM smoke에서 약한 `highlightMessage`와 메타 설명형 `koreanAnalogy`가 나온 문제를 RED 테스트로 고정한다.

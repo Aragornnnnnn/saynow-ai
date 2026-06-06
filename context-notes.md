@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-06-06 GOOD 턴에서 LLM이 `detectedPatterns=[article_a_omission correct]`를 줬지만 `benchmarkMessage=null`을 반환하면, 세션 `highlightMessage`는 내부 패턴 근거로 정량 hook을 만들면서도 턴별 `benchmarkMessage`가 비어 보이는 불일치가 생긴다. GOOD 정답 패턴이 gamifiable이고 `korean_pct`가 있으면 서버 후처리에서 seed `feedback_copy`로 `benchmarkMessage`를 채운다.
+- 2026-06-06 실제 OpenAI smoke에서 수정 후 `I ate an apple because I was hungry.` GOOD 턴은 `benchmarkMessage=한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`으로 내려왔고, 같은 세션의 `highlightMessage`도 같은 GOOD 정량 hook을 사용했다.
 - 2026-06-06 세션 `highlightMessage` 정량 hook 우선순위는 GOOD에서 사용자가 잘한 포인트를 먼저 쓰는 것으로 확정했다. 1순위는 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 GOOD `benchmarkMessage`나 GOOD correct `detectedPatterns`에서 나온 칭찬형 hook이다. 이런 포인트가 없을 때만 NEEDS_IMPROVEMENT의 incorrect/attempted `detectedPatterns`를 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 도전형 hook으로 쓴다.
 - 2026-06-06 실제 OpenAI smoke 재검증에서 GOOD a/an 턴과 NEEDS 간접의문문 턴이 함께 있을 때 최종 API 응답은 `highlightMessage=한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`으로 나왔다. GOOD 정량 재료가 없는 단일 NEEDS 케이스에서는 모델 원문이 `간접의문문 어순에 도전한 사람`이어도 서버 최종 응답은 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`으로 정규화됐다.
 - 2026-06-06 실제 OpenAI smoke에서 `highlightMessage`가 `피자와 매운 맛에 대한 선호를 잘 표현한 사람`처럼 정량 근거 없는 일반 칭찬으로 내려왔다. 이 필드의 목적은 총평이 아니라 다음 발화별 피드백을 보게 만드는 hook이므로, gamifiable `detectedPatterns`나 `benchmarkMessage`에 `korean_pct` 근거가 있으면 `%`가 들어간 칭호형 문구를 우선한다.

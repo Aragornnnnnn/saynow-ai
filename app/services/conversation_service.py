@@ -148,6 +148,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
     detected_patterns = _infer_missing_detected_patterns(request, feedback, detected_patterns)
+    feedback = _postprocess_turn_benchmark_message(feedback, detected_patterns)
     native_score_breakdown = _score_turn_feedback(request, feedback, detected_patterns)
     _store_turn_feedback(
         request.sessionId,
@@ -354,6 +355,24 @@ def _infer_missing_detected_patterns(
             pattern=pattern,
         ),
     )
+
+
+def _postprocess_turn_benchmark_message(
+    feedback: TurnFeedbackData,
+    detected_patterns: tuple[DetectedErrorPattern, ...],
+) -> TurnFeedbackData:
+    if feedback.feedbackType != FeedbackType.GOOD or feedback.benchmarkMessage:
+        return feedback
+    for detected_pattern in detected_patterns:
+        pattern = detected_pattern.pattern
+        if (
+            detected_pattern.status == "correct"
+            and pattern.gamifiable
+            and pattern.korean_pct is not None
+        ):
+            benchmark_message = re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+            return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
+    return feedback
 
 
 def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
@@ -583,7 +602,7 @@ def _turn_feedback_system_prompt() -> str:
             "Korean Learner Pattern Catalog:\n"
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
-            "When a gamifiable pattern is used correctly, benchmarkMessage may use the catalog copy. "
+            "When a gamifiable pattern is used correctly and korean_pct is available, GOOD benchmarkMessage must use the catalog copy. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -603,7 +622,7 @@ def _turn_feedback_system_prompt() -> str:
             "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
-            "For GOOD, benchmarkMessage may be a short Korean learner comparison hook when clearly supported; otherwise use null. "
+            "For GOOD, benchmarkMessage must be a short Korean learner comparison hook when a gamifiable correct detectedPattern has koreanPct; otherwise use null. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
@@ -616,7 +635,7 @@ def _turn_feedback_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
             "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null and benchmarkMessage can be null or a grounded comparison hook. "
+            "3. GOOD has positiveFeedback=null and benchmarkMessage is present when a gamifiable correct detectedPattern has koreanPct. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
