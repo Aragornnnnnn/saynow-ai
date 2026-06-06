@@ -148,7 +148,8 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
     detected_patterns = _infer_missing_detected_patterns(request, feedback, detected_patterns)
-    feedback = _postprocess_turn_benchmark_message(feedback, detected_patterns)
+    detected_patterns = _filter_detected_patterns_by_evidence(request, detected_patterns)
+    feedback = _postprocess_turn_benchmark_message(request, feedback, detected_patterns)
     native_score_breakdown = _score_turn_feedback(request, feedback, detected_patterns)
     _store_turn_feedback(
         request.sessionId,
@@ -357,22 +358,59 @@ def _infer_missing_detected_patterns(
     )
 
 
+def _filter_detected_patterns_by_evidence(
+    request: TurnFeedbackRequest,
+    detected_patterns: tuple[DetectedErrorPattern, ...],
+) -> tuple[DetectedErrorPattern, ...]:
+    return tuple(
+        detected_pattern
+        for detected_pattern in detected_patterns
+        if _detected_pattern_evidence_matches_utterance(request, detected_pattern)
+    )
+
+
+def _detected_pattern_evidence_matches_utterance(
+    request: TurnFeedbackRequest,
+    detected_pattern: DetectedErrorPattern,
+) -> bool:
+    if not detected_pattern.evidence.strip():
+        return False
+    if not _contains_text(request.turn.userUtterance, detected_pattern.evidence):
+        return False
+    if detected_pattern.error_type == "indirect_question_word_order":
+        return _contains_indirect_question_pattern(
+            _normalize_visible_text(request.turn.userUtterance)
+        )
+    return True
+
+
 def _postprocess_turn_benchmark_message(
+    request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
     detected_patterns: tuple[DetectedErrorPattern, ...],
 ) -> TurnFeedbackData:
-    if feedback.feedbackType != FeedbackType.GOOD or feedback.benchmarkMessage:
+    if feedback.feedbackType != FeedbackType.GOOD:
         return feedback
+    benchmark_message = _benchmark_message_from_detected_patterns(request, detected_patterns)
+    if feedback.benchmarkMessage == benchmark_message:
+        return feedback
+    return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
+
+
+def _benchmark_message_from_detected_patterns(
+    request: TurnFeedbackRequest,
+    detected_patterns: tuple[DetectedErrorPattern, ...],
+) -> str | None:
     for detected_pattern in detected_patterns:
         pattern = detected_pattern.pattern
         if (
             detected_pattern.status == "correct"
             and pattern.gamifiable
             and pattern.korean_pct is not None
+            and _detected_pattern_evidence_matches_utterance(request, detected_pattern)
         ):
-            benchmark_message = re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
-            return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
-    return feedback
+            return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+    return None
 
 
 def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
@@ -602,7 +640,9 @@ def _turn_feedback_system_prompt() -> str:
             "Korean Learner Pattern Catalog:\n"
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
-            "When a gamifiable pattern is used correctly and korean_pct is available, GOOD benchmarkMessage must use the catalog copy. "
+            "detectedPatterns evidence must be a short phrase copied from the user utterance. "
+            "benchmarkMessage must not be invented. "
+            "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage must equal that pattern's catalog copy. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -622,7 +662,7 @@ def _turn_feedback_system_prompt() -> str:
             "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
-            "For GOOD, benchmarkMessage must be a short Korean learner comparison hook when a gamifiable correct detectedPattern has koreanPct; otherwise use null. "
+            "For GOOD, benchmarkMessage must be a short Korean learner comparison hook only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise benchmarkMessage must be null. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
@@ -635,17 +675,25 @@ def _turn_feedback_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
             "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null and benchmarkMessage is present when a gamifiable correct detectedPattern has koreanPct. "
+            "3. GOOD has positiveFeedback=null and benchmarkMessage is present only when it exactly matches the feedbackCopy of a supported gamifiable correct detectedPattern. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. No legacy fields are present."
+            "8. If benchmarkMessage does not match a supported detectedPattern feedbackCopy, set benchmarkMessage=null. "
+            "9. No legacy fields are present."
+        ),
+        (
+            "Benchmark Examples:\n"
+            "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람'. "
+            "Negative GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has no indirect-question structure, so do not use indirect_question_word_order and benchmarkMessage must be null unless another supported gamifiable pattern has copied evidence. "
+            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":null,"detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
+            "Return one JSON object, not an array. "
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
     ])
@@ -715,6 +763,7 @@ def _session_feedback_system_prompt() -> str:
             "It must hook the user into reading turn-level feedback. "
             "Prefer a quantitative noun phrase about what the user did well, such as 한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람. "
             "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
+            "Do not invent a new percentage hook that is not present in cached benchmarkMessage or cached detected pattern evidence. "
             "Return the phrase without final punctuation. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
@@ -722,8 +771,8 @@ def _session_feedback_system_prompt() -> str:
         (
             "Evidence Priority:\n"
             "1. Prefer a grounded benchmarkMessage from GOOD turn feedback because it already contains a quantitative hook. "
-            "2. Then use gamifiable detectedPatterns from GOOD turns when they are marked correct. "
-            "3. If no GOOD quantitative hook exists, use gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook. The title must include a percentage number when koreanPct is available. "
+            "2. Then use validated gamifiable detectedPatterns from GOOD turns when they are marked correct. "
+            "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook. The title must include a percentage number when koreanPct is available. "
             "4. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
             "5. If no quantitative evidence exists, use a modest title based on the clearest user attempt."
         ),
@@ -1441,6 +1490,8 @@ def _postprocess_highlight_message(
         return _default_highlight_message(turn_feedback_entries)
     repaired = _repair_legacy_highlight_style(highlight_message).strip()
     repaired = re.sub(r"[.!。]+$", "", repaired).strip()
+    if _contains_percentage(repaired):
+        return _default_highlight_message(turn_feedback_entries)
     if len(repaired) > 80 or _looks_like_sentence_summary(repaired):
         return _default_highlight_message(turn_feedback_entries)
     return repaired
@@ -1589,12 +1640,28 @@ def _parse_json_object(raw: str, *, workflow: str | None = None) -> dict[str, An
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        data = _parse_json_object_with_trailing_closer_repair(cleaned)
+        if data is not None:
+            return data
         logger.error("LLM JSON 파싱 실패 | workflow=%s raw=%s", workflow or "-", _log_preview(raw))
         raise ConversationGenerationError("model response is not valid JSON") from exc
 
     if not isinstance(data, dict):
         raise ConversationGenerationError("model response must be a JSON object")
     return data
+
+
+def _parse_json_object_with_trailing_closer_repair(cleaned: str) -> dict[str, Any] | None:
+    try:
+        data, end_index = json.JSONDecoder().raw_decode(cleaned)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    trailing = cleaned[end_index:].strip()
+    if trailing and set(trailing) <= {"]", "}"}:
+        return data
+    return None
 
 
 def _call_chat(

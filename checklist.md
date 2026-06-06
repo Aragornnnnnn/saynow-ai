@@ -2,6 +2,11 @@
 
 ## 피드백 LLM smoke 후속 보정
 
+- [x] LLM이 실제 발화와 무관한 `benchmarkMessage`를 만들면 서버가 폐기하도록 RED 테스트를 추가한다.
+- [x] `detectedPatterns[].evidence`가 사용자 발화에 없는 경우 benchmark와 highlight 후보에서 제외한다.
+- [x] 검증된 정량 근거가 없으면 세션 `highlightMessage`의 `%` hook을 fallback으로 되돌린다.
+- [x] 실제 LLM이 JSON 객체 뒤에 닫는 괄호를 덧붙이는 경우를 제한적으로 보정한다.
+- [x] 여행, 음식, 음악 3개 세션 12발화 실제 LLM smoke에서 근거 없는 `간접의문문` hook이 사라졌는지 확인한다.
 - [x] GOOD 턴에서 정답 `detectedPatterns`가 있는데 `benchmarkMessage`가 null이면 seed copy로 턴별 `benchmarkMessage`를 채운다.
 - [x] `highlightMessage`는 GOOD 정량 칭찬 hook을 최우선으로 쓰고, GOOD hook이 없을 때만 NEEDS 도전 hook을 쓰는 기준을 RED 테스트로 고정한다.
 - [x] NEEDS fallback 문구를 `바로잡을 사람`이 아니라 `도전한 사람` 계열로 보정한다.

@@ -1,5 +1,7 @@
 # 작업 맥락 기록
 
+- 2026-06-06 BE 첨부 결과와 develop live 재현에서 실제 발화에 간접의문문이 없어도 LLM이 `benchmarkMessage=한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람`을 직접 생성했고, 세션 `highlightMessage`까지 같은 문구로 오염되는 문제가 확인됐다. 해결 기준은 LLM의 `benchmarkMessage`를 신뢰하지 않고, 사용자 발화에 존재하는 `detectedPatterns[].evidence`와 seed `feedback_copy`만 서버가 canonical benchmark로 채택하는 것이다.
+- 2026-06-06 수정 후 실제 OpenAI LLM으로 첨부와 같은 여행, 음식, 음악 3개 세션 12발화를 재실행했다. 최종 결과는 `violations=[]`였고, `benchmarkMessage`는 12개 모두 근거 없는 간접의문문 hook 없이 `null`로 정리됐다. 세션 `highlightMessage`는 여행 `여행지와 이유를 명확하게 설명한 사람`, 음식과 음악 `핵심 질문에 자연스럽게 답한 사람`으로 보정됐다. 같은 smoke에서 모델이 JSON 객체 뒤에 `]` 또는 `}`를 하나 더 붙이는 케이스가 확인되어, 객체 하나를 정상 파싱한 뒤 남은 문자가 닫는 괄호뿐일 때만 제한적으로 보정한다.
 - 2026-06-06 GOOD 턴에서 LLM이 `detectedPatterns=[article_a_omission correct]`를 줬지만 `benchmarkMessage=null`을 반환하면, 세션 `highlightMessage`는 내부 패턴 근거로 정량 hook을 만들면서도 턴별 `benchmarkMessage`가 비어 보이는 불일치가 생긴다. GOOD 정답 패턴이 gamifiable이고 `korean_pct`가 있으면 서버 후처리에서 seed `feedback_copy`로 `benchmarkMessage`를 채운다.
 - 2026-06-06 실제 OpenAI smoke에서 수정 후 `I ate an apple because I was hungry.` GOOD 턴은 `benchmarkMessage=한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`으로 내려왔고, 같은 세션의 `highlightMessage`도 같은 GOOD 정량 hook을 사용했다.
 - 2026-06-06 세션 `highlightMessage` 정량 hook 우선순위는 GOOD에서 사용자가 잘한 포인트를 먼저 쓰는 것으로 확정했다. 1순위는 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 GOOD `benchmarkMessage`나 GOOD correct `detectedPatterns`에서 나온 칭찬형 hook이다. 이런 포인트가 없을 때만 NEEDS_IMPROVEMENT의 incorrect/attempted `detectedPatterns`를 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 도전형 hook으로 쓴다.

@@ -163,6 +163,24 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("User utterance: I like pizza because it is spicy.", captured["user"])
         self.assertEqual(captured["kwargs"]["temperature"], 0)
 
+    def test_parse_json_object_repairs_single_trailing_array_bracket(self):
+        data = self.service._parse_json_object(
+            '{"turnId":5000,"feedbackType":"GOOD"}]',
+            workflow="turn_feedback",
+        )
+
+        self.assertEqual(data["turnId"], 5000)
+        self.assertEqual(data["feedbackType"], "GOOD")
+
+    def test_parse_json_object_repairs_single_trailing_object_bracket(self):
+        data = self.service._parse_json_object(
+            '{"turnId":5000,"feedbackType":"GOOD"}}',
+            workflow="turn_feedback",
+        )
+
+        self.assertEqual(data["turnId"], 5000)
+        self.assertEqual(data["feedbackType"], "GOOD")
+
     def test_next_question_repairs_model_question_drift_to_fixed_question(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Interesting. How often do you make food at home?",
@@ -388,6 +406,55 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertEqual(cached.benchmarkMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
 
+    def test_good_turn_feedback_discards_unverified_llm_benchmark_message(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '이탈리아에 가고 싶어요'처럼 자연스럽게 들려요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "여행지와 이유를 명확하게 잘 설명했어요.",
+            "benchmarkMessage": "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람",
+            "detectedPatterns": [
+                {
+                    "errorType": "subj_obj_omission",
+                    "status": "correct",
+                    "evidence": "I would go to Italy",
+                }
+            ],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I would go to Italy because I want to see old cities.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIsNone(cached.benchmarkMessage)
+
+    def test_good_turn_feedback_ignores_detected_pattern_when_evidence_is_not_in_utterance(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면 '이탈리아에 가고 싶어요'처럼 자연스럽게 들려요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "여행지와 이유를 명확하게 잘 설명했어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [
+                {
+                    "errorType": "article_a_omission",
+                    "status": "correct",
+                    "evidence": "an apple",
+                }
+            ],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I would go to Italy because I want to see old cities.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
 
@@ -396,6 +463,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("konglish", system_prompt)
         self.assertIn("detectedPatterns", system_prompt)
         self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
+        self.assertIn("benchmarkMessage must not be invented", system_prompt)
+        self.assertIn("I would go to Italy because I want to see old cities", system_prompt)
+        self.assertIn("benchmarkMessage must be null", system_prompt)
+        self.assertIn("Return one JSON object, not an array", system_prompt)
 
     def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -937,8 +1008,15 @@ class ConversationServiceTest(unittest.TestCase):
                 "feedbackType": "GOOD",
                 "koreanAnalogy": "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 담백하게 들려요.",
                 "positiveFeedback": None,
-                "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
-                "benchmarkMessage": "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람",
+                "feedbackDetail": "a/an을 정확히 쓰면서 먹은 음식을 자연스럽게 설명했어요.",
+                "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+                "detectedPatterns": [
+                    {
+                        "errorType": "article_a_omission",
+                        "status": "correct",
+                        "evidence": "an apple",
+                    },
+                ],
             },
             {
                 "sessionId": 1000,
@@ -947,7 +1025,7 @@ class ConversationServiceTest(unittest.TestCase):
         ]
         self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
         self.service.generate_turn_feedback(
-            self._turn_feedback_request(user_utterance="I like pizza because it is spicy.")
+            self._turn_feedback_request(user_utterance="I ate an apple because I was hungry.")
         )
 
         request = SessionFeedbackRequest.model_validate({
@@ -958,8 +1036,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "한국인의 35%가 틀리는 이유 연결을 정확히 맞춘 사람")
-        self.assertEqual(result.nativeScore, 74)
+        self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+        self.assertEqual(result.nativeScore, 80)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
         self.assertFalse(hasattr(result, "summary"))
@@ -980,6 +1058,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Evidence Priority", system_prompt)
         self.assertIn("benchmarkMessage", system_prompt)
         self.assertIn("gamifiable detectedPatterns", system_prompt)
+        self.assertIn("Do not invent a new percentage hook", system_prompt)
+        self.assertIn("validated gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
         self.assertIn("must include a percentage number", system_prompt)
 
@@ -1079,6 +1159,66 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문에 도전한 사람")
         self.assertIn("%", result.highlightMessage)
+
+    def test_session_feedback_rejects_unverified_quantitative_highlight_message(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"이탈리아에 가고 싶어요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "여행지와 이유를 명확하게 잘 설명했어요.",
+                "benchmarkMessage": "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람",
+                "detectedPatterns": [
+                    {
+                        "errorType": "subj_obj_omission",
+                        "status": "correct",
+                        "evidence": "I would go to Italy",
+                    }
+                ],
+            },
+            {
+                "turnId": 5001,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"친구들과 여행하는 게 좋아요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "선호와 이유를 분명하게 말했어요.",
+                "benchmarkMessage": "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람",
+                "detectedPatterns": [
+                    {
+                        "errorType": "subj_obj_omission",
+                        "status": "correct",
+                        "evidence": "I prefer traveling with my close friends",
+                    }
+                ],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(turn_id=5000, user_utterance="I would go to Italy because I want to see old cities.")
+        )
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(turn_id=5001, user_utterance="I prefer traveling with my close friends because sharing the moment makes it more fun.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000, 5001],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertNotIn("간접의문문", result.highlightMessage)
+        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
+        self.assertIsNone(result.turnFeedbacks[1].benchmarkMessage)
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(
