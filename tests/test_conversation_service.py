@@ -589,6 +589,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
         self.assertIn("Cached detected pattern JSON", captured["user"])
         self.assertIn("article_a_omission", captured["user"])
+        self.assertIn("Allowed quantitative highlight candidates JSON", captured["user"])
         self.assertIn("한국인 79%가 놓치는 a/an", captured["user"])
 
     def test_turn_feedback_generates_and_caches_needs_improvement_feedback(self):
@@ -1078,6 +1079,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("benchmarkMessage", system_prompt)
         self.assertIn("gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not invent a new percentage hook", system_prompt)
+        self.assertIn("Allowed quantitative highlight candidates JSON", system_prompt)
+        self.assertIn("copy one candidate exactly", system_prompt)
         self.assertIn("validated gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
         self.assertIn("must include a percentage number", system_prompt)

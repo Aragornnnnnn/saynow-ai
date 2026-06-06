@@ -764,6 +764,8 @@ def _session_feedback_system_prompt() -> str:
             "Prefer a quantitative noun phrase about what the user did well, such as 한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람. "
             "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
             "Do not invent a new percentage hook that is not present in cached benchmarkMessage or cached detected pattern evidence. "
+            "If Allowed quantitative highlight candidates JSON is non-empty, copy one candidate exactly, preferably the first item. "
+            "Do not paraphrase allowed candidates. "
             "Return the phrase without final punctuation. "
             "Use repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
@@ -783,7 +785,8 @@ def _session_feedback_system_prompt() -> str:
             "3. highlightMessage has no final punctuation. "
             "4. highlightMessage is grounded in cached turn feedback or detected pattern evidence. "
             "5. When a koreanPct value is available, highlightMessage must include a percentage number. "
-            "6. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
+            "6. If allowed quantitative highlight candidates are provided, highlightMessage equals one exact candidate. "
+            "7. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
         ),
         (
             "Output Schema:\n"
@@ -823,6 +826,11 @@ def _session_feedback_user_prompt(
         ensure_ascii=False,
         separators=(",", ":"),
     )
+    quantitative_highlight_candidate_json = json.dumps(
+        _quantitative_highlight_candidates(turn_feedback_entries),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     return (
         f"Session ID: {request.sessionId}\n"
         f"Scenario ID: {request.scenario.scenarioId}\n"
@@ -832,7 +840,8 @@ def _session_feedback_user_prompt(
         f"Expected turn IDs: {request.expectedTurnIds}\n\n"
         f"Cached turn feedback counts: GOOD={good_count}, NEEDS_IMPROVEMENT={needs_count}\n\n"
         f"Cached turn feedback JSON:\n{feedback_json}\n\n"
-        f"Cached detected pattern JSON:\n{detected_pattern_json}"
+        f"Cached detected pattern JSON:\n{detected_pattern_json}\n\n"
+        f"Allowed quantitative highlight candidates JSON:\n{quantitative_highlight_candidate_json}"
     )
 
 
@@ -1517,7 +1526,7 @@ def _postprocess_highlight_message(
         return _default_highlight_message(turn_feedback_entries)
     repaired = _repair_legacy_highlight_style(highlight_message).strip()
     repaired = re.sub(r"[.!。]+$", "", repaired).strip()
-    if _contains_percentage(repaired):
+    if _contains_quantitative_hook(repaired):
         return _default_highlight_message(turn_feedback_entries)
     if len(repaired) > 80 or _looks_like_sentence_summary(repaired):
         return _default_highlight_message(turn_feedback_entries)
@@ -1526,6 +1535,10 @@ def _postprocess_highlight_message(
 
 def _contains_percentage(value: str) -> bool:
     return bool(re.search(r"\d+(?:\.\d+)?%", value))
+
+
+def _contains_quantitative_hook(value: str) -> bool:
+    return _contains_percentage(value) or bool(re.search(r"\d+\s*번\s*중\s*\d+", value))
 
 
 def _looks_like_sentence_summary(highlight_message: str) -> bool:
@@ -1561,13 +1574,27 @@ def _default_highlight_message(turn_feedback_entries: list[_TurnFeedbackCacheEnt
 def _quantitative_highlight_message(
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str | None:
+    candidates = _quantitative_highlight_candidates(turn_feedback_entries)
+    return candidates[0] if candidates else None
+
+
+def _quantitative_highlight_candidates(
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
+) -> list[str]:
+    candidates: list[str] = []
+
+    def add_candidate(value: str) -> None:
+        cleaned = re.sub(r"[.!。]+$", "", value).strip()
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+
     for entry in turn_feedback_entries:
         if (
             entry.feedback.feedbackType == FeedbackType.GOOD
             and entry.feedback.benchmarkMessage
-            and _contains_percentage(entry.feedback.benchmarkMessage)
+            and _contains_quantitative_hook(entry.feedback.benchmarkMessage)
         ):
-            return re.sub(r"[.!。]+$", "", entry.feedback.benchmarkMessage).strip()
+            add_candidate(entry.feedback.benchmarkMessage)
     for entry in turn_feedback_entries:
         if entry.feedback.feedbackType != FeedbackType.GOOD:
             continue
@@ -1578,15 +1605,26 @@ def _quantitative_highlight_message(
                 and pattern.gamifiable
                 and pattern.korean_pct is not None
             ):
-                return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+                candidate = _correct_highlight_message(
+                    pattern.korean_pct,
+                    pattern.display_name,
+                    pattern.feedback_copy,
+                )
+                add_candidate(candidate)
     for entry in turn_feedback_entries:
         if entry.feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
             continue
         for detected_pattern in entry.detected_patterns:
             pattern = detected_pattern.pattern
             if pattern.gamifiable and pattern.korean_pct is not None:
-                return _attempt_highlight_message(pattern.korean_pct, pattern.display_name)
-    return None
+                add_candidate(_attempt_highlight_message(pattern.korean_pct, pattern.display_name))
+    return candidates
+
+
+def _correct_highlight_message(korean_pct: float, display_name: str, feedback_copy: str) -> str:
+    if _contains_quantitative_hook(feedback_copy):
+        return feedback_copy
+    return f"한국인 {_format_percentage(korean_pct)}%가 헷갈리는 {display_name}을 챙긴 사람"
 
 
 def _attempt_highlight_message(korean_pct: float, display_name: str) -> str:

@@ -624,3 +624,11 @@
 - [x] 수정 후 `gpt-5.4-mini`와 Upstage의 문제 케이스를 실제 provider 호출로 재검증한다.
 - [ ] 30회 반복 전 Gemini endpoint 오류를 어떻게 분리 집계할지 확정한다.
 - [x] focused 테스트, compileall, diff check를 실행한다.
+
+## session-feedback 수치 highlight 재평가
+
+- [x] `prompt-engineering-patterns` 기준으로 session-feedback 프롬프트의 수치 hook 후보 전달 방식을 보강한다.
+- [x] 허용된 수치 highlight 후보가 프롬프트에 들어가는 회귀 테스트를 추가한다.
+- [x] focused 테스트, compileall, diff check를 실행한다.
+- [x] `gpt-4o-mini`, `gpt-5.4-mini` session-feedback 실제 호출을 재측정한다.
+- [x] Obsidian 모델 평가 로그에 응답 시간과 highlight 품질 결과를 기록한다.
