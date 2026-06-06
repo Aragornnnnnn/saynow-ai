@@ -741,6 +741,25 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("좋아하는 음식과 이유", cached.feedbackDetail)
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
+    def test_turn_feedback_keeps_incomplete_because_reason_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "한국어로 비유하자면, \"혼자 여행이 더 좋아, 더 자유라서\"라고 말끝이 덜 채워진 느낌이에요.",
+            "positiveFeedback": "혼자 여행이 좋은 이유를 붙여 말하려고 한 점은 좋아요.",
+            "feedbackDetail": "because more free → because I have more freedom. 이유를 말할 때는 more free만 두기보다 완전한 절로 말해야 자연스럽습니다.",
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I prefer alone travel because more free.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIn("more freedom", cached.feedbackDetail)
+        self.assertNotIn("피자", cached.koreanAnalogy)
+
     def test_turn_feedback_does_not_overcorrect_clear_travel_plan_for_missing_reason(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,

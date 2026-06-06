@@ -1260,11 +1260,38 @@ def _looks_like_clear_reason_answer(user_utterance: str) -> bool:
     return (
         not any(marker in normalized for marker in obvious_issue_markers)
         and not _looks_like_because_spicy_clause_issue(normalized)
+        and not _looks_like_incomplete_because_reason(normalized)
+        and _has_clear_reason_clause(normalized)
     )
 
 
 def _looks_like_because_spicy_clause_issue(normalized_utterance: str) -> bool:
     return re.search(r"\bbecause\s+spicy\b", normalized_utterance) is not None
+
+
+def _looks_like_incomplete_because_reason(normalized_utterance: str) -> bool:
+    return any(
+        re.search(pattern, normalized_utterance) is not None
+        for pattern in [
+            r"\b(?:because|since)\s+more\s+[a-z]+\b",
+            r"\b(?:because|since)\s+[a-z]+\s+more\s+[a-z]+\b",
+            r"\b(?:because|since)\s+many\s+[a-z]+\s+[a-z]+\b",
+            r"\b(?:because|since)\s+make\s+me\b",
+            r"\b(?:because|since)\s+i\s+can\s+[a-z]+ing\b",
+        ]
+    )
+
+
+def _has_clear_reason_clause(normalized_utterance: str) -> bool:
+    return re.search(
+        r"\b(?:because|since)\s+"
+        r"(?:i|you|he|she|it|we|they|there|this|that)\s+"
+        r"(?:am|are|is|was|were|can|could|would|will|want|wants|wanted|like|likes|liked|"
+        r"love|loves|loved|feel|feels|felt|give|gives|gave|make|makes|made|have|has|had|"
+        r"need|needs|needed|enjoy|enjoys|enjoyed|prefer|prefers|preferred|eat|eats|ate|"
+        r"go|goes|went|see|sees|saw|use|uses|used|sound|sounds|look|looks|seem|seems)\b",
+        normalized_utterance,
+    ) is not None
 
 
 def _looks_like_sushi_never_eaten_issue(normalized_utterance: str) -> bool:

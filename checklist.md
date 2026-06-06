@@ -612,3 +612,15 @@
 - [x] API 문서와 관련 테스트 payload를 새 슬롯 계약에 맞게 갱신.
 - [x] 관련 단위 테스트와 전체 검증 실행.
 - [x] 커밋 후 `develop`으로 push한다.
+
+## 모델 후보 평가 실행
+
+- [x] 현재 origin/develop의 `next-question`, `turn-feedback`, `session-feedback` 계약을 기준으로 평가 케이스를 고정한다.
+- [x] API key를 결과에 노출하지 않는 provider adapter를 평가 runner 안에 둔다.
+- [x] runner scoring 로직을 RED 테스트로 먼저 고정한다.
+- [x] OpenAI, Upstage, Gemini, NAVER CLOVA 후보를 소량 smoke로 검증한다.
+- [x] 1회 full pass 결과를 `/private/tmp`와 Obsidian 평가 로그에 기록한다.
+- [x] full pass에서 드러난 `because` 이유절 후처리 오분류를 RED 테스트로 고정하고 수정한다.
+- [x] 수정 후 `gpt-5.4-mini`와 Upstage의 문제 케이스를 실제 provider 호출로 재검증한다.
+- [ ] 30회 반복 전 Gemini endpoint 오류를 어떻게 분리 집계할지 확정한다.
+- [x] focused 테스트, compileall, diff check를 실행한다.
