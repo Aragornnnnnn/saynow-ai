@@ -33,6 +33,16 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.upstage_base_url, "https://api.upstage.ai/v1")
         self.assertEqual(settings.upstage_model, "solar-pro3")
 
+    def test_settings_support_workflow_openai_models_and_fallback(self):
+        from app.config import Settings
+
+        settings = Settings(openai_api_key="test-key")
+
+        self.assertEqual(settings.openai_next_question_model, "gpt-4o-mini")
+        self.assertEqual(settings.openai_turn_feedback_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_session_feedback_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_fallback_model, "gpt-4o-mini")
+
     def test_settings_support_sentry_observability_values(self):
         from app.config import Settings
 

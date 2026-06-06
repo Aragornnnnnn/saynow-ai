@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.core.llm import chat
+from app.core.llm import chat, fallback_model_for_workflow, model_for_workflow
 from app.core.logger import get_logger
 from app.core.request_context import get_request_id
 from app.models.conversation import (
@@ -121,7 +121,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
 def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreationResponse:
     workflow = "turn_feedback"
     stage_started_at = time.perf_counter()
-    raw = _call_chat(
+    _raw, data = _call_chat_json(
         _turn_feedback_system_prompt(),
         _turn_feedback_user_prompt(request),
         max_tokens=768,
@@ -131,7 +131,6 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
     _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
 
     stage_started_at = time.perf_counter()
-    data = _parse_json_object(raw, workflow=workflow)
     detected_patterns = parse_detected_patterns(data.pop("detectedPatterns", None))
     _normalize_turn_feedback_data_before_validation(data)
     try:
@@ -173,7 +172,7 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
     turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
 
     stage_started_at = time.perf_counter()
-    raw = _call_chat(
+    _raw, data = _call_chat_json(
         _session_feedback_system_prompt(),
         _session_feedback_user_prompt(request, turn_feedback_entries),
         max_tokens=512,
@@ -183,7 +182,6 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
     _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
 
     stage_started_at = time.perf_counter()
-    data = _parse_json_object(raw, workflow=workflow)
     _normalize_session_feedback_data_before_validation(data, turn_feedbacks)
     try:
         highlight = SessionFeedbackHighlightResponse.model_validate(data)
@@ -1737,10 +1735,94 @@ def _call_chat(
     temperature: float,
     workflow: str,
 ) -> str:
+    primary_model = model_for_workflow(workflow)
+    fallback_model = fallback_model_for_workflow(workflow)
+    try:
+        return _call_chat_once(
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            workflow=workflow,
+            model=primary_model,
+        )
+    except Exception as exc:
+        if fallback_model is None:
+            raise
+        logger.warning(
+            "LLM primary 호출 실패로 fallback 재시도 | requestId=%s workflow=%s primaryModel=%s fallbackModel=%s reason=%s",
+            _request_id_for_log(),
+            workflow,
+            primary_model,
+            fallback_model,
+            type(exc).__name__,
+        )
+        return _call_chat_once(
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            workflow=workflow,
+            model=fallback_model,
+        )
+
+
+def _call_chat_json(
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+    workflow: str,
+) -> tuple[str, dict[str, Any]]:
+    primary_model = model_for_workflow(workflow)
+    fallback_model = fallback_model_for_workflow(workflow)
+    try:
+        raw = _call_chat_once(
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            workflow=workflow,
+            model=primary_model,
+        )
+        return raw, _parse_json_object(raw, workflow=workflow)
+    except Exception as exc:
+        if fallback_model is None:
+            raise
+        logger.warning(
+            "LLM primary JSON 생성 실패로 fallback 재시도 | requestId=%s workflow=%s primaryModel=%s fallbackModel=%s reason=%s",
+            _request_id_for_log(),
+            workflow,
+            primary_model,
+            fallback_model,
+            type(exc).__name__,
+        )
+        raw = _call_chat_once(
+            system,
+            user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            workflow=workflow,
+            model=fallback_model,
+        )
+        return raw, _parse_json_object(raw, workflow=workflow)
+
+
+def _call_chat_once(
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+    workflow: str,
+    model: str,
+) -> str:
     logger.info(
-        "LLM 요청 | requestId=%s workflow=%s max_tokens=%s temperature=%s user_prompt_preview=%s",
+        "LLM 요청 | requestId=%s workflow=%s model=%s max_tokens=%s temperature=%s user_prompt_preview=%s",
         _request_id_for_log(),
         workflow,
+        model,
         max_tokens,
         temperature,
         _log_preview(user),
@@ -1750,11 +1832,13 @@ def _call_chat(
         user,
         max_tokens=max_tokens,
         temperature=temperature,
+        model=model,
     )
     logger.info(
-        "LLM 응답 | requestId=%s workflow=%s response_preview=%s",
+        "LLM 응답 | requestId=%s workflow=%s model=%s response_preview=%s",
         _request_id_for_log(),
         workflow,
+        model,
         _log_preview(raw),
     )
     return raw

@@ -632,3 +632,13 @@
 - [x] focused 테스트, compileall, diff check를 실행한다.
 - [x] `gpt-4o-mini`, `gpt-5.4-mini` session-feedback 실제 호출을 재측정한다.
 - [x] Obsidian 모델 평가 로그에 응답 시간과 highlight 품질 결과를 기록한다.
+
+## workflow별 OpenAI 모델 라우팅
+
+- [x] `next-question`은 `gpt-4o-mini`, `turn-feedback`과 `session-feedback`은 `gpt-5.4-mini`를 기본 primary로 쓰는 설정 테스트를 추가한다.
+- [x] feedback primary 모델 호출 실패 시 `gpt-4o-mini` fallback으로 재시도하는 회귀 테스트를 추가한다.
+- [x] feedback primary 모델이 non-JSON을 반환해도 fallback으로 복구하는 회귀 테스트를 추가한다.
+- [x] OpenAI workflow별 모델 설정과 fallback 호출을 구현한다.
+- [x] README와 context note에 운영 설정 기준을 기록한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.

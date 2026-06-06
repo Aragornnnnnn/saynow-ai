@@ -35,6 +35,29 @@ def resolve_llm_options(config=settings) -> LlmOptions:
     raise RuntimeError(f"Unsupported LLM_PROVIDER: {config.llm_provider}")
 
 
+def model_for_workflow(workflow: str, config=settings) -> str:
+    provider = config.llm_provider.lower()
+    if provider != "openai":
+        return resolve_llm_options(config).model
+    if workflow == "next_question":
+        return config.openai_next_question_model or config.openai_model
+    if workflow == "turn_feedback":
+        return config.openai_turn_feedback_model or config.openai_model
+    if workflow == "session_feedback":
+        return config.openai_session_feedback_model or config.openai_model
+    return config.openai_model
+
+
+def fallback_model_for_workflow(workflow: str, config=settings) -> str | None:
+    if config.llm_provider.lower() != "openai":
+        return None
+    primary_model = model_for_workflow(workflow, config)
+    fallback_model = config.openai_fallback_model or config.openai_model
+    if not fallback_model or fallback_model == primary_model:
+        return None
+    return fallback_model
+
+
 OPTIONS = resolve_llm_options()
 client = openai.OpenAI(
     api_key=OPTIONS.api_key,
@@ -49,10 +72,12 @@ def chat(
     user: str,
     max_tokens: int = 1024,
     temperature: float = 0,
+    model: str | None = None,
 ) -> str:
+    selected_model = model or MODEL
     logger.debug("LLM 호출 | user_prompt_preview: %s", user[:100].replace("\n", " "))
     response = client.chat.completions.create(
-        model=MODEL,
+        model=selected_model,
         max_tokens=max_tokens,
         temperature=temperature,
         messages=[
