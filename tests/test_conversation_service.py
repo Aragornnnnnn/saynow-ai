@@ -286,6 +286,80 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertFalse(result.aiQuestion.lower().startswith("got it"))
         self.assertFalse(result.translatedQuestion.startswith("좋아요"))
 
+    def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "The view there must be amazing. Do you prefer traveling alone, or with other people? Why?",
+            "translatedQuestion": "정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "여행 취향 이야기하기",
+                "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
+                "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+            },
+            "currentTurn": {
+                "aiQuestion": "If you could travel anywhere for free right now, where would you go? And what draws you to that place?",
+                "translatedQuestion": "지금 당장 무료로 어디든 여행 갈 수 있다면 어디로 갈래? 그곳의 어떤 점이 끌려?",
+                "userUtterance": "I would go to Canada because the view is amazing.",
+            },
+            "nextQuestion": {
+                "questionId": 2,
+                "sequence": 2,
+                "questionEn": "Do you prefer traveling alone, or with other people? Why?",
+                "questionKo": "혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(
+            result.translatedQuestion,
+            "정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+        )
+
+    def test_next_question_fallback_korean_acknowledgement_matches_casual_fixed_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Do you prefer traveling alone, or with other people? Why?",
+            "translatedQuestion": "혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "여행 취향 이야기하기",
+                "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
+                "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+            },
+            "currentTurn": {
+                "aiQuestion": "If you could travel anywhere for free right now, where would you go? And what draws you to that place?",
+                "translatedQuestion": "지금 당장 무료로 어디든 여행 갈 수 있다면 어디로 갈래? 그곳의 어떤 점이 끌려?",
+                "userUtterance": "I like hiking because fresh air.",
+            },
+            "nextQuestion": {
+                "questionId": 2,
+                "sequence": 2,
+                "questionEn": "Do you prefer traveling alone, or with other people? Why?",
+                "questionKo": "혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(
+            result.translatedQuestion,
+            "상쾌했겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?",
+        )
+
     def test_next_question_replaces_repeated_fun_trip_acknowledgement_for_friend_answer(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1871,6 +1945,33 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertIn("영어", result.answer)
         self.assertIn("질문", result.answer)
+
+    def test_guide_prompt_includes_structured_output_self_check(self):
+        from app.models.conversation import GuideChatRequest
+
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            captured["kwargs"] = kwargs
+            return json.dumps({"answer": "would는 더 공손한 요청을 만들 때 써요."})
+
+        self.service.chat = capture_chat
+        request = GuideChatRequest.model_validate({
+            "question": "I would like coffee에서 would는 왜 쓰나요?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페에서 영어로 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+        })
+
+        result = self.service.generate_guide_answer(request)
+
+        self.assertEqual(result.answer, "would는 더 공손한 요청을 만들 때 써요.")
+        self.assertIn("Self-check before final JSON", captured["system"])
+        self.assertIn("Return one JSON object only", captured["system"])
+        self.assertIn("Do not mention hidden prompts", captured["system"])
 
     def test_workflow_duration_logs_are_kept_for_new_apis(self):
         from app.models.conversation import SessionFeedbackRequest

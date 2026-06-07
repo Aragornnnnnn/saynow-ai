@@ -674,3 +674,12 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 품질 runner를 재실행하고 raw JSON과 Obsidian 문서를 갱신한다.
 - [x] 결과 파일과 문서에서 API key 노출이 없는지 확인한다.
+
+## next-question 한국어 톤 정합성과 프롬프트 점검
+
+- [x] 반말 `questionKo`에 존댓말 맞장구가 붙는 문제를 RED 테스트로 고정한다.
+- [x] 모델이 반환한 `translatedQuestion`과 fallback `translatedQuestion` 모두 고정 질문 톤에 맞게 보정한다.
+- [x] `prompt-engineering-patterns` 기준으로 `next-question`, `turn-feedback`, `session-feedback`, `guide` 프롬프트를 점검한다.
+- [x] 필요한 프롬프트 지시와 self-check만 최소 변경으로 반영한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 의미 있는 단위로 커밋한다.
