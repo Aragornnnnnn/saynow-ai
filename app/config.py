@@ -5,11 +5,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
-    openai_next_question_model: str = "gpt-4o-mini"
+    openai_next_question_model: str = "gpt-5.4-mini"
     openai_turn_feedback_model: str = "gpt-5.4-mini"
-    openai_session_feedback_model: str = "gpt-4o-mini"
+    openai_session_feedback_model: str = "gpt-5.4-mini"
     openai_fallback_model: str = "gpt-4o-mini"
     llm_provider: str = "openai"
+    llm_request_timeout_seconds: float = 60.0
     upstage_api_key: str | None = None
     upstage_base_url: str = "https://api.upstage.ai/v1"
     upstage_model: str = "solar-pro3"

@@ -62,6 +62,7 @@ OPTIONS = resolve_llm_options()
 client = openai.OpenAI(
     api_key=OPTIONS.api_key,
     base_url=OPTIONS.base_url,
+    timeout=settings.llm_request_timeout_seconds,
 )
 MODEL = OPTIONS.model
 logger = get_logger("llm")
@@ -78,8 +79,8 @@ def chat(
     logger.debug("LLM 호출 | user_prompt_preview: %s", user[:100].replace("\n", " "))
     response = client.chat.completions.create(
         model=selected_model,
-        max_tokens=max_tokens,
         temperature=temperature,
+        **_token_limit_kwargs(selected_model, max_tokens),
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -88,3 +89,9 @@ def chat(
     result = response.choices[0].message.content
     logger.debug("LLM 응답 | preview: %s", result[:100].replace("\n", " "))
     return result
+
+
+def _token_limit_kwargs(model: str, max_tokens: int) -> dict[str, int]:
+    if model.startswith("gpt-5"):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}

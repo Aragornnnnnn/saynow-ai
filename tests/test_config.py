@@ -38,10 +38,11 @@ class ConfigTest(unittest.TestCase):
 
         settings = Settings(openai_api_key="test-key")
 
-        self.assertEqual(settings.openai_next_question_model, "gpt-4o-mini")
+        self.assertEqual(settings.openai_next_question_model, "gpt-5.4-mini")
         self.assertEqual(settings.openai_turn_feedback_model, "gpt-5.4-mini")
-        self.assertEqual(settings.openai_session_feedback_model, "gpt-4o-mini")
+        self.assertEqual(settings.openai_session_feedback_model, "gpt-5.4-mini")
         self.assertEqual(settings.openai_fallback_model, "gpt-4o-mini")
+        self.assertEqual(settings.llm_request_timeout_seconds, 60.0)
 
     def test_settings_support_sentry_observability_values(self):
         from app.config import Settings

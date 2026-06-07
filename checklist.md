@@ -643,3 +643,34 @@
 - [x] README와 context note에 운영 설정 기준을 기록한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 모델 후보 반복 테스트 보강
+
+- [x] `/private/tmp` 일회성 runner로 운영 후보 중심 반복 테스트를 실행한다.
+- [x] `next-question`은 `gpt-4o-mini`, `gpt-5.4-mini`를 각각 30샘플 이상 측정한다.
+- [x] `turn-feedback`은 `gpt-4o-mini`, `gpt-5.4-mini`, `solar-pro3`를 각각 30샘플 이상 측정한다.
+- [x] `session-feedback`은 `gpt-4o-mini`, `gpt-5.4-mini`를 각각 30샘플 이상 측정한다.
+- [x] 반복 테스트 결과 JSON을 `/private/tmp`에 저장한다.
+- [x] Obsidian 모델 후보 평가 문서에 반복 테스트 결과와 남은 리스크를 갱신한다.
+- [x] 문서에서 API key 원문이 노출되지 않는지 확인한다.
+
+## workflow 품질 테스트 P0 재실행
+
+- [x] `gpt-5.4-mini`가 `max_completion_tokens`를 쓰도록 회귀 테스트를 추가한다.
+- [x] `app/core/llm.py`의 OpenAI Chat Completions 토큰 파라미터를 모델별로 분기한다.
+- [x] focused 단위 테스트와 compile 검증을 실행한다.
+- [x] 새 OpenAI key로 `turn-feedback` primary smoke를 fallback 없이 확인한다.
+- [x] 운영 라우팅 기준 workflow 품질 테스트를 다시 실행한다.
+- [x] raw 결과 JSON과 Obsidian 품질 테스트 문서에서 API key 노출이 없는지 확인한다.
+
+## workflow 응답 품질 개선
+
+- [x] 품질 우선 라우팅 기준을 RED 테스트로 고정한다.
+- [x] `turn-feedback` bare noun because, Konglish, prompt injection 품질 회귀 테스트를 추가한다.
+- [x] `session-feedback` 수치 highlight 후보 선택과 수치 발명 방지 회귀 테스트를 추가한다.
+- [x] `next-question` generic acknowledgement 보정 회귀 테스트를 추가한다.
+- [x] 라우팅, 프롬프트, 후처리를 최소 변경으로 구현한다.
+- [x] 품질 runner를 revised rubric과 서버 후보 계산 기준에 맞게 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 품질 runner를 재실행하고 raw JSON과 Obsidian 문서를 갱신한다.
+- [x] 결과 파일과 문서에서 API key 노출이 없는지 확인한다.
