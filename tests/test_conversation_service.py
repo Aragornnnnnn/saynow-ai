@@ -520,7 +520,29 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertNotEqual(cached.benchmarkMessage, "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람")
+        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+
+    def test_good_turn_feedback_fills_generic_benchmark_message_without_detected_pattern(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, \"김치찌개는 매주 먹어도 좋아요\"라고 자연스럽게 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "김치찌개를 매주 먹어도 좋다고 말했고, warm and comforting으로 이유도 자연스럽게 붙였어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I could eat kimchi stew every week because it feels warm and comforting."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
 
     def test_good_turn_feedback_ignores_detected_pattern_when_evidence_is_not_in_utterance(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -544,7 +566,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
 
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -554,9 +576,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("konglish", system_prompt)
         self.assertIn("detectedPatterns", system_prompt)
         self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
-        self.assertIn("benchmarkMessage must not be invented", system_prompt)
+        self.assertIn("Do not invent percentage benchmarkMessage", system_prompt)
         self.assertIn("I would go to Italy because I want to see old cities", system_prompt)
-        self.assertIn("benchmarkMessage must be null", system_prompt)
+        self.assertIn("use a conservative non-quantitative benchmarkMessage", system_prompt)
         self.assertIn("Return one JSON object, not an array", system_prompt)
 
     def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
@@ -1247,7 +1269,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("copy one candidate exactly", system_prompt)
         self.assertIn("validated gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
-        self.assertIn("must include a percentage number", system_prompt)
+        self.assertIn("use a non-quantitative benchmarkMessage", system_prompt)
 
     def test_session_feedback_prefers_good_benchmark_over_needs_pattern_hook(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1441,10 +1463,10 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
         self.assertNotIn("간접의문문", result.highlightMessage)
-        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
-        self.assertIsNone(result.turnFeedbacks[1].benchmarkMessage)
+        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "이유를 자연스럽게 붙인 사람")
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(
@@ -1532,7 +1554,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
         self.assertNotIn("You did well", result.highlightMessage)
 
     def test_session_feedback_softens_document_style_korean_summary(self):
@@ -1568,7 +1590,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
         self.assertNotIn("구성하는 데 있어", result.highlightMessage)
         self.assertNotIn("자연스러움을 높일 수 있습니다", result.highlightMessage)
 
@@ -1605,7 +1627,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
         self.assertNotIn("설명하는 데 있어", result.highlightMessage)
         self.assertNotIn("것입니다", result.highlightMessage)
 

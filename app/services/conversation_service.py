@@ -393,7 +393,10 @@ def _postprocess_turn_benchmark_message(
 ) -> TurnFeedbackData:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback
-    benchmark_message = _benchmark_message_from_detected_patterns(request, detected_patterns)
+    benchmark_message = (
+        _benchmark_message_from_detected_patterns(request, detected_patterns)
+        or _fallback_good_benchmark_message(request, feedback)
+    )
     if feedback.benchmarkMessage == benchmark_message:
         return feedback
     return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
@@ -413,6 +416,25 @@ def _benchmark_message_from_detected_patterns(
         ):
             return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
     return None
+
+
+def _fallback_good_benchmark_message(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str:
+    utterance = f" {_normalize_visible_text(request.turn.userUtterance)} "
+    question = f" {_normalize_visible_text(request.turn.aiQuestion)} "
+    detail = f" {_normalize_visible_text(feedback.feedbackDetail)} "
+    combined = f"{utterance} {detail}"
+    if re.search(r"\b(because|since|so)\b", combined):
+        return "이유를 자연스럽게 붙인 사람"
+    if re.search(r"\b(concert|live|saw|seen|went|ate|tried|before|yesterday|last)\b", combined):
+        return "경험을 구체적으로 풀어낸 사람"
+    if re.search(r"\b(prefer|pick|choose|would|could|want|want to)\b", question):
+        return "선택을 분명하게 말한 사람"
+    if re.search(r"\b(favorite|go-to|repeat|app|song|food|where|who|what)\b", question):
+        return "핵심 질문에 바로 답한 사람"
+    return "자기 생각을 자연스럽게 말한 사람"
 
 
 def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
@@ -661,8 +683,9 @@ def _turn_feedback_system_prompt() -> str:
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
             "detectedPatterns evidence must be a short phrase copied from the user utterance. "
-            "benchmarkMessage must not be invented. "
+            "Do not invent percentage benchmarkMessage values. "
             "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage must equal that pattern's catalog copy. "
+            "When there is no supported catalog copy for a GOOD answer, use a conservative non-quantitative benchmarkMessage grounded in the user's answer. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -682,7 +705,7 @@ def _turn_feedback_system_prompt() -> str:
             "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
-            "For GOOD, benchmarkMessage must be a short Korean learner comparison hook only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise benchmarkMessage must be null. "
+            "For GOOD, benchmarkMessage must be a short Korean badge. Use the exact catalog copy when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise use a conservative non-quantitative benchmarkMessage such as 이유를 자연스럽게 붙인 사람 or 핵심 질문에 바로 답한 사람. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
@@ -695,24 +718,24 @@ def _turn_feedback_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
             "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null and benchmarkMessage is present only when it exactly matches the feedbackCopy of a supported gamifiable correct detectedPattern. "
+            "3. GOOD has positiveFeedback=null and benchmarkMessage is present. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. If benchmarkMessage does not match a supported detectedPattern feedbackCopy, set benchmarkMessage=null. "
+            "8. If benchmarkMessage contains a percentage or numeric learner claim, it must match a supported detectedPattern feedbackCopy exactly. "
             "9. No legacy fields are present."
         ),
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람'. "
-            "Negative GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has no indirect-question structure, so do not use indirect_question_word_order and benchmarkMessage must be null unless another supported gamifiable pattern has copied evidence. "
+            "Non-quantitative GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has no indirect-question structure, so do not use indirect_question_word_order; use a conservative non-quantitative benchmarkMessage such as 이유를 자연스럽게 붙인 사람 unless another supported gamifiable pattern has copied evidence. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":null,"detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":"short Korean badge for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
             "Return one JSON object, not an array. "
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
@@ -788,16 +811,16 @@ def _session_feedback_system_prompt() -> str:
             "If Allowed quantitative highlight candidates JSON is non-empty, copy one candidate exactly, preferably the first item. "
             "Do not paraphrase allowed candidates. "
             "Return the phrase without final punctuation. "
-            "Use repeated patterns from the turn feedback as evidence. "
+            "When no quantitative candidate is allowed, use non-quantitative GOOD benchmarkMessage or repeated patterns from the turn feedback as evidence. "
             "Avoid empty encouragement and do not invent turns that are not provided."
         ),
         (
             "Evidence Priority:\n"
-            "1. Prefer a grounded benchmarkMessage from GOOD turn feedback because it already contains a quantitative hook. "
+            "1. Prefer one exact item from Allowed quantitative highlight candidates JSON when it is non-empty. "
             "2. Then use validated gamifiable detectedPatterns from GOOD turns when they are marked correct. "
-            "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook. The title must include a percentage number when koreanPct is available. "
-            "4. Then use repeated concrete themes from feedbackDetail or positiveFeedback. "
-            "5. If no quantitative evidence exists, use a modest title based on the clearest user attempt."
+            "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook when koreanPct is available. "
+            "4. If no quantitative evidence exists, use a non-quantitative benchmarkMessage from GOOD turn feedback. "
+            "5. Then use repeated concrete themes from feedbackDetail or positiveFeedback."
         ),
         (
             "Self-check before final JSON:\n"

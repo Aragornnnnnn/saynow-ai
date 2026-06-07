@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## GOOD benchmarkMessage 기본 생성
+
+- [x] GOOD 턴에서 검증된 정량 `detectedPatterns`가 없어도 비수치 `benchmarkMessage`를 채우는 RED 테스트를 추가한다.
+- [x] 검증된 정량 catalog copy가 있으면 기존 수치형 `benchmarkMessage`를 그대로 우선하는 테스트를 유지한다.
+- [x] `NEEDS_IMPROVEMENT`는 현재 API 계약대로 `benchmarkMessage=null`을 유지하는 회귀 테스트를 확인한다.
+- [x] 턴 피드백 프롬프트와 세션 피드백 프롬프트의 benchmark 정책을 새 기준에 맞게 갱신한다.
+- [x] README와 작업 맥락 기록에 GOOD 기본 benchmark 정책을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 피드백 LLM smoke 후속 보정
 
 - [x] LLM이 실제 발화와 무관한 `benchmarkMessage`를 만들면 서버가 폐기하도록 RED 테스트를 추가한다.
