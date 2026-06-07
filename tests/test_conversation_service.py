@@ -521,9 +521,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertNotEqual(cached.benchmarkMessage, "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람")
-        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
 
-    def test_good_turn_feedback_fills_generic_benchmark_message_without_detected_pattern(self):
+    def test_good_turn_feedback_fills_surface_usage_benchmark_message_without_detected_pattern(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -542,7 +542,68 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞춘 사람")
+
+    def test_good_turn_feedback_uses_numeric_catalog_for_article_surface_usage(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, \"캐나다 산과 호수가 멋져 보여요\"라고 자연스럽게 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Canada를 고른 이유를 자연스럽게 설명했어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I would go to Canada because the mountains and lakes look amazing."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
+
+    def test_good_turn_feedback_uses_numeric_catalog_for_tense_surface_usage(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, \"아이유 콘서트를 본 적 있어요\"라고 자연스럽게 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "콘서트 경험을 saw로 간단하고 자연스럽게 말했어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I saw IU live once.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인 23%가 헷갈리는 시제·상을 챙긴 사람")
+
+    def test_good_turn_feedback_overwrites_non_quantitative_llm_benchmark_message(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "한국어로 비유하자면, \"김치찌개는 매주 먹어도 좋아요\"라고 자연스럽게 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "김치찌개를 매주 먹어도 좋다고 말했고, 이유도 자연스럽게 붙였어요.",
+            "benchmarkMessage": "이유를 자연스럽게 붙인 사람",
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I could eat kimchi stew every week because it feels warm and comforting."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞춘 사람")
 
     def test_good_turn_feedback_ignores_detected_pattern_when_evidence_is_not_in_utterance(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -566,7 +627,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
 
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -576,9 +637,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("konglish", system_prompt)
         self.assertIn("detectedPatterns", system_prompt)
         self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
-        self.assertIn("Do not invent percentage benchmarkMessage", system_prompt)
+        self.assertIn("fun learning hook", system_prompt)
         self.assertIn("I would go to Italy because I want to see old cities", system_prompt)
-        self.assertIn("use a conservative non-quantitative benchmarkMessage", system_prompt)
+        self.assertIn("visible surface usage", system_prompt)
+        self.assertIn("Do not create a non-quantitative benchmarkMessage", system_prompt)
         self.assertIn("Return one JSON object, not an array", system_prompt)
 
     def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
@@ -1269,7 +1331,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("copy one candidate exactly", system_prompt)
         self.assertIn("validated gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
-        self.assertIn("use a non-quantitative benchmarkMessage", system_prompt)
+        self.assertIn("use repeated concrete themes", system_prompt)
 
     def test_session_feedback_prefers_good_benchmark_over_needs_pattern_hook(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1327,6 +1389,54 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+
+    def test_session_feedback_prefers_good_surface_priority_for_numeric_highlight(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"아이유 콘서트를 본 적 있어요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "콘서트 경험을 saw로 간단하고 자연스럽게 말했어요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [],
+            },
+            {
+                "turnId": 5001,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"김치찌개는 매주 먹어도 좋아요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "김치찌개를 매주 먹어도 좋다고 말했고, warm and comforting으로 이유도 자연스럽게 붙였어요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인 23%가 헷갈리는 시제·상을 챙긴 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(turn_id=5000, user_utterance="I saw IU live once.")
+        )
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                turn_id=5001,
+                user_utterance="I could eat kimchi stew every week because it feels warm and comforting.",
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000, 5001],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞춘 사람")
 
     def test_session_feedback_replaces_weak_highlight_with_needs_attempt_hook_when_no_good_benchmark(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1463,10 +1573,10 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.highlightMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
         self.assertNotIn("간접의문문", result.highlightMessage)
-        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "이유를 자연스럽게 붙인 사람")
-        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
+        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(
@@ -1554,7 +1664,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.highlightMessage, "한국인 23%가 헷갈리는 be동사 생략을 챙긴 사람")
         self.assertNotIn("You did well", result.highlightMessage)
 
     def test_session_feedback_softens_document_style_korean_summary(self):
@@ -1590,7 +1700,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.highlightMessage, "한국인 24.8%가 헷갈리는 전치사 생략을 챙긴 사람")
         self.assertNotIn("구성하는 데 있어", result.highlightMessage)
         self.assertNotIn("자연스러움을 높일 수 있습니다", result.highlightMessage)
 
@@ -1627,7 +1737,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "이유를 자연스럽게 붙인 사람")
+        self.assertEqual(result.highlightMessage, "한국인 24.8%가 헷갈리는 전치사 생략을 챙긴 사람")
         self.assertNotIn("설명하는 데 있어", result.highlightMessage)
         self.assertNotIn("것입니다", result.highlightMessage)
 

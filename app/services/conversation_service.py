@@ -35,6 +35,7 @@ from app.services.safety_guard import (
 )
 from app.services.error_pattern_catalog import (
     DetectedErrorPattern,
+    ErrorPattern,
     get_error_pattern,
     parse_detected_patterns,
     prompt_error_pattern_catalog,
@@ -43,6 +44,20 @@ from app.services.error_pattern_catalog import (
 
 logger = get_logger("conversation")
 _TURN_FEEDBACK_CACHE_TTL_SECONDS = 3 * 60 * 60
+_GOOD_SURFACE_PATTERN_PRIORITY = (
+    "indirect_question_word_order",
+    "article_a_omission",
+    "article_the",
+    "noun_plural",
+    "sv_agreement",
+    "be_omission",
+    "prep_omission",
+    "tense_aspect",
+)
+_GOOD_SURFACE_PATTERN_RANK = {
+    error_type: index
+    for index, error_type in enumerate(_GOOD_SURFACE_PATTERN_PRIORITY)
+}
 
 
 @dataclass(frozen=True)
@@ -414,7 +429,7 @@ def _benchmark_message_from_detected_patterns(
             and pattern.korean_pct is not None
             and _detected_pattern_evidence_matches_utterance(request, detected_pattern)
         ):
-            return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+            return _correct_benchmark_message_from_pattern(pattern)
     return None
 
 
@@ -422,19 +437,99 @@ def _fallback_good_benchmark_message(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
 ) -> str:
-    utterance = f" {_normalize_visible_text(request.turn.userUtterance)} "
-    question = f" {_normalize_visible_text(request.turn.aiQuestion)} "
-    detail = f" {_normalize_visible_text(feedback.feedbackDetail)} "
-    combined = f"{utterance} {detail}"
-    if re.search(r"\b(because|since|so)\b", combined):
-        return "이유를 자연스럽게 붙인 사람"
-    if re.search(r"\b(concert|live|saw|seen|went|ate|tried|before|yesterday|last)\b", combined):
-        return "경험을 구체적으로 풀어낸 사람"
-    if re.search(r"\b(prefer|pick|choose|would|could|want|want to)\b", question):
-        return "선택을 분명하게 말한 사람"
-    if re.search(r"\b(favorite|go-to|repeat|app|song|food|where|who|what)\b", question):
-        return "핵심 질문에 바로 답한 사람"
-    return "자기 생각을 자연스럽게 말한 사람"
+    del feedback
+    pattern = _good_surface_pattern_from_utterance(request.turn.userUtterance)
+    if pattern is not None:
+        return _correct_benchmark_message_from_pattern(pattern)
+    fallback_pattern = get_error_pattern("tense_aspect")
+    if fallback_pattern is not None:
+        return _correct_benchmark_message_from_pattern(fallback_pattern)
+    return "한국인 학습자가 자주 헷갈리는 표현을 챙긴 사람"
+
+
+def _correct_benchmark_message_from_pattern(pattern: ErrorPattern) -> str:
+    feedback_copy = re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+    if _contains_percentage(feedback_copy):
+        return feedback_copy
+    if pattern.korean_pct is not None:
+        return _correct_highlight_message(pattern.korean_pct, pattern.display_name, feedback_copy)
+    return feedback_copy
+
+
+def _good_surface_pattern_from_utterance(user_utterance: str) -> ErrorPattern | None:
+    normalized = f" {_normalize_visible_text(user_utterance)} "
+    for error_type in _GOOD_SURFACE_PATTERN_PRIORITY:
+        if _matches_good_surface_usage(error_type, normalized):
+            return get_error_pattern(error_type)
+    return None
+
+
+def _matches_good_surface_usage(error_type: str, normalized_utterance: str) -> bool:
+    if error_type == "indirect_question_word_order":
+        return _contains_indirect_question_pattern(normalized_utterance) or bool(
+            re.search(
+                r"\b(?:what|who|where|when|why|how)\s+(?:i|you|he|she|it|we|they)\s+\w+",
+                normalized_utterance,
+            )
+        )
+    if error_type == "article_a_omission":
+        return bool(re.search(r"\b(?:a|an)\s+[a-z][a-z'-]*", normalized_utterance))
+    if error_type == "article_the":
+        return bool(re.search(r"\bthe\s+[a-z][a-z'-]*", normalized_utterance))
+    if error_type == "noun_plural":
+        return _contains_plural_noun_surface(normalized_utterance)
+    if error_type == "sv_agreement":
+        return bool(
+            re.search(
+                r"\b(?:it|he|she|this|that|voice|meat|food|song|music|app|sharing)\s+(?!(?:is|was|has|does)\b)[a-z]+s\b",
+                normalized_utterance,
+            )
+        )
+    if error_type == "be_omission":
+        return bool(re.search(r"\b(?:am|is|are|was|were|be|been|being)\b", normalized_utterance))
+    if error_type == "prep_omission":
+        return bool(
+            re.search(
+                r"\b(?:in|on|at|to|with|for|from|after|before|by|about|into|over|under)\b",
+                normalized_utterance,
+            )
+        )
+    if error_type == "tense_aspect":
+        return bool(
+            re.search(
+                r"\b(?:was|were|saw|went|ate|tried|played|used|did|had|would|could|should|have been|has been)\b",
+                normalized_utterance,
+            )
+            or re.search(r"\b[a-z]+ed\b", normalized_utterance)
+        )
+    return False
+
+
+def _contains_plural_noun_surface(normalized_utterance: str) -> bool:
+    excluded_words = {
+        "always",
+        "because",
+        "does",
+        "feels",
+        "has",
+        "is",
+        "looks",
+        "makes",
+        "news",
+        "series",
+        "sounds",
+        "this",
+        "was",
+        "yes",
+    }
+    words = re.findall(r"\b[a-z][a-z'-]*\b", normalized_utterance)
+    return any(
+        len(word) > 3
+        and word.endswith("s")
+        and not word.endswith("ss")
+        and word not in excluded_words
+        for word in words
+    )
 
 
 def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
@@ -683,9 +778,10 @@ def _turn_feedback_system_prompt() -> str:
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
             "detectedPatterns evidence must be a short phrase copied from the user utterance. "
-            "Do not invent percentage benchmarkMessage values. "
-            "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage must equal that pattern's catalog copy. "
-            "When there is no supported catalog copy for a GOOD answer, use a conservative non-quantitative benchmarkMessage grounded in the user's answer. "
+            "For GOOD benchmarkMessage, reuse this numeric catalog as a fun learning hook, not as a strict error diagnosis. "
+            "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage should use that pattern's catalog copy. "
+            "If no validated detectedPattern exists, choose a numeric catalog hook from visible surface usage in the user utterance, such as a/an, the, plural -s, third-person singular -s, be verbs, prepositions, or tense/aspect words. "
+            "Do not create a non-quantitative benchmarkMessage for GOOD. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -705,7 +801,7 @@ def _turn_feedback_system_prompt() -> str:
             "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
-            "For GOOD, benchmarkMessage must be a short Korean badge. Use the exact catalog copy when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise use a conservative non-quantitative benchmarkMessage such as 이유를 자연스럽게 붙인 사람 or 핵심 질문에 바로 답한 사람. "
+            "For GOOD, benchmarkMessage must be a short Korean badge with a visible numeric hook from the existing catalog. Use the exact catalog copy when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise choose the closest surface-usage catalog hook. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
@@ -723,13 +819,13 @@ def _turn_feedback_system_prompt() -> str:
             "5. feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. If benchmarkMessage contains a percentage or numeric learner claim, it must match a supported detectedPattern feedbackCopy exactly. "
+            "8. GOOD benchmarkMessage contains a percentage hook from the catalog, either from a supported detectedPattern or visible surface usage. "
             "9. No legacy fields are present."
         ),
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람'. "
-            "Non-quantitative GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has no indirect-question structure, so do not use indirect_question_word_order; use a conservative non-quantitative benchmarkMessage such as 이유를 자연스럽게 붙인 사람 unless another supported gamifiable pattern has copied evidence. "
+            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인 37%가 놓치는 복수 -s를 챙긴 사람'. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
         ),
         (
@@ -811,7 +907,7 @@ def _session_feedback_system_prompt() -> str:
             "If Allowed quantitative highlight candidates JSON is non-empty, copy one candidate exactly, preferably the first item. "
             "Do not paraphrase allowed candidates. "
             "Return the phrase without final punctuation. "
-            "When no quantitative candidate is allowed, use non-quantitative GOOD benchmarkMessage or repeated patterns from the turn feedback as evidence. "
+            "When no quantitative candidate is allowed, use repeated concrete themes from the turn feedback as evidence without adding numbers. "
             "Avoid empty encouragement and do not invent turns that are not provided."
         ),
         (
@@ -819,8 +915,7 @@ def _session_feedback_system_prompt() -> str:
             "1. Prefer one exact item from Allowed quantitative highlight candidates JSON when it is non-empty. "
             "2. Then use validated gamifiable detectedPatterns from GOOD turns when they are marked correct. "
             "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook when koreanPct is available. "
-            "4. If no quantitative evidence exists, use a non-quantitative benchmarkMessage from GOOD turn feedback. "
-            "5. Then use repeated concrete themes from feedbackDetail or positiveFeedback."
+            "4. If no quantitative evidence exists, use repeated concrete themes from feedbackDetail or positiveFeedback."
         ),
         (
             "Self-check before final JSON:\n"
@@ -1810,12 +1905,14 @@ def _quantitative_highlight_message(
 def _quantitative_highlight_candidates(
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> list[str]:
-    candidates: list[str] = []
+    candidates: list[tuple[int, int, str]] = []
+    seen_candidates: set[str] = set()
 
-    def add_candidate(value: str) -> None:
+    def add_candidate(value: str, priority: int) -> None:
         cleaned = re.sub(r"[.!。]+$", "", value).strip()
-        if cleaned and cleaned not in candidates:
-            candidates.append(cleaned)
+        if cleaned and cleaned not in seen_candidates:
+            seen_candidates.add(cleaned)
+            candidates.append((priority, len(candidates), cleaned))
 
     for entry in turn_feedback_entries:
         if (
@@ -1823,7 +1920,10 @@ def _quantitative_highlight_candidates(
             and entry.feedback.benchmarkMessage
             and _contains_quantitative_hook(entry.feedback.benchmarkMessage)
         ):
-            add_candidate(entry.feedback.benchmarkMessage)
+            add_candidate(
+                entry.feedback.benchmarkMessage,
+                _good_surface_rank_for_benchmark_message(entry.feedback.benchmarkMessage),
+            )
     for entry in turn_feedback_entries:
         if entry.feedback.feedbackType != FeedbackType.GOOD:
             continue
@@ -1840,7 +1940,7 @@ def _quantitative_highlight_candidates(
                     pattern.display_name,
                     pattern.feedback_copy,
                 )
-                add_candidate(candidate)
+                add_candidate(candidate, _good_surface_rank_for_error_type(pattern.error_type))
     for entry in turn_feedback_entries:
         if entry.feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
             continue
@@ -1851,8 +1951,27 @@ def _quantitative_highlight_candidates(
                 and pattern.korean_pct is not None
                 and _detected_pattern_has_session_highlight_evidence(entry, detected_pattern)
             ):
-                add_candidate(_attempt_highlight_message(pattern.korean_pct, pattern.display_name))
-    return candidates
+                add_candidate(
+                    _attempt_highlight_message(pattern.korean_pct, pattern.display_name),
+                    100 + _good_surface_rank_for_error_type(pattern.error_type),
+                )
+    return [
+        candidate
+        for _, _, candidate in sorted(candidates, key=lambda item: (item[0], item[1]))
+    ]
+
+
+def _good_surface_rank_for_error_type(error_type: str) -> int:
+    return _GOOD_SURFACE_PATTERN_RANK.get(error_type, len(_GOOD_SURFACE_PATTERN_PRIORITY))
+
+
+def _good_surface_rank_for_benchmark_message(benchmark_message: str) -> int:
+    cleaned = re.sub(r"[.!。]+$", "", benchmark_message).strip()
+    for error_type in _GOOD_SURFACE_PATTERN_PRIORITY:
+        pattern = get_error_pattern(error_type)
+        if pattern is not None and cleaned == _correct_benchmark_message_from_pattern(pattern):
+            return _good_surface_rank_for_error_type(error_type)
+    return len(_GOOD_SURFACE_PATTERN_PRIORITY)
 
 
 def _detected_pattern_has_session_highlight_evidence(
@@ -1886,7 +2005,7 @@ def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) 
 
 
 def _correct_highlight_message(korean_pct: float, display_name: str, feedback_copy: str) -> str:
-    if _contains_quantitative_hook(feedback_copy):
+    if _contains_percentage(feedback_copy):
         return feedback_copy
     return f"한국인 {_format_percentage(korean_pct)}%가 헷갈리는 {display_name}을 챙긴 사람"
 

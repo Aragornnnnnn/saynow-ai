@@ -86,7 +86,7 @@
 
 `koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식을 우선합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함합니다. 검증된 정량 패턴이 있으면 catalog copy를 그대로 쓰고, 없으면 `이유를 자연스럽게 붙인 사람`처럼 퍼센트 없는 badge를 제공합니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함합니다. 검증된 정량 패턴이 있으면 catalog copy를 그대로 쓰고, 없으면 사용자 발화의 surface usage를 보고 기존 수치 catalog hook을 느슨하게 재활용합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
 
 ## 한국인 오류 패턴 seed
 
@@ -94,7 +94,7 @@
 
 턴 피드백 LLM은 외부 응답 필드와 함께 내부 메타데이터인 `detectedPatterns`를 반환할 수 있습니다. AI 서버는 이 값을 `TurnFeedbackData` 검증 전에 분리해 캐시에만 저장하고, 백엔드 응답에는 노출하지 않습니다.
 
-`breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 의미가 통하면 교정 폭격 대신 `benchmarkMessage`와 `highlightMessage`의 게임화 소재로 씁니다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT`의 우선 교정 후보로 둡니다.
+`breaks_meaning=false`인 관사, 시제, 복수, be 생략, 주어-동사 일치는 의미가 통하면 교정 폭격 대신 `benchmarkMessage`와 `highlightMessage`의 게임화 소재로 씁니다. `GOOD`에서는 `indirect_question_word_order`, `article_a_omission`, `article_the`, `noun_plural`, `sv_agreement`, `be_omission`, `prep_omission`, `tense_aspect` 순서로 surface usage를 감지해 수치형 badge를 만듭니다. `breaks_meaning=true`인 Konglish, 어휘 선택, 주어·목적어 생략은 `NEEDS_IMPROVEMENT`의 우선 교정 후보로 둡니다.
 
 `detectedPatterns`는 내부 점수 계산에도 반영됩니다. 어려운 구조를 시도한 경우 문장 복잡도에 가산하고, 의미를 깨는 오류는 이해 가능성에서 더 크게 감점합니다.
 

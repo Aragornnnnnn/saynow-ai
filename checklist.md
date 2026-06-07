@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## 기존 수치 catalog 기반 GOOD benchmark
+
+- [x] GOOD surface usage 기반 수치형 `benchmarkMessage` RED 테스트를 추가한다.
+- [x] LLM이 비수치 또는 무관한 GOOD `benchmarkMessage`를 내려도 서버가 catalog 수치 hook으로 덮어쓰는지 검증한다.
+- [x] `NEEDS_IMPROVEMENT`는 계속 `benchmarkMessage=null`인 회귀 테스트를 유지한다.
+- [x] 세션 `highlightMessage`가 GOOD 수치형 `benchmarkMessage`를 우선 사용하도록 검증한다.
+- [x] 턴 피드백과 세션 피드백 프롬프트에서 비수치 GOOD benchmark 지시를 제거한다.
+- [x] README와 작업 맥락 기록에 재미용 surface usage 정책을 반영한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check, 실제 LLM smoke를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## GOOD benchmarkMessage 기본 생성
 
 - [x] GOOD 턴에서 검증된 정량 `detectedPatterns`가 없어도 비수치 `benchmarkMessage`를 채우는 RED 테스트를 추가한다.
