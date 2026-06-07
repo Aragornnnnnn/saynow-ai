@@ -1,5 +1,6 @@
 # 작업 맥락 기록
 
+- 2026-06-08 턴별 `benchmarkMessage`는 사용자가 바로 읽는 발화별 칭찬 문구이므로 `한국인 37%가 놓치는 복수 -s를 챙긴 사람` 같은 칭호형이 아니라 `한국인 37%가 놓치는 복수 -s를 챙겼어요` 같은 문장형으로 내려간다. 세션 `highlightMessage`는 여전히 배지 역할이라 `...한 사람` 형식을 유지한다.
 - 2026-06-08 GOOD 턴의 `benchmarkMessage`는 비수치 badge가 아니라 기존 `app/data/error_patterns.json` 수치 catalog를 surface usage 기준으로 느슨하게 재활용한다. 목적은 엄밀한 오류 진단이 아니라 사용자가 흥미를 느끼는 재미용 학습 hook이다. `NEEDS_IMPROVEMENT`는 기존 계약대로 `benchmarkMessage=null`을 유지한다.
 - 2026-06-08 `benchmarkMessage` 정책은 GOOD 턴에서 기본 제공하되, 1순위는 `detectedPatterns[].evidence`가 실제 발화에 있고 `korean_pct`가 있는 정량 catalog copy다. 없으면 `a/an`, `the`, 복수 `-s`, 3인칭 단수 `-s`, be동사, 전치사, 시제·상 같은 surface usage를 서버가 감지해 기존 수치 catalog 문구로 덮어쓴다.
 - 2026-06-08 이전에는 GOOD fallback으로 `이유를 자연스럽게 붙인 사람`, `경험을 구체적으로 풀어낸 사람` 같은 비수치 badge를 썼지만, 이 기준은 더 이상 사용하지 않는다. 세션 `highlightMessage`도 GOOD 수치형 `benchmarkMessage`를 최우선으로 쓰고, 여러 후보가 있으면 surface priority 순서로 첫 후보를 고른다.

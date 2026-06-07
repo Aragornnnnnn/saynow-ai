@@ -429,7 +429,7 @@ def _benchmark_message_from_detected_patterns(
             and pattern.korean_pct is not None
             and _detected_pattern_evidence_matches_utterance(request, detected_pattern)
         ):
-            return _correct_benchmark_message_from_pattern(pattern)
+            return _correct_turn_benchmark_message_from_pattern(pattern)
     return None
 
 
@@ -440,20 +440,45 @@ def _fallback_good_benchmark_message(
     del feedback
     pattern = _good_surface_pattern_from_utterance(request.turn.userUtterance)
     if pattern is not None:
-        return _correct_benchmark_message_from_pattern(pattern)
+        return _correct_turn_benchmark_message_from_pattern(pattern)
     fallback_pattern = get_error_pattern("tense_aspect")
     if fallback_pattern is not None:
-        return _correct_benchmark_message_from_pattern(fallback_pattern)
-    return "한국인 학습자가 자주 헷갈리는 표현을 챙긴 사람"
+        return _correct_turn_benchmark_message_from_pattern(fallback_pattern)
+    return "한국인 학습자가 자주 헷갈리는 표현을 챙겼어요"
 
 
-def _correct_benchmark_message_from_pattern(pattern: ErrorPattern) -> str:
-    feedback_copy = re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
-    if _contains_percentage(feedback_copy):
-        return feedback_copy
+def _correct_turn_benchmark_message_from_pattern(pattern: ErrorPattern) -> str:
+    return _turn_benchmark_sentence_from_highlight_message(
+        _correct_highlight_message_from_pattern(pattern)
+    )
+
+
+def _correct_highlight_message_from_pattern(pattern: ErrorPattern) -> str:
     if pattern.korean_pct is not None:
-        return _correct_highlight_message(pattern.korean_pct, pattern.display_name, feedback_copy)
-    return feedback_copy
+        return _correct_highlight_message(
+            pattern.korean_pct,
+            pattern.display_name,
+            pattern.feedback_copy,
+        )
+    return re.sub(r"[.!。]+$", "", pattern.feedback_copy).strip()
+
+
+def _turn_benchmark_sentence_from_highlight_message(highlight_message: str) -> str:
+    cleaned = re.sub(r"[.!。]+$", "", highlight_message).strip()
+    replacements = (
+        ("정확히 쓴 사람", "정확히 썼어요"),
+        ("놓치지 않은 사람", "놓치지 않았어요"),
+        ("맞춘 사람", "맞췄어요"),
+        ("챙긴 사람", "챙겼어요"),
+        ("잡은 사람", "잡았어요"),
+        ("해낸 사람", "해냈어요"),
+    )
+    for source, replacement in replacements:
+        if cleaned.endswith(source):
+            return f"{cleaned[:-len(source)]}{replacement}"
+    if cleaned.endswith("한 사람"):
+        return f"{cleaned[:-len('한 사람')]}했어요"
+    return cleaned
 
 
 def _good_surface_pattern_from_utterance(user_utterance: str) -> ErrorPattern | None:
@@ -801,7 +826,7 @@ def _turn_feedback_system_prompt() -> str:
             "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
-            "For GOOD, benchmarkMessage must be a short Korean badge with a visible numeric hook from the existing catalog. Use the exact catalog copy when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise choose the closest surface-usage catalog hook. "
+            "For GOOD, benchmarkMessage must be a short Korean feedback sentence with a visible numeric hook from the existing catalog, ending naturally with 했어요. Use the catalog meaning when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise choose the closest surface-usage catalog hook. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
@@ -824,14 +849,14 @@ def _turn_feedback_system_prompt() -> str:
         ),
         (
             "Benchmark Examples:\n"
-            "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람'. "
-            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인 37%가 놓치는 복수 -s를 챙긴 사람'. "
+            "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 썼어요'. "
+            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인 37%가 놓치는 복수 -s를 챙겼어요'. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":"short Korean badge for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":"short Korean 했어요 sentence for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
             "Return one JSON object, not an array. "
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
@@ -1920,8 +1945,11 @@ def _quantitative_highlight_candidates(
             and entry.feedback.benchmarkMessage
             and _contains_quantitative_hook(entry.feedback.benchmarkMessage)
         ):
+            highlight_candidate = _good_surface_highlight_for_benchmark_message(
+                entry.feedback.benchmarkMessage
+            )
             add_candidate(
-                entry.feedback.benchmarkMessage,
+                highlight_candidate or entry.feedback.benchmarkMessage,
                 _good_surface_rank_for_benchmark_message(entry.feedback.benchmarkMessage),
             )
     for entry in turn_feedback_entries:
@@ -1966,12 +1994,31 @@ def _good_surface_rank_for_error_type(error_type: str) -> int:
 
 
 def _good_surface_rank_for_benchmark_message(benchmark_message: str) -> int:
+    pattern = _good_surface_pattern_for_benchmark_message(benchmark_message)
+    if pattern is not None:
+        return _good_surface_rank_for_error_type(pattern.error_type)
+    return len(_GOOD_SURFACE_PATTERN_PRIORITY)
+
+
+def _good_surface_highlight_for_benchmark_message(benchmark_message: str) -> str | None:
+    pattern = _good_surface_pattern_for_benchmark_message(benchmark_message)
+    if pattern is None:
+        return None
+    return _correct_highlight_message_from_pattern(pattern)
+
+
+def _good_surface_pattern_for_benchmark_message(benchmark_message: str) -> ErrorPattern | None:
     cleaned = re.sub(r"[.!。]+$", "", benchmark_message).strip()
     for error_type in _GOOD_SURFACE_PATTERN_PRIORITY:
         pattern = get_error_pattern(error_type)
-        if pattern is not None and cleaned == _correct_benchmark_message_from_pattern(pattern):
-            return _good_surface_rank_for_error_type(error_type)
-    return len(_GOOD_SURFACE_PATTERN_PRIORITY)
+        if pattern is None:
+            continue
+        if cleaned in {
+            _correct_turn_benchmark_message_from_pattern(pattern),
+            _correct_highlight_message_from_pattern(pattern),
+        }:
+            return pattern
+    return None
 
 
 def _detected_pattern_has_session_highlight_evidence(

@@ -495,7 +495,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 썼어요")
 
     def test_good_turn_feedback_discards_unverified_llm_benchmark_message(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -521,7 +521,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertNotEqual(cached.benchmarkMessage, "한국인 40%가 헷갈리는 간접의문문 어순을 정확히 쓴 사람")
-        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙겼어요")
 
     def test_good_turn_feedback_fills_surface_usage_benchmark_message_without_detected_pattern(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -542,7 +542,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞춘 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞췄어요")
 
     def test_good_turn_feedback_uses_numeric_catalog_for_article_surface_usage(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -563,7 +563,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않았어요")
 
     def test_good_turn_feedback_uses_numeric_catalog_for_tense_surface_usage(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -582,7 +582,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "한국인 23%가 헷갈리는 시제·상을 챙긴 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 23%가 헷갈리는 시제·상을 챙겼어요")
 
     def test_good_turn_feedback_overwrites_non_quantitative_llm_benchmark_message(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -603,7 +603,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞춘 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 21.75%가 흔들리는 주어-동사 수 일치를 맞췄어요")
 
     def test_good_turn_feedback_ignores_detected_pattern_when_evidence_is_not_in_utterance(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -627,7 +627,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
+        self.assertEqual(cached.benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙겼어요")
 
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -641,6 +641,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I would go to Italy because I want to see old cities", system_prompt)
         self.assertIn("visible surface usage", system_prompt)
         self.assertIn("Do not create a non-quantitative benchmarkMessage", system_prompt)
+        self.assertIn("ending naturally with 했어요", system_prompt)
+        self.assertIn("한국인 37%가 놓치는 복수 -s를 챙겼어요", system_prompt)
         self.assertIn("Return one JSON object, not an array", system_prompt)
 
     def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
@@ -1575,8 +1577,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.highlightMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
         self.assertNotIn("간접의문문", result.highlightMessage)
-        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
-        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않은 사람")
+        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "한국인 37%가 놓치는 복수 -s를 챙겼어요")
+        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "한국인 31%가 헷갈리는 the 자리를 놓치지 않았어요")
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(

@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## 턴별 benchmarkMessage 문장형 전환
+
+- [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.
+- [x] 세션 `highlightMessage`는 기존처럼 칭호형 `...한 사람`을 유지하는 회귀 테스트를 둔다.
+- [x] catalog 기반 benchmark 생성과 highlight 후보 생성을 분리한다.
+- [x] 턴 피드백 프롬프트와 README의 benchmark 문체 설명을 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 기존 수치 catalog 기반 GOOD benchmark
 
 - [x] GOOD surface usage 기반 수치형 `benchmarkMessage` RED 테스트를 추가한다.
