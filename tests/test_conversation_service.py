@@ -1331,6 +1331,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not invent a new percentage hook", system_prompt)
         self.assertIn("Allowed quantitative highlight candidates JSON", system_prompt)
         self.assertIn("copy one candidate exactly", system_prompt)
+        self.assertIn("only use the final cached benchmarkMessage", system_prompt)
         self.assertIn("validated gamifiable detectedPatterns", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
         self.assertIn("use repeated concrete themes", system_prompt)
@@ -1391,6 +1392,45 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람")
+
+    def test_session_feedback_uses_final_good_benchmark_not_extra_good_detected_pattern(self):
+        from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
+        from app.services.error_pattern_catalog import DetectedErrorPattern, get_error_pattern
+
+        article_pattern = get_error_pattern("article_a_omission")
+        self.service._store_turn_feedback(
+            1000,
+            TurnFeedbackData.model_validate({
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "한국어로 비유하자면, \"산과 호수가 멋져 보여요\"라고 자연스럽게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "the mountains and lakes를 써서 여러 자연 풍경을 잘 묶었고, a quiet place 같은 표현도 자연스러워요.",
+                "benchmarkMessage": "한국인 37%가 놓치는 복수 -s를 챙겼어요",
+            }),
+            detected_patterns=(
+                DetectedErrorPattern(
+                    error_type="article_a_omission",
+                    status="correct",
+                    evidence="a quiet place",
+                    pattern=article_pattern,
+                ),
+            ),
+            user_utterance="I would visit a quiet place because the mountains and lakes look amazing.",
+        )
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "sessionId": 1000,
+            "highlightMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+        })
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "한국인 37%가 놓치는 복수 -s를 챙긴 사람")
 
     def test_session_feedback_prefers_good_surface_priority_for_numeric_highlight(self):
         from app.models.conversation import SessionFeedbackRequest

@@ -399,3 +399,5 @@
 - 2026-06-08 `prompt-engineering-patterns` 점검 기준은 역할 분리, 구조화 JSON 출력, 예시 오염 방지, 톤 지시, self-check, deterministic fallback이다. 기존 public API shape는 유지하고 프롬프트와 후처리만 보강한다.
 - 2026-06-08 점검 결과 `next-question` 프롬프트에는 한국어 톤 source와 반말 few-shot, bad example, self-check를 추가했다. 서버 후처리는 모델 반환과 fallback 모두에서 `questionKo`가 반말이면 맞장구만 반말로 보정하고, 고정 질문 원문은 그대로 둔다.
 - 2026-06-08 `turn-feedback`과 `session-feedback` 프롬프트는 이미 역할, field policy, 구조화 출력, self-check, deterministic 후보 검증을 갖추고 있어 추가 변경하지 않았다. `guide` 프롬프트는 구조화 출력은 있었지만 self-check가 없어 영어 학습 범위, hidden prompt 비노출, 단일 JSON 객체 반환 기준을 추가했다.
+- 2026-06-08 session-feedback에서 `highlightMessage`가 최종 `turnFeedbacks[].benchmarkMessage`에 없는 수치 hook으로 튀는 문제가 확인됐다. 원인은 `GOOD` 턴의 최종 benchmark 후보를 넣은 뒤에도 `GOOD detectedPatterns`를 추가 후보로 다시 넣고, surface priority가 더 높은 `a/an` 같은 패턴이 최종 highlight를 덮는 구조였다.
+- 2026-06-08 수정 정책은 `GOOD` 턴의 세션 수치 highlight 후보를 최종 cached `benchmarkMessage`로만 제한하는 것이다. `NEEDS_IMPROVEMENT` 턴은 `benchmarkMessage=null` 계약을 유지하므로, feedbackDetail과 실제 발화에 근거가 있는 detectedPattern challenge hook만 예외적으로 세션 후보에 남긴다.

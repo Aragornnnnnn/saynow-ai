@@ -713,3 +713,10 @@
 - [x] 필요한 프롬프트 지시와 self-check만 최소 변경으로 반영한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [ ] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## session-feedback highlight와 turn benchmark 정합성
+
+- [x] `GOOD` detectedPattern이 최종 turn benchmark와 다른 수치 highlight를 만들지 않는 RED 테스트를 추가한다.
+- [x] session highlight 후보를 최종 `turnFeedbacks[].benchmarkMessage` 중심으로 좁힌다.
+- [x] session-feedback 프롬프트의 evidence priority 문구를 구현과 맞춘다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.

@@ -927,7 +927,7 @@ def _session_feedback_system_prompt() -> str:
             "It must hook the user into reading turn-level feedback. "
             "Prefer a quantitative noun phrase about what the user did well, such as 한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람. "
             "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
-            "Do not invent a new percentage hook that is not present in cached benchmarkMessage or cached detected pattern evidence. "
+            "Do not invent a new percentage hook that is not present in cached benchmarkMessage or allowed NEEDS_IMPROVEMENT detected pattern evidence. "
             "If Allowed quantitative highlight candidates JSON is empty, highlightMessage must not contain %, 퍼센트, or count-based claims such as 4번 중 1번. "
             "If Allowed quantitative highlight candidates JSON is non-empty, copy one candidate exactly, preferably the first item. "
             "Do not paraphrase allowed candidates. "
@@ -938,7 +938,7 @@ def _session_feedback_system_prompt() -> str:
         (
             "Evidence Priority:\n"
             "1. Prefer one exact item from Allowed quantitative highlight candidates JSON when it is non-empty. "
-            "2. Then use validated gamifiable detectedPatterns from GOOD turns when they are marked correct. "
+            "2. For GOOD turns, only use the final cached benchmarkMessage as quantitative evidence, not extra detectedPatterns. "
             "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook when koreanPct is available. "
             "4. If no quantitative evidence exists, use repeated concrete themes from feedbackDetail or positiveFeedback."
         ),
@@ -947,7 +947,7 @@ def _session_feedback_system_prompt() -> str:
             "1. highlightMessage is Korean. "
             "2. highlightMessage is a noun phrase or title-like badge, not a summary sentence. "
             "3. highlightMessage has no final punctuation. "
-            "4. highlightMessage is grounded in cached turn feedback or detected pattern evidence. "
+            "4. highlightMessage is grounded in cached turn feedback or allowed NEEDS_IMPROVEMENT detected pattern evidence. "
             "5. When allowed quantitative candidates are empty, highlightMessage has no percentage or numeric learner claim. "
             "6. If allowed quantitative highlight candidates are provided, highlightMessage equals one exact candidate. "
             "7. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
@@ -1952,23 +1952,6 @@ def _quantitative_highlight_candidates(
                 highlight_candidate or entry.feedback.benchmarkMessage,
                 _good_surface_rank_for_benchmark_message(entry.feedback.benchmarkMessage),
             )
-    for entry in turn_feedback_entries:
-        if entry.feedback.feedbackType != FeedbackType.GOOD:
-            continue
-        for detected_pattern in entry.detected_patterns:
-            pattern = detected_pattern.pattern
-            if (
-                detected_pattern.status == "correct"
-                and pattern.gamifiable
-                and pattern.korean_pct is not None
-                and _detected_pattern_has_session_highlight_evidence(entry, detected_pattern)
-            ):
-                candidate = _correct_highlight_message(
-                    pattern.korean_pct,
-                    pattern.display_name,
-                    pattern.feedback_copy,
-                )
-                add_candidate(candidate, _good_surface_rank_for_error_type(pattern.error_type))
     for entry in turn_feedback_entries:
         if entry.feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
             continue
