@@ -468,6 +468,7 @@ def _turn_benchmark_sentence_from_highlight_message(highlight_message: str) -> s
     replacements = (
         ("정확히 쓴 사람", "정확히 썼어요"),
         ("놓치지 않은 사람", "놓치지 않았어요"),
+        ("쓴 사람", "썼어요"),
         ("맞춘 사람", "맞췄어요"),
         ("챙긴 사람", "챙겼어요"),
         ("잡은 사람", "잡았어요"),
@@ -849,8 +850,8 @@ def _turn_feedback_system_prompt() -> str:
         ),
         (
             "Benchmark Examples:\n"
-            "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인 79%가 놓치는 a/an 자리를 정확히 썼어요'. "
-            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인 37%가 놓치는 복수 -s를 챙겼어요'. "
+            "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
+            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요'. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
         ),
         (
@@ -925,7 +926,7 @@ def _session_feedback_system_prompt() -> str:
             "highlightMessage must be written in Korean. "
             "It is a title-like badge phrase, not a full summary sentence. "
             "It must hook the user into reading turn-level feedback. "
-            "Prefer a quantitative noun phrase about what the user did well, such as 한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람. "
+            "Prefer a quantitative noun phrase about what the user did well, such as 한국인의 79%가 틀리는 a/an을 정확히 쓴 사람. "
             "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
             "Do not invent a new percentage hook that is not present in cached benchmarkMessage or allowed NEEDS_IMPROVEMENT detected pattern evidence. "
             "If Allowed quantitative highlight candidates JSON is empty, highlightMessage must not contain %, 퍼센트, or count-based claims such as 4번 중 1번. "
@@ -2035,7 +2036,7 @@ def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) 
 
 
 def _correct_highlight_message(korean_pct: float, display_name: str, feedback_copy: str) -> str:
-    if _contains_percentage(feedback_copy):
+    if _contains_quantitative_hook(feedback_copy):
         return feedback_copy
     return f"한국인 {_format_percentage(korean_pct)}%가 헷갈리는 {display_name}을 챙긴 사람"
 

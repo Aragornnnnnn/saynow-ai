@@ -50,7 +50,7 @@
 {
   "sessionId": 1000,
   "nativeScore": 78,
-  "highlightMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람",
+  "highlightMessage": "한국인의 79%가 틀리는 a/an을 정확히 쓴 사람",
   "turnFeedbacks": [
     {
       "turnId": 5000,
@@ -58,7 +58,7 @@
       "koreanAnalogy": "한국어로 비유하자면, \"저는 피자가 좋아요. 매워서요\"라고 자연스럽게 이유를 붙여 말하는 것과 같아요.",
       "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
       "positiveFeedback": null,
-      "benchmarkMessage": "한국인 79%가 놓치는 a/an 자리를 정확히 썼어요"
+      "benchmarkMessage": "한국인의 79%가 틀리는 a/an을 정확히 썼어요"
     },
     {
       "turnId": 5001,
@@ -82,11 +82,11 @@
 
 `nativeScore`는 0-100 점수이며 100에 가까울수록 원어민 쪽에 가깝습니다. 세션 점수는 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50%를 내부 합산해 계산합니다.
 
-`highlightMessage`는 전체 총평이 아니라 발화별 피드백을 열어 보게 만드는 칭호형 후킹 문구입니다. 우선순위는 사용자가 잘한 GOOD 정량 포인트입니다. 예를 들어 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 마침표 없는 명사구를 우선합니다. 이런 GOOD 포인트가 없으면 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 NEEDS_IMPROVEMENT의 도전 포인트를 fallback hook으로 씁니다.
+`highlightMessage`는 전체 총평이 아니라 발화별 피드백을 열어 보게 만드는 칭호형 후킹 문구입니다. 우선순위는 사용자가 잘한 GOOD 정량 포인트입니다. 예를 들어 `한국인의 79%가 틀리는 a/an을 정확히 쓴 사람`처럼 마침표 없는 명사구를 우선합니다. 이런 GOOD 포인트가 없으면 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 NEEDS_IMPROVEMENT의 도전 포인트를 fallback hook으로 씁니다.
 
 `koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식을 우선합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함합니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 사용자 발화의 surface usage를 보고 기존 수치 catalog hook을 느슨하게 재활용합니다. 턴별 `benchmarkMessage`는 `한국인 37%가 놓치는 복수 -s를 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인 37%가 놓치는 복수 -s를 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함합니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 사용자 발화의 surface usage를 보고 기존 수치 catalog hook을 느슨하게 재활용합니다. 턴별 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
 
 ## 한국인 오류 패턴 seed
 

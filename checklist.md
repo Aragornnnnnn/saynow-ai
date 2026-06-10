@@ -720,3 +720,12 @@
 - [x] session highlight 후보를 최종 `turnFeedbacks[].benchmarkMessage` 중심으로 좁힌다.
 - [x] session-feedback 프롬프트의 evidence priority 문구를 구현과 맞춘다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## error pattern catalog 문구 갱신
+
+- [x] 첨부 JSON과 현재 catalog의 차이를 확인한다.
+- [x] `app/data/error_patterns.json`을 첨부 내용 기준으로 갱신한다.
+- [x] catalog 문구를 직접 기대하는 테스트를 새 문구에 맞춘다.
+- [x] 관련 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 커밋하고 `develop`에 push한다.
+- [ ] GitHub Actions develop 배포와 live health를 확인한다.

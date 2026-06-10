@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-06-10 `app/data/error_patterns.json`은 첨부 JSON을 source of truth로 갱신했다. 변경은 schema나 pattern key 변경이 아니라 `feedback_copy` 문구 수정이며, 12개 패턴 중 11개의 표시 문구가 바뀌었다. 새 문구에는 `한국인의 79%가 틀리는 a/an`, `한국인의 37%가 놓치는 복수형 명사+s`, `한국인이 4번 중 1번은 빠뜨리는 전치사`처럼 더 직접적인 재미용 hook이 들어간다.
+- 2026-06-10 catalog 문구 갱신에 맞춰 턴별 `benchmarkMessage` 변환 규칙에 `쓴 사람 -> 썼어요`를 추가했다. 세션 `highlightMessage`는 여전히 `...한 사람` 칭호형이고, 턴별 `benchmarkMessage`는 `...했어요` 문장형이다.
+- 2026-06-10 세션 highlight 후보 판정은 `%`만 보지 않고 `4번 중 1번` 같은 count 기반 hook도 수치형으로 본다. 그래서 전치사 catalog의 새 `feedback_copy`처럼 퍼센트가 없는 수치 문구도 모델이 새 수치를 만들지 않고 catalog 원문을 그대로 쓸 수 있다.
 - 2026-06-08 턴별 `benchmarkMessage`는 사용자가 바로 읽는 발화별 칭찬 문구이므로 `한국인 37%가 놓치는 복수 -s를 챙긴 사람` 같은 칭호형이 아니라 `한국인 37%가 놓치는 복수 -s를 챙겼어요` 같은 문장형으로 내려간다. 세션 `highlightMessage`는 여전히 배지 역할이라 `...한 사람` 형식을 유지한다.
 - 2026-06-08 GOOD 턴의 `benchmarkMessage`는 비수치 badge가 아니라 기존 `app/data/error_patterns.json` 수치 catalog를 surface usage 기준으로 느슨하게 재활용한다. 목적은 엄밀한 오류 진단이 아니라 사용자가 흥미를 느끼는 재미용 학습 hook이다. `NEEDS_IMPROVEMENT`는 기존 계약대로 `benchmarkMessage=null`을 유지한다.
 - 2026-06-08 `benchmarkMessage` 정책은 GOOD 턴에서 기본 제공하되, 1순위는 `detectedPatterns[].evidence`가 실제 발화에 있고 `korean_pct`가 있는 정량 catalog copy다. 없으면 `a/an`, `the`, 복수 `-s`, 3인칭 단수 `-s`, be동사, 전치사, 시제·상 같은 surface usage를 서버가 감지해 기존 수치 catalog 문구로 덮어쓴다.
