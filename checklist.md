@@ -775,5 +775,5 @@
 - [x] 최소 수정으로 `next-question`, `turn-feedback` LLM 호출 실패를 계약 오류로 감싼다.
 - [x] SSM `OPENROUTER_API_KEY` 형식 오류를 확인하고 develop SecureString을 갱신한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] 변경 사항을 커밋하고 `origin`과 `origin/develop`에 push한다.
-- [ ] GitHub Actions develop 배포와 live smoke를 확인한다.
+- [x] 변경 사항을 커밋하고 `origin`과 `origin/develop`에 push한다.
+- [x] GitHub Actions develop 배포와 live smoke를 확인한다.
