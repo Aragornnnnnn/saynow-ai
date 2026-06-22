@@ -5,6 +5,7 @@
 - 2026-06-23 `turn-feedback`에서 `NEEDS_IMPROVEMENT`는 `positiveFeedback`, `correctionExpression`, `correctionReason`을 요구하고 `feedbackDetail`과 `benchmarkMessage`는 null로 둔다. `GOOD`은 `feedbackDetail`과 `benchmarkMessage`를 사용하고 correction 필드는 null로 둔다.
 - 2026-06-23 LLM이 `next-question`에서 `innerThought`를 누락해도 질문 본문이 쓸 만하면 버리지 않고, 속마음 필드만 fallback으로 채운다. 질문 drift나 generic acknowledgement는 기존처럼 fallback 질문으로 보정한다.
 - 2026-06-23 `turn-feedback`은 구계약 `betterExpression`을 받더라도 내부 normalize 단계에서 `correctionExpression`으로 옮긴다. 외부 응답에는 `betterExpression`을 노출하지 않는다.
+- 2026-06-23 `turn-feedback.koreanAnalogy`는 더 이상 `한국어로 비유하자면`, `한국어로 치면` 같은 접두어로 시작하지 않는다. 화면에서는 바로 `"그걸 왜 알고 싶은데?"라고 ...`처럼 본론이 보여야 하므로, 모델이 접두어를 붙여도 서버 후처리에서 제거한다.
 
 - 2026-06-10 `app/data/error_patterns.json`은 첨부 JSON을 source of truth로 갱신했다. 변경은 schema나 pattern key 변경이 아니라 `feedback_copy` 문구 수정이며, 12개 패턴 중 11개의 표시 문구가 바뀌었다. 새 문구에는 `한국인의 79%가 틀리는 a/an`, `한국인의 37%가 놓치는 복수형 명사+s`, `한국인이 4번 중 1번은 빠뜨리는 전치사`처럼 더 직접적인 재미용 hook이 들어간다.
 - 2026-06-10 catalog 문구 갱신에 맞춰 턴별 `benchmarkMessage` 변환 규칙에 `쓴 사람 -> 썼어요`를 추가했다. 세션 `highlightMessage`는 여전히 `...한 사람` 칭호형이고, 턴별 `benchmarkMessage`는 `...했어요` 문장형이다.
@@ -21,7 +22,7 @@
 - 2026-06-06 세션 `highlightMessage` 정량 hook 우선순위는 GOOD에서 사용자가 잘한 포인트를 먼저 쓰는 것으로 확정했다. 1순위는 `한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`처럼 GOOD `benchmarkMessage`나 GOOD correct `detectedPatterns`에서 나온 칭찬형 hook이다. 이런 포인트가 없을 때만 NEEDS_IMPROVEMENT의 incorrect/attempted `detectedPatterns`를 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 도전형 hook으로 쓴다.
 - 2026-06-06 실제 OpenAI smoke 재검증에서 GOOD a/an 턴과 NEEDS 간접의문문 턴이 함께 있을 때 최종 API 응답은 `highlightMessage=한국인 79%가 놓치는 a/an 자리를 정확히 쓴 사람`으로 나왔다. GOOD 정량 재료가 없는 단일 NEEDS 케이스에서는 모델 원문이 `간접의문문 어순에 도전한 사람`이어도 서버 최종 응답은 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`으로 정규화됐다.
 - 2026-06-06 실제 OpenAI smoke에서 `highlightMessage`가 `피자와 매운 맛에 대한 선호를 잘 표현한 사람`처럼 정량 근거 없는 일반 칭찬으로 내려왔다. 이 필드의 목적은 총평이 아니라 다음 발화별 피드백을 보게 만드는 hook이므로, gamifiable `detectedPatterns`나 `benchmarkMessage`에 `korean_pct` 근거가 있으면 `%`가 들어간 칭호형 문구를 우선한다.
-- 2026-06-06 `koreanAnalogy`는 `뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌` 같은 메타 설명이 아니라, 원래 영어가 한국어로 어떻게 들리는지 보여주는 인용형 비유여야 한다. 기본 형식은 `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.`로 둔다.
+- 2026-06-06 `koreanAnalogy`는 `뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌` 같은 메타 설명이 아니라, 원래 영어가 한국어로 어떻게 들리는지 보여주는 인용형 비유여야 한다. 현재 기본 형식은 `"..."라고 ...하는 것과 같아요.`이며 `한국어로 비유하자면` 같은 접두어는 붙이지 않는다.
 - 2026-06-06 raw JSON에서 `koreanAnalogy` 안의 큰따옴표는 `\"`로 보일 수 있다. 이는 JSON 문자열 내부 큰따옴표를 표현하기 위한 escape이며, 클라이언트가 JSON을 파싱해 렌더링하면 역슬래시는 화면에 보이지 않는다.
 - 2026-06-06 LLM이 `detectedPatterns`를 누락해도 `I don't know what is it.`처럼 서버가 확실히 감지할 수 있는 간접의문문 어순 오류는 내부 캐시에 `indirect_question_word_order`로 보강한다. 이렇게 해야 세션 `highlightMessage`가 정량 hook으로 안정적으로 보정된다.
 - 2026-06-06 간접의문문 NEEDS 피드백에서 LLM이 `positiveFeedback`을 `좋은 시도였어요!`처럼 일반 칭찬으로만 내려주면 `간접의문문처럼 어려운 구조를 직접 써 보려는 시도 자체가 좋아요.`로 보정한다. NEEDS에서도 사용자가 도전한 구체 포인트를 짚어야 발화별 피드백을 읽을 이유가 생긴다.
@@ -208,7 +209,7 @@
 - develop workflow는 런타임 env 파일을 `/opt/saynow/.env.develop`, `/opt/saynow/.env.prod`, `/opt/saynow/.env`에 같은 내용으로 설치한다. 신규 develop unit과 prod 복제 unit, Pydantic 기본 `.env` 로딩을 모두 커버하기 위한 호환 처리다.
 - 검증 명령은 `OPENAI_API_KEY=test-key /private/tmp/saynow-ai-venv/bin/python -m unittest discover -s tests -p 'test*.py'`와 `git diff --check`를 실행했다.
 - 발화별 `nativeUnderstanding`은 평가 문구가 아니라 외국인이 사용자 발화를 어떻게 이해했는지 보여줘야 한다. 프롬프트는 `외국인은 ...라고 이해했어요.` 형식을 요구한다.
-- 발화별 `nativeLanguageInterpretation`은 직역 설명이 아니라 한국인이 감각적으로 이해할 수 있는 비유다. 프롬프트는 `한국어로 비유하자면, ...처럼 들려요.` 형식을 요구한다.
+- 발화별 `nativeLanguageInterpretation`은 직역 설명이 아니라 한국인이 감각적으로 이해할 수 있는 비유다. 최신 `koreanAnalogy`는 `...처럼 들려요.` 형식을 쓰되 `한국어로 비유하자면` 같은 접두어는 붙이지 않는다.
 - `betterExpression`은 기존 `String` 스키마를 유지한다. 피드백이 필요한 경우 개선 문장과 짧은 한국어 근거를 같은 문자열에 함께 담는다.
 - develop 배포 후 `.env`에 백엔드용 환경변수가 함께 들어오면 Pydantic Settings가 `extra_forbidden`으로 앱 시작을 막을 수 있다. AI 서버 설정은 필요한 값만 읽고 나머지 배포 환경변수는 무시한다.
 - 질문 의도와 전혀 다른 발화는 한국어 비유에서도 이상한 의미를 억지로 시나리오에 맞춰 해석하지 않는다. `betterExpression`은 한국어 안내 문장 안에 상황에 맞는 간단한 영어 답변 예시와 근거를 함께 담는다.

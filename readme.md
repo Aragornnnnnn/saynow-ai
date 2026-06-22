@@ -59,7 +59,7 @@
     {
       "turnId": 5000,
       "feedbackType": "GOOD",
-      "koreanAnalogy": "한국어로 비유하자면, \"저는 피자가 좋아요. 매워서요\"라고 자연스럽게 이유를 붙여 말하는 것과 같아요.",
+      "koreanAnalogy": "\"저는 피자가 좋아요. 매워서요\"라고 자연스럽게 이유를 붙여 말하는 것과 같아요.",
       "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
       "positiveFeedback": null,
       "correctionExpression": null,
@@ -69,7 +69,7 @@
     {
       "turnId": 5001,
       "feedbackType": "NEEDS_IMPROVEMENT",
-      "koreanAnalogy": "한국어로 비유하자면, \"그게 뭔지 모르겠어\"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.",
+      "koreanAnalogy": "\"그게 뭔지 모르겠어\"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.",
       "positiveFeedback": "어려운 간접의문문 구조에 도전한 점이 좋아요. 틀렸더라도 그 시도 자체가 다음 단계로 가는 재료예요.",
       "feedbackDetail": null,
       "correctionExpression": "I do not know what it is.",
@@ -92,7 +92,7 @@
 
 `highlightMessage`는 전체 총평이 아니라 발화별 피드백을 열어 보게 만드는 칭호형 후킹 문구입니다. 우선순위는 사용자가 잘한 GOOD 정량 포인트입니다. 예를 들어 `한국인의 79%가 틀리는 a/an을 정확히 쓴 사람`처럼 마침표 없는 명사구를 우선합니다. 이런 GOOD 포인트가 없으면 `한국인 40%가 헷갈리는 간접의문문에 도전한 사람`처럼 NEEDS_IMPROVEMENT의 도전 포인트를 fallback hook으로 씁니다.
 
-`koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식을 우선합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
+`koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면`, `한국어로 치면` 같은 접두어 없이 `"..."라고 ...하는 것과 같아요.`처럼 바로 본론으로 시작합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
 `innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다.
 

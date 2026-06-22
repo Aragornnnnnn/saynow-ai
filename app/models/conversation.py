@@ -16,6 +16,19 @@ def _optional_not_blank(value: str | None) -> str | None:
     return _validate_not_blank(value)
 
 
+def _strip_korean_analogy_framing(value: str) -> str:
+    stripped = value.strip()
+    framing_prefixes = (
+        "한국어로 비유하자면",
+        "한국어로 비유하면",
+        "한국어로 치면",
+    )
+    for prefix in framing_prefixes:
+        if stripped.startswith(prefix):
+            return stripped[len(prefix):].lstrip(" ,，:：")
+    return stripped
+
+
 class ScenarioContext(BaseModel):
     scenarioId: int = Field(gt=0)
     title: str
@@ -127,8 +140,12 @@ class TurnFeedbackData(BaseModel):
     correctionReason: str | None = None
     benchmarkMessage: str | None = None
 
+    @field_validator("koreanAnalogy")
+    @classmethod
+    def korean_analogy_must_not_be_blank_or_framed(cls, value: str) -> str:
+        return _validate_not_blank(_strip_korean_analogy_framing(value))
+
     @field_validator(
-        "koreanAnalogy",
         "positiveFeedback",
         "feedbackDetail",
         "correctionExpression",

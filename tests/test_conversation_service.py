@@ -682,7 +682,9 @@ class ConversationServiceTest(unittest.TestCase):
     def test_turn_feedback_prompt_requires_quoted_korean_analogy_sentence_format(self):
         system_prompt = self.service._turn_feedback_system_prompt()
 
-        self.assertIn('한국어로 비유하자면, "..."라고 ...하는 것과 같아요', system_prompt)
+        self.assertIn('"..."라고 ...하는 것과 같아요', system_prompt)
+        self.assertIn("must not start with Korean framing phrases", system_prompt)
+        self.assertNotIn("must start with '한국어로 비유하자면'", system_prompt)
         self.assertIn("Do not return a meta description", system_prompt)
         self.assertIn("the English sounds like", system_prompt)
 
@@ -948,7 +950,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertFalse(hasattr(cached, "betterExpression"))
         self.assertIn("좋아하는 음식과 이유", cached.feedbackDetail)
-        self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+        self.assertFalse(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+        self.assertNotIn("한국어로 치면", cached.koreanAnalogy)
 
     def test_turn_feedback_keeps_incomplete_because_reason_as_needs(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -1078,7 +1081,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertEqual(cached.correctionExpression, "I cook sometimes, but I am not good at cooking.")
-        self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+        self.assertFalse(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
+        self.assertNotIn("한국어로 치면", cached.koreanAnalogy)
 
     def test_turn_feedback_repairs_blunt_wanna_know_that_better_expression(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

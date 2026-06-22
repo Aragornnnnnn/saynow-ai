@@ -836,8 +836,8 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Field Policy:\n"
             "koreanAnalogy is required for every response and should explain how the English sounds through a Korean analogy. "
-            "koreanAnalogy must start with '한국어로 비유하자면'. "
-            "koreanAnalogy must follow this format: 한국어로 비유하자면, \"...\"라고 ...하는 것과 같아요. "
+            "koreanAnalogy must not start with Korean framing phrases such as '한국어로 비유하자면', '한국어로 비유하면', or '한국어로 치면'. "
+            "koreanAnalogy must start directly with the example or explanation, following this format: \"...\"라고 ...하는 것과 같아요. "
             "The quoted Korean sentence must show what the English sounds like in Korean. "
             "Do not return a meta description such as '뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌'. "
             "koreanAnalogy describes the original utterance's Korean-feel only; it must not explain the fix, say '더 자연스럽습니다', or act like a grammar note. "
@@ -1423,7 +1423,7 @@ def _feedback_for_prompt_injection_utterance(
         turnId=feedback.turnId,
         feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
         koreanAnalogy=(
-            "한국어로 비유하자면, \"지금 질문에는 답하지 않고 다른 요청을 한 말\"처럼 들려요."
+            "\"지금 질문에는 답하지 않고 다른 요청을 한 말\"처럼 들려요."
         ),
         feedbackDetail=None,
         correctionExpression=(
@@ -1453,7 +1453,7 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, \"밥은 내 인생 음식이야\"라고 직역해서 "
+                "\"밥은 내 인생 음식이야\"라고 직역해서 "
                 "조금 어색하게 말하는 것과 같아요."
             ),
             feedbackDetail=None,
@@ -1467,7 +1467,7 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, '피자가 좋아요. 매운이라서요'처럼 "
+                "'피자가 좋아요. 매운이라서요'처럼 "
                 "이유는 보이지만 말끝이 빠진 느낌이에요."
             ),
             feedbackDetail=None,
@@ -1480,7 +1480,7 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-            koreanAnalogy="한국어로 비유하자면, '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
+            koreanAnalogy="'그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
             feedbackDetail=None,
             correctionExpression="I wonder why you are curious about it.",
             correctionReason="질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 상대를 몰아붙이거나 방어적으로 들릴 수 있어요.",
@@ -1492,7 +1492,7 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, '요리는 가끔 하지만 요리 안에 잘하지는 않아요'처럼 "
+                "'요리는 가끔 하지만 요리 안에 잘하지는 않아요'처럼 "
                 "뜻은 보이지만 표현 연결이 어색해요."
             ),
             feedbackDetail=None,
@@ -1514,7 +1514,7 @@ def _needs_feedback_for_bare_noun_because_answer(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, \"캐나다, 자연 때문에\"라고 짧게 끊어 말하는 것과 같아요."
+                "\"캐나다, 자연 때문에\"라고 짧게 끊어 말하는 것과 같아요."
             ),
             feedbackDetail=None,
             correctionExpression="Canada, because I love nature.",
@@ -1527,7 +1527,7 @@ def _needs_feedback_for_bare_noun_because_answer(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, \"혼자, 자유 때문에\"라고 말끝이 덜 채워진 것과 같아요."
+                "\"혼자, 자유 때문에\"라고 말끝이 덜 채워진 것과 같아요."
             ),
             feedbackDetail=None,
             correctionExpression="I like traveling alone because I like the freedom.",
@@ -1540,7 +1540,7 @@ def _needs_feedback_for_bare_noun_because_answer(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy=(
-                "한국어로 비유하자면, \"밥, 반찬이 많아서\"라고 짧게 끊어 말하는 것과 같아요."
+                "\"밥, 반찬이 많아서\"라고 짧게 끊어 말하는 것과 같아요."
             ),
             feedbackDetail=None,
             correctionExpression="Rice, because I can eat it with many dishes.",
@@ -1748,7 +1748,7 @@ def _good_feedback_for_clear_reason_answer(
         turnId=feedback.turnId,
         feedbackType=FeedbackType.GOOD,
         koreanAnalogy=(
-            "한국어로 비유하자면 '저는 피자가 좋아요. 매워서요'처럼 "
+            "'저는 피자가 좋아요. 매워서요'처럼 "
             "좋아하는 것과 이유가 바로 이어져 담백하게 들려요."
         ),
         feedbackDetail="좋아하는 음식과 이유를 한 문장으로 분명하게 말했고, because로 이유를 붙여 상대가 답변의 핵심을 바로 이해할 수 있어요.",
@@ -1766,7 +1766,7 @@ def _good_feedback_for_clear_travel_plan_answer(
         turnId=feedback.turnId,
         feedbackType=FeedbackType.GOOD,
         koreanAnalogy=(
-            f"한국어로 비유하자면, '{destination}에 다음에 가고 싶어요'처럼 "
+            f"'{destination}에 다음에 가고 싶어요'처럼 "
             "가고 싶은 여행지가 바로 보여 자연스럽게 들려요."
         ),
         feedbackDetail=f"{destination}에 가고 싶은 계획을 한 문장으로 또렷하게 말했고, 여행지와 의도가 바로 보여 질문자가 대화를 이어가기 쉬워요.",
@@ -1850,10 +1850,12 @@ def _is_generic_positive_feedback(positive_feedback: str | None) -> bool:
     return len(text) <= 20 or any(marker in text for marker in generic_markers)
 
 
-def _ensure_korean_analogy_prefix(korean_analogy: str) -> str:
-    if korean_analogy.startswith("한국어로 비유하자면"):
-        return korean_analogy
-    return f"한국어로 비유하자면, {korean_analogy}"
+def _strip_korean_analogy_framing(korean_analogy: str) -> str:
+    stripped = korean_analogy.strip()
+    for prefix in ("한국어로 비유하자면", "한국어로 비유하면", "한국어로 치면"):
+        if stripped.startswith(prefix):
+            return stripped[len(prefix):].lstrip(" ,，:：")
+    return stripped
 
 
 def _repair_korean_analogy(
@@ -1864,30 +1866,30 @@ def _repair_korean_analogy(
     if feedback.feedbackType == FeedbackType.GOOD:
         if _looks_like_sleeping_habit_change_answer(utterance):
             return (
-                "한국어로 비유하자면, '늦게 자는 수면 습관을 바꾸고 싶어요'처럼 "
+                "'늦게 자는 수면 습관을 바꾸고 싶어요'처럼 "
                 "바꾸고 싶은 루틴과 이유가 바로 이어져 자연스럽게 들려요."
             )
         if _looks_like_recent_tteokbokki_answer(utterance):
             return (
-                "한국어로 비유하자면, '어제 친구랑 떡볶이 먹었어요'처럼 "
+                "'어제 친구랑 떡볶이 먹었어요'처럼 "
                 "음식, 시점, 동행이 또렷하게 들려요."
             )
 
-    korean_analogy = _ensure_korean_analogy_prefix(feedback.koreanAnalogy)
+    korean_analogy = _strip_korean_analogy_framing(feedback.koreanAnalogy)
     if feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
         if _contains_indirect_question_pattern(utterance):
             return (
-                '한국어로 비유하자면, "그게 뭔지 모르겠어"라고 말하려다 '
+                '"그게 뭔지 모르겠어"라고 말하려다 '
                 "어순이 살짝 꼬인 문장으로 말하는 것과 같아요."
             )
         if _looks_like_sushi_never_eaten_issue(utterance):
             return (
-                '한국어로 비유하자면, "다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어"라고 '
+                '"다음에 초밥 먹고 싶어. 전에 절대 안 먹어 봤어"라고 '
                 "문장 연결이 덜 다듬어진 채 말하는 것과 같아요."
             )
         if "spend free time to read" in utterance:
             return (
-                '한국어로 비유하자면, "여가 시간을 책 읽기 위해 보내요"라고 '
+                '"여가 시간을 책 읽기 위해 보내요"라고 '
                 "일상 대답보다 번역문처럼 딱딱하게 말하는 것과 같아요."
             )
 
@@ -1896,21 +1898,21 @@ def _repair_korean_analogy(
 
     if "in morning" in utterance and "usually drinking" in utterance:
         return (
-            "한국어로 비유하자면, '아침에 보통 물 마시는 중이고 일정도 확인해요'처럼 "
+            "'아침에 보통 물 마시는 중이고 일정도 확인해요'처럼 "
             "뜻은 보이지만 말끝이 덜 정리되어 들려요."
         )
     if "can relaxing after work" in utterance:
         return (
-            "한국어로 비유하자면, '저녁 좋아해요. 퇴근 후에 편안한 중일 수 있어서요'처럼 "
+            "'저녁 좋아해요. 퇴근 후에 편안한 중일 수 있어서요'처럼 "
             "뜻은 보이지만 동작 표현이 어색하게 들려요."
         )
     if "most memorable part was see the sea at night" in utterance:
         return (
-            "한국어로 비유하자면, '가장 기억에 남는 부분은 밤에 바다를 보다였어요'처럼 "
+            "'가장 기억에 남는 부분은 밤에 바다를 보다였어요'처럼 "
             "뜻은 바로 보이지만 문장 뼈대가 덜 다듬어진 느낌이에요."
         )
     return (
-        '한국어로 비유하자면, "말하고 싶은 뜻은 알겠는데 순서가 살짝 꼬였어요"라고 '
+        '"말하고 싶은 뜻은 알겠는데 순서가 살짝 꼬였어요"라고 '
         "덜 정리된 문장으로 말하는 것과 같아요."
     )
 

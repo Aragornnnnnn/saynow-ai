@@ -10,6 +10,15 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
+## LAN-28 koreanAnalogy 접두어 제거
+
+- [x] `koreanAnalogy`가 `한국어로 비유하자면` 접두어 없이 바로 본론으로 시작하는 RED 테스트를 추가한다.
+- [x] 턴 피드백 프롬프트에서 접두어 요구를 제거한다.
+- [x] 후처리와 deterministic fallback 문구에서 접두어를 제거한다.
+- [x] README 계약 예시를 새 형식으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 턴별 benchmarkMessage 문장형 전환
 
 - [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.
@@ -52,7 +61,7 @@
 - [x] NEEDS fallback 문구를 `바로잡을 사람`이 아니라 `도전한 사람` 계열로 보정한다.
 - [x] 실제 LLM smoke에서 약한 `highlightMessage`와 메타 설명형 `koreanAnalogy`가 나온 문제를 RED 테스트로 고정한다.
 - [x] `highlightMessage`가 가능한 경우 정량 수치 기반 칭호형 hook으로 보정되도록 seed와 후처리를 보강한다.
-- [x] `koreanAnalogy`가 `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식의 한국어 인용 비유를 따르도록 프롬프트와 후처리를 보강한다.
+- [x] `koreanAnalogy`가 `"..."라고 ...하는 것과 같아요.` 형식의 한국어 인용 비유를 따르도록 프롬프트와 후처리를 보강한다.
 - [x] README와 작업 맥락 기록에 JSON escape와 필드 목적을 정리한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 실제 OpenAI LLM smoke를 다시 실행한다.
