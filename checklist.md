@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## LAN-28 속마음과 개선 표현 계약
+
+- [x] `next-question`이 `scenario.counterpartRole`, `innerThought`, `innerThoughtType` 계약을 요구하는 RED 테스트를 추가한다.
+- [x] `turn-feedback`가 `correctionExpression`과 `correctionReason`을 분리해 내려주는 RED 테스트를 추가한다.
+- [x] Pydantic DTO와 route/service 테스트를 새 계약에 맞춘다.
+- [x] next-question 프롬프트, fallback, drift repair가 항상 속마음을 반환하도록 수정한다.
+- [x] turn-feedback 프롬프트, 검증, 후처리, 캐시가 분리된 개선 표현 계약을 사용하도록 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 턴별 benchmarkMessage 문장형 전환
 
 - [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.

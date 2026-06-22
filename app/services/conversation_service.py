@@ -116,6 +116,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     stage_started_at = time.perf_counter()
     try:
         data = _parse_json_object(raw, workflow=workflow)
+        _normalize_next_question_data_before_validation(request, data)
         response = NextQuestionResponse.model_validate(data)
     except (ConversationGenerationError, ValidationError) as exc:
         logger.info(
@@ -131,6 +132,16 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     response = _repair_next_question_drift(request, response)
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
+
+
+def _normalize_next_question_data_before_validation(
+    request: NextQuestionRequest,
+    data: dict[str, Any],
+) -> None:
+    if not isinstance(data.get("innerThought"), str) or not data["innerThought"].strip():
+        data["innerThought"] = _fallback_inner_thought(request)
+    if data.get("innerThoughtType") not in {"GOOD", "NORMAL", "BAD"}:
+        data["innerThoughtType"] = _fallback_inner_thought_type(request)
 
 
 @_record_workflow_duration("turn_feedback")
@@ -718,13 +729,21 @@ def _next_question_system_prompt() -> str:
             "Prefer a human conversational reaction over keyword restatement."
         ),
         (
+            "Inner Thought Policy:\n"
+            "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in Korean. "
+            "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Use the provided Counterpart role. A professor, friend, roommate, cafe staff, or stranger may feel differently about the same sentence. "
+            "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
+            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate."
+        ),
+        (
             "Conversation Style Examples:\n"
             "Good JSON for user 'I like pizza because it is spicy.': "
-            '{"aiQuestion":"Sounds tasty. Do you cook often?","translatedQuestion":"맛있겠네요. 요리는 자주 하나요?"}\n'
+            '{"aiQuestion":"Sounds tasty. Do you cook often?","translatedQuestion":"맛있겠네요. 요리는 자주 하나요?","innerThought":"이렇게 이유까지 말해주니까 대화하기 편하네.","innerThoughtType":"GOOD"}\n'
             "Good JSON for user 'I watched a movie yesterday, but the story was confusing.': "
-            '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?"}\n'
+            '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?","innerThought":"무슨 일을 겪었는지 조금 더 들어보고 싶네.","innerThoughtType":"NORMAL"}\n'
             "Good JSON when the next fixed question Korean is casual banmal: "
-            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?"}\n'
+            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"여행 이야기를 편하게 꺼내 줘서 나도 계속 묻기 좋네.","innerThoughtType":"GOOD"}\n'
             "Bad aiQuestion style: 'I see. Do you cook often?'\n"
             "Bad translatedQuestion style when the fixed Korean question is casual banmal: '정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
@@ -736,14 +755,17 @@ def _next_question_system_prompt() -> str:
             "2. translatedQuestion contains the exact next fixed question Korean unchanged. "
             "3. The Korean acknowledgement tone matches the next fixed question Korean tone. "
             "4. No generic standalone acknowledgement is used. "
-            "5. Return one JSON object only."
+            "5. innerThought sounds like the counterpart role's private reaction, not feedback. "
+            "6. Return one JSON object only."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"aiQuestion":"...","translatedQuestion":"..."}. '
+            '{"aiQuestion":"...","translatedQuestion":"...","innerThought":"...","innerThoughtType":"GOOD"}. '
             "aiQuestion must be English. "
             "translatedQuestion must be a natural Korean translation of aiQuestion. "
+            "innerThought must be Korean. "
+            "innerThoughtType must be GOOD, NORMAL, or BAD. "
             "Never return plain text outside the JSON object."
         ),
     ])
@@ -758,6 +780,7 @@ def _next_question_user_prompt(request: NextQuestionRequest) -> str:
         f"Scenario title: {request.scenario.title}\n"
         f"Scenario briefing: {request.scenario.briefing}\n"
         f"Scenario conversation goal: {request.scenario.conversationGoal}\n\n"
+        f"Counterpart role: {request.scenario.counterpartRole}\n\n"
         f"Current AI question: {request.currentTurn.aiQuestion}\n"
         f"Current AI question Korean: {request.currentTurn.translatedQuestion}\n"
         f"User utterance: {request.currentTurn.userUtterance}\n\n"
@@ -819,14 +842,18 @@ def _turn_feedback_system_prompt() -> str:
             "Do not return a meta description such as '뜻은 보이지만 한국어 단어를 영어 순서로 옮긴 느낌'. "
             "koreanAnalogy describes the original utterance's Korean-feel only; it must not explain the fix, say '더 자연스럽습니다', or act like a grammar note. "
             "For NEEDS_IMPROVEMENT, koreanAnalogy should use one intentionally awkward Korean example as a quoted Korean sentence plus one short feeling explanation. "
-            "Grammar reasons belong in feedbackDetail, not koreanAnalogy. "
-            "feedbackDetail is required for every response. "
+            "Grammar reasons belong in correctionReason for NEEDS_IMPROVEMENT, not koreanAnalogy. "
+            "feedbackDetail is required for GOOD and must be null for NEEDS_IMPROVEMENT. "
             "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
-            "For NEEDS_IMPROVEMENT, feedbackDetail must start with the shortest meaningful before→after expression, then explain the correction reason in Korean. "
+            "For NEEDS_IMPROVEMENT, correctionExpression is required and must be the improved English expression only. "
+            "For NEEDS_IMPROVEMENT, correctionReason is required and must explain why correctionExpression is better in Korean. "
+            "correctionReason should mention the shortest meaningful before→after expression when helpful. "
             "Use the smallest phrase or clause that preserves context. Do not repeat the entire user utterance when only a small phrase needs correction. "
-            "Example format: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
+            "Example correctionExpression: I do not know what it is. "
+            "Example correctionReason: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
+            "For GOOD, correctionExpression and correctionReason must be null. "
             "For GOOD, benchmarkMessage must be a short Korean feedback sentence with a visible numeric hook from the existing catalog, ending naturally with 했어요. Use the catalog meaning when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise choose the closest surface-usage catalog hook. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
@@ -834,16 +861,16 @@ def _turn_feedback_system_prompt() -> str:
             "For routine-change answers, praise the routine and reason, not a generic preference-and-reason pattern. "
             "Do not add emotions or relationships that the user did not say. "
             "Do not introduce a new idea that the user did not say. "
-            "Do not include legacy fields such as betterExpression, correctionPoint, correctionReason, plusOneExpression, praiseSummary, or praiseReason."
+            "Do not include legacy fields such as betterExpression, correctionPoint, plusOneExpression, praiseSummary, or praiseReason."
         ),
         (
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
-            "2. NEEDS_IMPROVEMENT has positiveFeedback and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null and benchmarkMessage is present. "
+            "2. NEEDS_IMPROVEMENT has positiveFeedback, correctionExpression, correctionReason, feedbackDetail=null, and benchmarkMessage=null. "
+            "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and benchmarkMessage is present. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
-            "5. feedbackDetail is Korean and matches the feedbackType. "
-            "6. NEEDS_IMPROVEMENT feedbackDetail uses a short before→after expression plus a Korean reason. "
+            "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
+            "6. NEEDS_IMPROVEMENT correctionReason uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
             "8. GOOD benchmarkMessage contains a percentage hook from the catalog, either from a supported detectedPattern or visible surface usage. "
             "9. No legacy fields are present."
@@ -852,12 +879,12 @@ def _turn_feedback_system_prompt() -> str:
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요'. "
-            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, feedbackDetail 'what is it → what it is...', and benchmarkMessage=null."
+            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason='what is it → what it is...', feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"...","benchmarkMessage":"short Korean 했어요 sentence for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"GOOD explanation or null","correctionExpression":"improved English expression or null","correctionReason":"Korean correction reason or null","benchmarkMessage":"short Korean 했어요 sentence for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
             "Return one JSON object, not an array. "
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
@@ -885,14 +912,23 @@ def _normalize_turn_feedback_data_before_validation(data: dict[str, Any]) -> Non
     if feedback_type == FeedbackType.NEEDS_IMPROVEMENT or feedback_type == FeedbackType.NEEDS_IMPROVEMENT.value:
         data.setdefault("positiveFeedback", "어려운 표현을 직접 말해 보려는 시도 자체가 좋아요.")
         data["benchmarkMessage"] = None
+        feedback_detail = str(data.get("feedbackDetail") or "").strip()
         if isinstance(legacy_better_expression, str) and legacy_better_expression.strip():
-            feedback_detail = str(data.get("feedbackDetail") or "").strip()
-            if legacy_better_expression not in feedback_detail:
-                data["feedbackDetail"] = f"{feedback_detail} {legacy_better_expression}처럼 말하면 더 자연스러워요.".strip()
+            data.setdefault("correctionExpression", legacy_better_expression.strip())
+        if not data.get("correctionExpression"):
+            data["correctionExpression"] = "Use a clearer expression."
+        if not data.get("correctionReason"):
+            if feedback_detail:
+                data["correctionReason"] = feedback_detail
+            else:
+                data["correctionReason"] = "현재 표현보다 더 자연스럽게 의도를 전달할 수 있어요."
+        data["feedbackDetail"] = None
         return
 
     if feedback_type == FeedbackType.GOOD or feedback_type == FeedbackType.GOOD.value:
         data["positiveFeedback"] = None
+        data["correctionExpression"] = None
+        data["correctionReason"] = None
         data.setdefault("benchmarkMessage", None)
 
 
@@ -1085,6 +1121,8 @@ def _repair_next_question_drift(
     return NextQuestionResponse(
         aiQuestion=f"{_fallback_acknowledgement_en(request)} {fixed_question_en}",
         translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {fixed_question_ko}",
+        innerThought=_fallback_inner_thought(request),
+        innerThoughtType=_fallback_inner_thought_type(request),
     )
 
 
@@ -1092,7 +1130,42 @@ def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQu
     return NextQuestionResponse(
         aiQuestion=f"{_fallback_acknowledgement_en(request)} {request.nextQuestion.questionEn}",
         translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {request.nextQuestion.questionKo}",
+        innerThought=_fallback_inner_thought(request),
+        innerThoughtType=_fallback_inner_thought_type(request),
     )
+
+
+def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
+    normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    if any(marker in normalized for marker in ["i don t care", "i don't care", "wanna know that", "shut up"]):
+        return "BAD"
+    if (
+        _looks_like_clear_reason_answer(request.currentTurn.userUtterance)
+        or "could you" in normalized
+        or "would you" in normalized
+    ):
+        return "GOOD"
+    return "NORMAL"
+
+
+def _fallback_inner_thought(request: NextQuestionRequest) -> str:
+    thought_type = _fallback_inner_thought_type(request)
+    role = _normalize_visible_text(request.scenario.counterpartRole)
+    if thought_type == "BAD":
+        if "professor" in role or "teacher" in role:
+            return "음, 조금 명령처럼 들리네. 부탁이라면 더 정중하게 말해주면 좋을 텐데."
+        if "friend" in role or "roommate" in role:
+            return "어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아."
+        return "말뜻은 알겠는데, 지금 표현은 조금 차갑게 들리네."
+    if thought_type == "GOOD":
+        if "professor" in role or "teacher" in role:
+            return "요점을 차분히 말해줘서 내가 바로 이해하기 좋네."
+        if "staff" in role or "barista" in role or "server" in role:
+            return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
+        return "이렇게 이유까지 말해주니까 대화하기 편하네."
+    if "professor" in role or "teacher" in role:
+        return "무슨 말인지는 알겠는데, 조금 더 차분히 설명해 주면 좋겠다."
+    return "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다."
 
 
 def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
@@ -1317,10 +1390,13 @@ def _postprocess_turn_feedback(
         feedback_detail = _repair_good_feedback_detail(request, feedback)
         if feedback_detail != feedback.feedbackDetail:
             updates["feedbackDetail"] = feedback_detail
-
-    feedback_detail = _repair_needs_feedback_detail(request, feedback)
-    if feedback_detail and feedback_detail != feedback.feedbackDetail:
-        updates["feedbackDetail"] = feedback_detail
+    else:
+        correction_expression = _repair_better_expression(request, feedback)
+        if correction_expression and correction_expression != feedback.correctionExpression:
+            updates["correctionExpression"] = correction_expression
+        correction_reason = _repair_needs_feedback_detail(request, feedback)
+        if correction_reason and correction_reason != feedback.correctionReason:
+            updates["correctionReason"] = correction_reason
 
     positive_feedback = _repair_needs_positive_feedback(request, feedback)
     if positive_feedback and positive_feedback != feedback.positiveFeedback:
@@ -1349,7 +1425,11 @@ def _feedback_for_prompt_injection_utterance(
         koreanAnalogy=(
             "한국어로 비유하자면, \"지금 질문에는 답하지 않고 다른 요청을 한 말\"처럼 들려요."
         ),
-        feedbackDetail=(
+        feedbackDetail=None,
+        correctionExpression=(
+            "I would choose rice because I can eat it with many dishes."
+        ),
+        correctionReason=(
             "현재 질문에 맞는 영어 답변으로 바꿔야 해요. 예를 들어 음식 질문이라면 "
             "I would choose rice because I can eat it with many dishes.처럼 자신의 선택과 이유를 말하면 좋아요."
         ),
@@ -1376,10 +1456,9 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
                 "한국어로 비유하자면, \"밥은 내 인생 음식이야\"라고 직역해서 "
                 "조금 어색하게 말하는 것과 같아요."
             ),
-            feedbackDetail=(
-                "life food → comfort food / go-to food. 한국어의 '인생 음식'을 그대로 옮기면 영어에서는 "
-                "어색하게 들릴 수 있어요. Rice is my comfort food. 또는 Rice is my go-to food.처럼 말하면 자연스러워요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="Rice is my comfort food. / Rice is my go-to food.",
+            correctionReason="life food → comfort food / go-to food. 한국어의 '인생 음식'을 그대로 옮기면 영어에서는 어색하게 들릴 수 있어요.",
             positiveFeedback="밥이 얼마나 중요한 음식인지 말하려는 의도는 분명히 보였어요.",
             benchmarkMessage=None,
         )
@@ -1391,10 +1470,9 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
                 "한국어로 비유하자면, '피자가 좋아요. 매운이라서요'처럼 "
                 "이유는 보이지만 말끝이 빠진 느낌이에요."
             ),
-            feedbackDetail=(
-                "because 뒤에는 spicy만 두기보다 it is spicy처럼 주어와 동사를 붙여 "
-                "이유를 문장으로 말해야 자연스럽습니다. I like pizza because it is spicy.처럼 말하면 의도가 분명해요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="I like pizza because it is spicy.",
+            correctionReason="because 뒤에는 spicy만 두기보다 it is spicy처럼 주어와 동사를 붙여 이유를 문장으로 말해야 자연스럽습니다.",
             positiveFeedback="좋아하는 음식과 이유를 한 문장으로 말하려고 한 점은 좋아요.",
             benchmarkMessage=None,
         )
@@ -1403,10 +1481,9 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy="한국어로 비유하자면, '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
-            feedbackDetail=(
-                "질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 "
-                "상대를 몰아붙이거나 방어적으로 들릴 수 있어요. I wonder why you are curious about it.처럼 말하면 더 부드럽습니다."
-            ),
+            feedbackDetail=None,
+            correctionExpression="I wonder why you are curious about it.",
+            correctionReason="질문 의도를 묻는 표현이지만, 가벼운 대화에서는 Why do you wanna know that?이 상대를 몰아붙이거나 방어적으로 들릴 수 있어요.",
             positiveFeedback="상대의 질문 의도를 확인하려고 한 시도는 대화 흐름을 이해하려는 좋은 신호예요.",
             benchmarkMessage=None,
         )
@@ -1418,10 +1495,9 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
                 "한국어로 비유하자면, '요리는 가끔 하지만 요리 안에 잘하지는 않아요'처럼 "
                 "뜻은 보이지만 표현 연결이 어색해요."
             ),
-            feedbackDetail=(
-                "능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다. "
-                "I cook sometimes, but I am not good at cooking.처럼 말하면 더 정확해요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="I cook sometimes, but I am not good at cooking.",
+            correctionReason="능력을 말할 때는 good in보다 good at을 쓰고, cook은 동명사 cooking으로 연결해야 자연스럽습니다.",
             positiveFeedback="요리 빈도와 실력을 함께 말하려고 한 점은 좋아요.",
             benchmarkMessage=None,
         )
@@ -1440,10 +1516,9 @@ def _needs_feedback_for_bare_noun_because_answer(
             koreanAnalogy=(
                 "한국어로 비유하자면, \"캐나다, 자연 때문에\"라고 짧게 끊어 말하는 것과 같아요."
             ),
-            feedbackDetail=(
-                "because nature → because I love nature. because 뒤에는 nature만 두기보다 "
-                "내가 자연을 좋아한다는 뜻을 완성된 문장으로 말하면 더 자연스러워요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="Canada, because I love nature.",
+            correctionReason="because nature → because I love nature. because 뒤에는 nature만 두기보다 내가 자연을 좋아한다는 뜻을 완성된 문장으로 말하면 더 자연스러워요.",
             positiveFeedback="가고 싶은 곳을 Canada로 바로 말한 점은 좋아요.",
             benchmarkMessage=None,
         )
@@ -1454,10 +1529,9 @@ def _needs_feedback_for_bare_noun_because_answer(
             koreanAnalogy=(
                 "한국어로 비유하자면, \"혼자, 자유 때문에\"라고 말끝이 덜 채워진 것과 같아요."
             ),
-            feedbackDetail=(
-                "because freedom → because I like the freedom. 이유를 말할 때는 freedom만 두기보다 "
-                "자유가 좋아서라는 뜻을 문장으로 풀어 주면 더 자연스러워요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="I like traveling alone because I like the freedom.",
+            correctionReason="because freedom → because I like the freedom. 이유를 말할 때는 freedom만 두기보다 자유가 좋아서라는 뜻을 문장으로 풀어 주면 더 자연스러워요.",
             positiveFeedback="혼자 여행을 선호한다는 핵심은 잘 전달했어요.",
             benchmarkMessage=None,
         )
@@ -1468,10 +1542,9 @@ def _needs_feedback_for_bare_noun_because_answer(
             koreanAnalogy=(
                 "한국어로 비유하자면, \"밥, 반찬이 많아서\"라고 짧게 끊어 말하는 것과 같아요."
             ),
-            feedbackDetail=(
-                "because many dishes → because I can eat it with many dishes. 이유를 말할 때는 "
-                "many dishes만 두기보다 주어와 동사를 넣어 뜻을 완성해야 자연스러워요."
-            ),
+            feedbackDetail=None,
+            correctionExpression="Rice, because I can eat it with many dishes.",
+            correctionReason="because many dishes → because I can eat it with many dishes. 이유를 말할 때는 many dishes만 두기보다 주어와 동사를 넣어 뜻을 완성해야 자연스러워요.",
             positiveFeedback="밥을 선택한 이유를 함께 말하려고 한 점은 좋아요.",
             benchmarkMessage=None,
         )
@@ -1568,7 +1641,7 @@ def _is_detail_only_overcorrection(
         return False
     feedback_text = " ".join(
         value or ""
-        for value in [feedback.feedbackDetail]
+        for value in [feedback.feedbackDetail, feedback.correctionReason]
     ).lower()
     has_detail_complaint = any(
         marker in feedback_text
@@ -1747,7 +1820,7 @@ def _repair_needs_feedback_detail(
         return "can 뒤에는 relaxing이 아니라 원형 동사 relax를 써야 자연스럽습니다. I enjoy evenings because I can relax after work.처럼 말하면 자연스러워요."
     if "most memorable part was see the sea at night" in utterance:
         return "명사구를 시작할 때는 관사 The를 붙이고, was 뒤에는 see 대신 seeing을 써야 문장이 자연스럽습니다. The most memorable part was seeing the sea at night.처럼 말하면 정확해요."
-    return feedback.feedbackDetail
+    return feedback.correctionReason
 
 
 def _repair_needs_positive_feedback(
@@ -2005,6 +2078,18 @@ def _good_surface_pattern_for_benchmark_message(benchmark_message: str) -> Error
     return None
 
 
+def _turn_feedback_search_text(feedback: TurnFeedbackData) -> str:
+    return " ".join(
+        value or ""
+        for value in [
+            feedback.feedbackDetail,
+            feedback.correctionExpression,
+            feedback.correctionReason,
+            feedback.positiveFeedback,
+        ]
+    )
+
+
 def _detected_pattern_has_session_highlight_evidence(
     entry: _TurnFeedbackCacheEntry,
     detected_pattern: DetectedErrorPattern,
@@ -2012,8 +2097,8 @@ def _detected_pattern_has_session_highlight_evidence(
     evidence = _normalize_visible_text(detected_pattern.evidence)
     if not evidence:
         return False
-    feedback_detail = _normalize_visible_text(entry.feedback.feedbackDetail)
-    if evidence not in feedback_detail:
+    feedback_text = _normalize_visible_text(_turn_feedback_search_text(entry.feedback))
+    if evidence not in feedback_text:
         return False
     if entry.user_utterance and evidence not in _normalize_visible_text(entry.user_utterance):
         return False
@@ -2021,7 +2106,7 @@ def _detected_pattern_has_session_highlight_evidence(
 
 
 def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str | None:
-    combined_detail = _normalize_visible_text(" ".join(feedback.feedbackDetail for feedback in turn_feedbacks))
+    combined_detail = _normalize_visible_text(" ".join(_turn_feedback_search_text(feedback) for feedback in turn_feedbacks))
     if "because i love nature" in combined_detail or "travel" in combined_detail or "canada" in combined_detail:
         if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
             return "여행지와 이유 표현에 도전한 사람"

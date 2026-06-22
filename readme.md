@@ -5,6 +5,7 @@
 ## 역할
 
 - 직전 사용자 발화에 대한 짧은 맞장구와 백엔드가 전달한 다음 고정 질문을 하나의 `aiQuestion`으로 연결합니다.
+- `next-question` 응답에는 상대 역할 기준의 속마음인 `innerThought`, `innerThoughtType`을 함께 내려줍니다.
 - 사용자 발화 1개에 대한 턴별 피드백을 생성하고 AI 서버 프로세스 메모리 캐시에 최대 3시간 보관합니다.
 - 최종 피드백 생성 시 캐시된 턴별 피드백을 모아 `nativeScore`, `highlightMessage`와 함께 반환합니다.
 - 영어 학습 가이드 질문은 기존 `guide` API로 계속 처리합니다.
@@ -16,13 +17,16 @@
 ### `POST /api/v1/conversation/next-question`
 
 백엔드가 다음 고정 질문을 `nextQuestion`으로 전달하면 AI 서버는 직전 발화에 대한 짧은 반응과 해당 고정 질문을 자연스럽게 이어 붙입니다. AI 서버는 다음 질문을 새로 고르지 않습니다.
+요청의 `scenario.counterpartRole`은 필수입니다. 같은 발화라도 교수, 친구, 룸메이트, 직원 역할에 따라 속마음이 달라질 수 있기 때문입니다.
 
 응답.
 
 ```json
 {
   "aiQuestion": "Oh, you like spicy pizza. Do you cook often?",
-  "translatedQuestion": "매운 피자를 좋아하는군요. 요리는 자주 하나요?"
+  "translatedQuestion": "매운 피자를 좋아하는군요. 요리는 자주 하나요?",
+  "innerThought": "이렇게 이유까지 말해주니까 대화하기 편하네.",
+  "innerThoughtType": "GOOD"
 }
 ```
 
@@ -58,6 +62,8 @@
       "koreanAnalogy": "한국어로 비유하자면, \"저는 피자가 좋아요. 매워서요\"라고 자연스럽게 이유를 붙여 말하는 것과 같아요.",
       "feedbackDetail": "이유를 because로 자연스럽게 붙였고, 좋아하는 음식과 이유를 한 문장 안에서 분명하게 연결했어요.",
       "positiveFeedback": null,
+      "correctionExpression": null,
+      "correctionReason": null,
       "benchmarkMessage": "한국인의 79%가 틀리는 a/an을 정확히 썼어요"
     },
     {
@@ -65,7 +71,9 @@
       "feedbackType": "NEEDS_IMPROVEMENT",
       "koreanAnalogy": "한국어로 비유하자면, \"그게 뭔지 모르겠어\"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.",
       "positiveFeedback": "어려운 간접의문문 구조에 도전한 점이 좋아요. 틀렸더라도 그 시도 자체가 다음 단계로 가는 재료예요.",
-      "feedbackDetail": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+      "feedbackDetail": null,
+      "correctionExpression": "I do not know what it is.",
+      "correctionReason": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
       "benchmarkMessage": null
     }
   ]
@@ -86,7 +94,9 @@
 
 `koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면, "..."라고 ...하는 것과 같아요.` 형식을 우선합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `feedbackDetail`을 반드시 포함합니다. `feedbackDetail`은 전체 발화를 반복하기보다 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after를 먼저 보여주고, 바로 뒤에 한국어 이유를 붙입니다. `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함합니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 사용자 발화의 surface usage를 보고 기존 수치 catalog hook을 느슨하게 재활용합니다. 턴별 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `GOOD`의 `positiveFeedback`은 `null`입니다.
+`innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다.
+
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `correctionExpression`은 개선된 영어 표현만 담고, `correctionReason`은 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after와 한국어 이유를 담습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 사용자 발화의 surface usage를 보고 기존 수치 catalog hook을 느슨하게 재활용합니다. 턴별 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다.
 
 ## 한국인 오류 패턴 seed
 

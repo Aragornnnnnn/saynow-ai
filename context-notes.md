@@ -1,5 +1,11 @@
 # 작업 맥락 기록
 
+- 2026-06-23 LAN-28은 `origin/develop` 기반에서 진행한다. 목표는 `next-question`에 상대 역할 기반 속마음 응답을 추가하고, `turn-feedback`의 개선 표현과 개선 이유를 `correctionExpression`, `correctionReason`으로 다시 분리하는 것이다.
+- 2026-06-23 속마음은 피드백 설명문이 아니라 상대 역할이 사용자 발화를 듣고 느낀 1인칭 내적 반응이다. 같은 문장도 `scenario.counterpartRole`에 따라 달라져야 하므로 `counterpartRole`은 `next-question` 요청 필수 필드로 둔다.
+- 2026-06-23 `turn-feedback`에서 `NEEDS_IMPROVEMENT`는 `positiveFeedback`, `correctionExpression`, `correctionReason`을 요구하고 `feedbackDetail`과 `benchmarkMessage`는 null로 둔다. `GOOD`은 `feedbackDetail`과 `benchmarkMessage`를 사용하고 correction 필드는 null로 둔다.
+- 2026-06-23 LLM이 `next-question`에서 `innerThought`를 누락해도 질문 본문이 쓸 만하면 버리지 않고, 속마음 필드만 fallback으로 채운다. 질문 drift나 generic acknowledgement는 기존처럼 fallback 질문으로 보정한다.
+- 2026-06-23 `turn-feedback`은 구계약 `betterExpression`을 받더라도 내부 normalize 단계에서 `correctionExpression`으로 옮긴다. 외부 응답에는 `betterExpression`을 노출하지 않는다.
+
 - 2026-06-10 `app/data/error_patterns.json`은 첨부 JSON을 source of truth로 갱신했다. 변경은 schema나 pattern key 변경이 아니라 `feedback_copy` 문구 수정이며, 12개 패턴 중 11개의 표시 문구가 바뀌었다. 새 문구에는 `한국인의 79%가 틀리는 a/an`, `한국인의 37%가 놓치는 복수형 명사+s`, `한국인이 4번 중 1번은 빠뜨리는 전치사`처럼 더 직접적인 재미용 hook이 들어간다.
 - 2026-06-10 catalog 문구 갱신에 맞춰 턴별 `benchmarkMessage` 변환 규칙에 `쓴 사람 -> 썼어요`를 추가했다. 세션 `highlightMessage`는 여전히 `...한 사람` 칭호형이고, 턴별 `benchmarkMessage`는 `...했어요` 문장형이다.
 - 2026-06-10 세션 highlight 후보 판정은 `%`만 보지 않고 `4번 중 1번` 같은 count 기반 hook도 수치형으로 본다. 그래서 전치사 catalog의 새 `feedback_copy`처럼 퍼센트가 없는 수치 문구도 모델이 새 수치를 만들지 않고 catalog 원문을 그대로 쓸 수 있다.

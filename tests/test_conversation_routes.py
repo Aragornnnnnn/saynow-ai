@@ -33,6 +33,8 @@ class ConversationRoutesTest(unittest.TestCase):
         conversation.generate_next_question = lambda request: NextQuestionResponse(
             aiQuestion="Oh, you like spicy pizza. Do you cook often?",
             translatedQuestion="매운 피자를 좋아하는군요. 요리는 자주 하나요?",
+            innerThought="매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.",
+            innerThoughtType="GOOD",
         )
         conversation.generate_turn_feedback = lambda request: TurnFeedbackCreationResponse(
             sessionId=request.sessionId,
@@ -75,6 +77,7 @@ class ConversationRoutesTest(unittest.TestCase):
                 "title": "음식에 대한 대화하기",
                 "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
                 "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "currentTurn": {
                 "aiQuestion": "What is your favorite food? Why do you like it?",
@@ -99,6 +102,7 @@ class ConversationRoutesTest(unittest.TestCase):
                 "title": "음식에 대한 대화하기",
                 "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
                 "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "turn": {
                 "aiQuestion": "What is your favorite food? Why do you like it?",
@@ -114,6 +118,8 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.json(), {
             "aiQuestion": "Oh, you like spicy pizza. Do you cook often?",
             "translatedQuestion": "매운 피자를 좋아하는군요. 요리는 자주 하나요?",
+            "innerThought": "매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.",
+            "innerThoughtType": "GOOD",
         })
 
     def test_next_question_route_propagates_request_id_to_context_and_response(self):
@@ -127,6 +133,8 @@ class ConversationRoutesTest(unittest.TestCase):
             return NextQuestionResponse(
                 aiQuestion="Oh, you like spicy pizza. Do you cook often?",
                 translatedQuestion="매운 피자를 좋아하는군요. 요리는 자주 하나요?",
+                innerThought="매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.",
+                innerThoughtType="GOOD",
             )
 
         self.conversation_route.generate_next_question = record_request_id
@@ -159,6 +167,7 @@ class ConversationRoutesTest(unittest.TestCase):
                 "title": "음식에 대한 대화하기",
                 "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
                 "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "expectedTurnIds": [5000],
         })
@@ -195,6 +204,7 @@ class ConversationRoutesTest(unittest.TestCase):
                 "title": "음식에 대한 대화하기",
                 "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
                 "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "expectedTurnIds": [5000, 5001],
         })

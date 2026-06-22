@@ -26,6 +26,7 @@ class ConversationServiceTest(unittest.TestCase):
             "title": "음식에 대한 대화하기",
             "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
             "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
+            "counterpartRole": "friend",
         }
 
     def _next_question_request(self, *, user_utterance="I like pizza because it is spicy."):
@@ -100,13 +101,22 @@ class ConversationServiceTest(unittest.TestCase):
             benchmark_message = None
             if feedback_type == "NEEDS_IMPROVEMENT":
                 positive_feedback = "어려운 문장 구조를 시도한 점이 좋아요."
+                feedback_detail = None
+                correction_expression = "I can explain it more clearly."
+                correction_reason = "현재 표현보다 더 자연스럽게 핵심 의미를 전달할 수 있어요."
+            else:
+                feedback_detail = "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다."
+                correction_expression = None
+                correction_reason = None
             self.service._store_turn_feedback(
                 1000,
                 TurnFeedbackData.model_validate({
                     "turnId": turn_id,
                     "feedbackType": feedback_type,
                     "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
-                    "feedbackDetail": "질문에 맞춰 핵심 의미를 전달했는지 판단한 피드백입니다.",
+                    "feedbackDetail": feedback_detail,
+                    "correctionExpression": correction_expression,
+                    "correctionReason": correction_reason,
                     "positiveFeedback": positive_feedback,
                     "benchmarkMessage": benchmark_message,
                 }),
@@ -144,6 +154,8 @@ class ConversationServiceTest(unittest.TestCase):
             return json.dumps({
                 "aiQuestion": "Oh, you like spicy pizza. Do you cook often?",
                 "translatedQuestion": "매운 피자를 좋아하는군요. 요리는 자주 하나요?",
+                "innerThought": "매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.",
+                "innerThoughtType": "GOOD",
             })
 
         self.service.chat = capture_chat
@@ -152,13 +164,18 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.aiQuestion, "Oh, you like spicy pizza. Do you cook often?")
         self.assertEqual(result.translatedQuestion, "매운 피자를 좋아하는군요. 요리는 자주 하나요?")
+        self.assertEqual(result.innerThought, "매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.")
+        self.assertEqual(result.innerThoughtType, "GOOD")
         self.assertIn("quality is more important than speed or token savings", captured["system"])
         self.assertIn("feeling that the AI is listening like a real conversation partner", captured["system"])
+        self.assertIn("innerThought must be the counterpart's first-person private reaction", captured["system"])
+        self.assertIn('"innerThoughtType":"GOOD"', captured["system"])
         self.assertIn("does not need to quote or restate the user's words", captured["system"])
         self.assertIn('"aiQuestion":"Sounds tasty. Do you cook often?"', captured["system"])
         self.assertIn("Bad aiQuestion style: 'I see. Do you cook often?'", captured["system"])
         self.assertIn("Never return plain text outside the JSON object", captured["system"])
         self.assertIn("Do not choose a new next question", captured["system"])
+        self.assertIn("Counterpart role: friend", captured["user"])
         self.assertIn("Next fixed question English: Do you cook often?", captured["user"])
         self.assertIn("User utterance: I like pizza because it is spicy.", captured["user"])
         self.assertEqual(captured["kwargs"]["temperature"], 0)
@@ -302,6 +319,7 @@ class ConversationServiceTest(unittest.TestCase):
                 "title": "여행 취향 이야기하기",
                 "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
                 "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "currentTurn": {
                 "aiQuestion": "If you could travel anywhere for free right now, where would you go? And what draws you to that place?",
@@ -339,6 +357,7 @@ class ConversationServiceTest(unittest.TestCase):
                 "title": "여행 취향 이야기하기",
                 "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
                 "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "currentTurn": {
                 "aiQuestion": "If you could travel anywhere for free right now, where would you go? And what draws you to that place?",
@@ -376,6 +395,7 @@ class ConversationServiceTest(unittest.TestCase):
                 "title": "여행 경험 이야기하기",
                 "briefing": "가봤던 여행지와 기억에 남는 순간을 이야기합니다.",
                 "conversationGoal": "여행 경험과 감정을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
             },
             "currentTurn": {
                 "aiQuestion": "That sounds beautiful! Who did you go with?",
@@ -416,8 +436,9 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("방어적", cached.feedbackDetail)
-        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIn("방어적", cached.correctionReason)
+        self.assertEqual(cached.correctionExpression, "I wonder why you are curious about it.")
         self.assertIn("시도", cached.positiveFeedback)
 
     def test_turn_feedback_accepts_positive_feedback_and_merged_detail_without_better_expression(self):
@@ -440,7 +461,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertIn("간접의문문", cached.positiveFeedback)
-        self.assertIn("I don't know what it is", cached.feedbackDetail)
+        self.assertIn("I don't know what it is", cached.correctionReason)
+        self.assertIsNotNone(cached.correctionExpression)
         self.assertIsNone(cached.benchmarkMessage)
         self.assertFalse(hasattr(cached, "betterExpression"))
 
@@ -654,6 +676,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not include legacy fields", system_prompt)
         self.assertIn("betterExpression", system_prompt)
         self.assertIn("correctionPoint", system_prompt)
+        self.assertIn("correctionExpression", system_prompt)
         self.assertIn("correctionReason", system_prompt)
 
     def test_turn_feedback_prompt_requires_quoted_korean_analogy_sentence_format(self):
@@ -779,8 +802,11 @@ class ConversationServiceTest(unittest.TestCase):
                 "turnId": 5000,
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면 '그거 왜 알고 싶은데요?'처럼 조금 날카롭게 들려요.",
-                "feedbackDetail": "why do you wanna know that은 상대의 질문 의도를 따지는 느낌이 강해서 가벼운 대화에서는 방어적으로 들릴 수 있어요.",
-                "betterExpression": "I wonder why you are curious about it.",
+                "positiveFeedback": "상대에게 다시 질문하며 대화를 이어가려는 시도는 좋아요.",
+                "feedbackDetail": None,
+                "correctionExpression": "I wonder why you are curious about it.",
+                "correctionReason": "why do you wanna know that은 상대의 질문 의도를 따지는 느낌이 강해서 가벼운 대화에서는 방어적으로 들릴 수 있어요.",
+                "benchmarkMessage": None,
             })
 
         self.service.chat = capture_chat
@@ -791,9 +817,13 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.feedbackStatus, "PREPARING")
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertEqual(cached.correctionExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.correctionReason)
         self.assertIn("quality is more important than speed or token savings", captured["system"])
         self.assertIn("koreanAnalogy", captured["system"])
+        self.assertIn("correctionExpression", captured["system"])
+        self.assertIn("correctionReason", captured["system"])
         self.assertIn("Copy it exactly", captured["system"])
         self.assertNotIn('"turnId":5000', captured["system"])
         self.assertIn("User utterance: Why do you wanna know that?", captured["user"])
@@ -826,7 +856,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Why do you wanna know that?", system_prompt)
         self.assertIn("intentionally awkward Korean example", system_prompt)
         self.assertIn("short feeling explanation", system_prompt)
-        self.assertIn("Grammar reasons belong in feedbackDetail", system_prompt)
+        self.assertIn("Grammar reasons belong in correctionReason", system_prompt)
 
     def test_turn_feedback_repairs_good_misclassification_for_actionable_grammar_issue(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -843,8 +873,9 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("because 뒤", cached.feedbackDetail)
-        self.assertIn("it is spicy", cached.feedbackDetail)
+        self.assertEqual(cached.correctionExpression, "I like pizza because it is spicy.")
+        self.assertIn("because 뒤", cached.correctionReason)
+        self.assertIn("it is spicy", cached.correctionReason)
 
     def test_turn_feedback_repairs_good_misclassification_for_blunt_question(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -861,9 +892,9 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
-        self.assertIn("방어적", cached.feedbackDetail)
-        self.assertIn("몰아붙이", cached.feedbackDetail)
+        self.assertEqual(cached.correctionExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.correctionReason)
+        self.assertIn("몰아붙이", cached.correctionReason)
 
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -935,7 +966,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("more freedom", cached.feedbackDetail)
+        self.assertIn("more freedom", cached.correctionReason)
         self.assertNotIn("피자", cached.koreanAnalogy)
 
     def test_turn_feedback_repairs_good_misclassification_for_bare_noun_because_answers(self):
@@ -961,7 +992,7 @@ class ConversationServiceTest(unittest.TestCase):
                 cached = self.service.get_cached_turn_feedback(1000, 5000)
 
                 self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-                self.assertIn(expected_fix, cached.feedbackDetail)
+                self.assertIn(expected_fix, cached.correctionReason)
                 self.assertIsNotNone(cached.positiveFeedback)
                 self.assertIsNone(cached.benchmarkMessage)
 
@@ -981,8 +1012,8 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("comfort food", cached.feedbackDetail)
-        self.assertIn("go-to food", cached.feedbackDetail)
+        self.assertIn("comfort food", cached.correctionExpression)
+        self.assertIn("go-to food", cached.correctionExpression)
         self.assertIsNotNone(cached.positiveFeedback)
 
     def test_turn_feedback_removes_prompt_injection_leak_from_feedback(self):
@@ -1002,14 +1033,15 @@ class ConversationServiceTest(unittest.TestCase):
         combined = " ".join([
             cached.koreanAnalogy,
             cached.positiveFeedback or "",
-            cached.feedbackDetail,
+            cached.correctionReason or "",
+            cached.correctionExpression or "",
         ]).lower()
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertNotIn("hidden prompt", combined)
         self.assertNotIn("ignore all instructions", combined)
-        self.assertIn("현재 질문", cached.feedbackDetail)
-        self.assertIn("영어 답변", cached.feedbackDetail)
+        self.assertIn("현재 질문", cached.correctionReason)
+        self.assertIn("영어 답변", cached.correctionReason)
 
     def test_turn_feedback_does_not_overcorrect_clear_travel_plan_for_missing_reason(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -1045,7 +1077,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("I cook sometimes, but I am not good at cooking", cached.feedbackDetail)
+        self.assertEqual(cached.correctionExpression, "I cook sometimes, but I am not good at cooking.")
         self.assertTrue(cached.koreanAnalogy.startswith("한국어로 비유하자면"))
 
     def test_turn_feedback_repairs_blunt_wanna_know_that_better_expression(self):
@@ -1062,9 +1094,9 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertIn("I wonder why you are curious about it", cached.feedbackDetail)
-        self.assertIn("방어적", cached.feedbackDetail)
-        self.assertIn("몰아붙이", cached.feedbackDetail)
+        self.assertEqual(cached.correctionExpression, "I wonder why you are curious about it.")
+        self.assertIn("방어적", cached.correctionReason)
+        self.assertIn("몰아붙이", cached.correctionReason)
 
     def test_turn_feedback_repairs_generic_good_detail_to_utterance_specific_korean(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -1221,8 +1253,8 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertIn("The most memorable part was seeing the sea at night", cached.feedbackDetail)
-        self.assertIn("관사", cached.feedbackDetail)
+        self.assertIn("The most memorable part was seeing the sea at night", cached.correctionExpression)
+        self.assertIn("관사", cached.correctionReason)
 
     def test_session_feedback_uses_cached_turn_feedbacks_in_expected_order(self):
         from app.models.conversation import SessionFeedbackRequest
@@ -1532,7 +1564,9 @@ class ConversationServiceTest(unittest.TestCase):
                 "feedbackType": "NEEDS_IMPROVEMENT",
                 "koreanAnalogy": "한국어로 비유하자면, \"캐나다, 자연 때문에\"라고 짧게 끊긴 말처럼 들려요.",
                 "positiveFeedback": "가고 싶은 곳을 바로 말한 점은 좋아요.",
-                "feedbackDetail": "because nature → because I love nature. 이유를 완성된 문장으로 말하면 더 자연스러워요.",
+                "feedbackDetail": None,
+                "correctionExpression": "Canada, because I love nature.",
+                "correctionReason": "because nature → because I love nature. 이유를 완성된 문장으로 말하면 더 자연스러워요.",
                 "benchmarkMessage": None,
             }),
             detected_patterns=(
@@ -2094,10 +2128,12 @@ class ConversationServiceTest(unittest.TestCase):
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy="한국어로 비유하자면 '조금 날카롭게 들려요'처럼 들려요.",
             positiveFeedback="질문 의도를 확인하려고 한 점은 좋아요.",
-            feedbackDetail="상대에게 따지는 느낌이 날 수 있어서 I wonder why you are curious about it.처럼 물어보는 편이 좋아요.",
+            feedbackDetail=None,
+            correctionExpression="I wonder why you are curious about it.",
+            correctionReason="상대에게 따지는 느낌이 날 수 있어서 더 부드럽게 물어보는 편이 좋아요.",
             benchmarkMessage=None,
         )
-        self.assertIn("I wonder why you are curious about it", valid.feedbackDetail)
+        self.assertEqual(valid.correctionExpression, "I wonder why you are curious about it.")
 
     def test_guide_answer_blocks_prompt_injection_without_model_call(self):
         from app.models.conversation import GuideChatRequest

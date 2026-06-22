@@ -21,8 +21,9 @@ class ScenarioContext(BaseModel):
     title: str
     briefing: str
     conversationGoal: str
+    counterpartRole: str
 
-    @field_validator("title", "briefing", "conversationGoal")
+    @field_validator("title", "briefing", "conversationGoal", "counterpartRole")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
@@ -60,11 +61,19 @@ class NextQuestionRequest(BaseModel):
     nextQuestion: NextFixedQuestion
 
 
+class InnerThoughtType(StrEnum):
+    GOOD = "GOOD"
+    NORMAL = "NORMAL"
+    BAD = "BAD"
+
+
 class NextQuestionResponse(BaseModel):
     aiQuestion: str
     translatedQuestion: str
+    innerThought: str
+    innerThoughtType: InnerThoughtType
 
-    @field_validator("aiQuestion", "translatedQuestion")
+    @field_validator("aiQuestion", "translatedQuestion", "innerThought", "innerThoughtType")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
@@ -113,13 +122,17 @@ class TurnFeedbackData(BaseModel):
     feedbackType: FeedbackType
     koreanAnalogy: str
     positiveFeedback: str | None = None
-    feedbackDetail: str
+    feedbackDetail: str | None = None
+    correctionExpression: str | None = None
+    correctionReason: str | None = None
     benchmarkMessage: str | None = None
 
     @field_validator(
         "koreanAnalogy",
         "positiveFeedback",
         "feedbackDetail",
+        "correctionExpression",
+        "correctionReason",
         "benchmarkMessage",
     )
     @classmethod
@@ -131,12 +144,24 @@ class TurnFeedbackData(BaseModel):
         if self.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
             if self.positiveFeedback is None or not self.positiveFeedback.strip():
                 raise ValueError("positiveFeedback is required for NEEDS_IMPROVEMENT feedback")
+            if self.feedbackDetail is not None:
+                raise ValueError("feedbackDetail must be null for NEEDS_IMPROVEMENT feedback")
+            if self.correctionExpression is None or not self.correctionExpression.strip():
+                raise ValueError("correctionExpression is required for NEEDS_IMPROVEMENT feedback")
+            if self.correctionReason is None or not self.correctionReason.strip():
+                raise ValueError("correctionReason is required for NEEDS_IMPROVEMENT feedback")
             if self.benchmarkMessage is not None:
                 raise ValueError("benchmarkMessage must be null for NEEDS_IMPROVEMENT feedback")
             return self
 
         if self.positiveFeedback is not None:
             raise ValueError("positiveFeedback must be null for GOOD feedback")
+        if self.feedbackDetail is None or not self.feedbackDetail.strip():
+            raise ValueError("feedbackDetail is required for GOOD feedback")
+        if self.correctionExpression is not None:
+            raise ValueError("correctionExpression must be null for GOOD feedback")
+        if self.correctionReason is not None:
+            raise ValueError("correctionReason must be null for GOOD feedback")
         return self
 
 
