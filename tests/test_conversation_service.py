@@ -687,6 +687,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("must start with '한국어로 비유하자면'", system_prompt)
         self.assertIn("Do not return a meta description", system_prompt)
         self.assertIn("the English sounds like", system_prompt)
+        self.assertIn('"저는 피자가 좋아요. 매워서요"라고', system_prompt)
+        self.assertIn('"그걸 왜 알고 싶은데?"라고', system_prompt)
+        self.assertNotIn('koreanAnalogy":"한국어로 비유하자면', system_prompt)
 
     def test_turn_feedback_repairs_meta_description_korean_analogy_to_quoted_analogy(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -828,6 +831,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("correctionReason", captured["system"])
         self.assertIn("Copy it exactly", captured["system"])
         self.assertNotIn('"turnId":5000', captured["system"])
+        self.assertIn("Counterpart role: friend", captured["user"])
         self.assertIn("User utterance: Why do you wanna know that?", captured["user"])
 
     def test_turn_feedback_generates_and_caches_good_feedback(self):
@@ -856,6 +860,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("I like pizza because it is spicy.", system_prompt)
         self.assertIn("I like pizza because spicy.", system_prompt)
         self.assertIn("Why do you wanna know that?", system_prompt)
+        self.assertIn("Use the provided Counterpart role", system_prompt)
+        self.assertIn("professor, friend, roommate, cafe staff, or stranger", system_prompt)
         self.assertIn("intentionally awkward Korean example", system_prompt)
         self.assertIn("short feeling explanation", system_prompt)
         self.assertIn("Grammar reasons belong in correctionReason", system_prompt)

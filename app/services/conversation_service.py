@@ -813,6 +813,8 @@ def _turn_feedback_system_prompt() -> str:
             "Low-priority patterns with breaks_meaning=false are usually benchmark or praise material, not correction targets. "
             "High-priority patterns with breaks_meaning=true should be corrected first. "
             "More detail alone is not an actionable issue; a short direct answer can be GOOD. "
+            "Use the provided Counterpart role when judging nuance, politeness, and relevance. "
+            "A professor, friend, roommate, cafe staff, or stranger may interpret the same sentence differently. "
             "Boundary examples: 'I like pizza because it is spicy.' is GOOD; 'I would like to travel to Vancouver next.' is GOOD; "
             "'I like pizza because spicy.' is NEEDS_IMPROVEMENT because because needs a clause; "
             "'Canada, because nature.', 'Alone, because freedom.', and 'Rice, because many dishes.' are NEEDS_IMPROVEMENT because bare nouns after because sound unfinished. "
@@ -876,6 +878,15 @@ def _turn_feedback_system_prompt() -> str:
             "9. No legacy fields are present."
         ),
         (
+            "Feedback Examples:\n"
+            "Displayed koreanAnalogy text should read like \"저는 피자가 좋아요. 매워서요\"라고 이유를 바로 붙여 말하는 것과 같아요, "
+            "or \"그걸 왜 알고 싶은데?\"라고 살짝 방어적으로 되묻는 것과 같아요. "
+            "GOOD JSON example for user utterance 'I ate an apple because I was hungry.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"\\"사과 하나를 먹었어요. 배고파서요\\"라고 이유를 바로 붙여 말하는 것과 같아요.","positiveFeedback":null,"feedbackDetail":"먹은 것과 이유를 because로 자연스럽게 연결해서 상대가 답변의 핵심을 바로 이해할 수 있어요.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":"한국인의 79%가 틀리는 a/an을 정확히 썼어요","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}\n'
+            "NEEDS_IMPROVEMENT JSON example for a friend or casual partner: "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"\\"그걸 왜 알고 싶은데?\\"라고 살짝 방어적으로 되묻는 것과 같아요.","positiveFeedback":"상대의 질문 의도를 확인하려고 한 시도는 좋아요.","feedbackDetail":null,"correctionExpression":"I was just curious why you asked.","correctionReason":"Why do you wanna know that?은 친구 사이에서도 따지는 느낌으로 들릴 수 있어요. I was just curious why you asked.라고 하면 궁금해서 묻는다는 의도가 더 부드럽게 전달돼요.","benchmarkMessage":null,"detectedPatterns":[]}'
+        ),
+        (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요'. "
@@ -899,7 +910,8 @@ def _turn_feedback_user_prompt(request: TurnFeedbackRequest) -> str:
         f"Scenario ID: {request.scenario.scenarioId}\n"
         f"Scenario title: {request.scenario.title}\n"
         f"Scenario briefing: {request.scenario.briefing}\n"
-        f"Scenario conversation goal: {request.scenario.conversationGoal}\n\n"
+        f"Scenario conversation goal: {request.scenario.conversationGoal}\n"
+        f"Counterpart role: {request.scenario.counterpartRole}\n\n"
         f"AI question: {request.turn.aiQuestion}\n"
         f"AI question Korean: {request.turn.translatedQuestion}\n"
         f"User utterance: {request.turn.userUtterance}"

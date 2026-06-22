@@ -19,6 +19,15 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
+## LAN-28 프롬프트 품질 보강
+
+- [x] `turn-feedback`이 `scenario.counterpartRole`을 모델 입력에 포함하는 RED 테스트를 추가한다.
+- [x] `turn-feedback` 프롬프트에 역할 기반 말투와 뉘앙스 판단 기준을 추가한다.
+- [x] 접두어 없는 `koreanAnalogy` few-shot 예시를 GOOD과 NEEDS_IMPROVEMENT에 추가한다.
+- [x] README와 작업 맥락 기록에 역할 기반 턴 피드백 정책을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 턴별 benchmarkMessage 문장형 전환
 
 - [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.

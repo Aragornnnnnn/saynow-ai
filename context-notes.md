@@ -6,6 +6,8 @@
 - 2026-06-23 LLM이 `next-question`에서 `innerThought`를 누락해도 질문 본문이 쓸 만하면 버리지 않고, 속마음 필드만 fallback으로 채운다. 질문 drift나 generic acknowledgement는 기존처럼 fallback 질문으로 보정한다.
 - 2026-06-23 `turn-feedback`은 구계약 `betterExpression`을 받더라도 내부 normalize 단계에서 `correctionExpression`으로 옮긴다. 외부 응답에는 `betterExpression`을 노출하지 않는다.
 - 2026-06-23 `turn-feedback.koreanAnalogy`는 더 이상 `한국어로 비유하자면`, `한국어로 치면` 같은 접두어로 시작하지 않는다. 화면에서는 바로 `"그걸 왜 알고 싶은데?"라고 ...`처럼 본론이 보여야 하므로, 모델이 접두어를 붙여도 서버 후처리에서 제거한다.
+- 2026-06-23 `turn-feedback`도 `scenario.counterpartRole`을 모델 입력에 포함해야 한다. 같은 사용자 발화라도 교수, 친구, 룸메이트, 직원에 따라 공손함과 뉘앙스 판단이 달라지기 때문에, 역할 정보 없이 GOOD/NEEDS를 판단하면 속마음 정책과 피드백 정책이 어긋난다.
+- 2026-06-23 프롬프트 품질 보강은 `prompt-engineering-patterns` 기준으로 역할 컨텍스트 누락, GOOD/NEEDS few-shot 부족, `koreanAnalogy` 접두어 회귀 가능성을 테스트로 고정하는 방향으로 진행했다.
 
 - 2026-06-10 `app/data/error_patterns.json`은 첨부 JSON을 source of truth로 갱신했다. 변경은 schema나 pattern key 변경이 아니라 `feedback_copy` 문구 수정이며, 12개 패턴 중 11개의 표시 문구가 바뀌었다. 새 문구에는 `한국인의 79%가 틀리는 a/an`, `한국인의 37%가 놓치는 복수형 명사+s`, `한국인이 4번 중 1번은 빠뜨리는 전치사`처럼 더 직접적인 재미용 hook이 들어간다.
 - 2026-06-10 catalog 문구 갱신에 맞춰 턴별 `benchmarkMessage` 변환 규칙에 `쓴 사람 -> 썼어요`를 추가했다. 세션 `highlightMessage`는 여전히 `...한 사람` 칭호형이고, 턴별 `benchmarkMessage`는 `...했어요` 문장형이다.
