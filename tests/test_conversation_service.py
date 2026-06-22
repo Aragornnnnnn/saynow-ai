@@ -14,10 +14,12 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.service = conversation_service
         self.original_chat = conversation_service.chat
+        self.original_fallback_model_for_workflow = conversation_service.fallback_model_for_workflow
         conversation_service.clear_turn_feedback_cache()
 
     def tearDown(self):
         self.service.chat = self.original_chat
+        self.service.fallback_model_for_workflow = self.original_fallback_model_for_workflow
         self.service.clear_turn_feedback_cache()
 
     def _scenario(self):
@@ -1992,6 +1994,28 @@ class ConversationServiceTest(unittest.TestCase):
             self.service.generate_session_feedback(request)
 
         self.assertIsNotNone(self.service.get_cached_turn_feedback(1000, expected_turn_ids[0]))
+
+    def test_next_question_wraps_llm_call_failure_without_fallback(self):
+        self.service.fallback_model_for_workflow = lambda workflow: None
+
+        def fail_chat(*args, **kwargs):
+            raise RuntimeError("provider unavailable")
+
+        self.service.chat = fail_chat
+
+        with self.assertRaises(self.service.ConversationGenerationError):
+            self.service.generate_next_question(self._next_question_request())
+
+    def test_turn_feedback_wraps_llm_call_failure_without_fallback(self):
+        self.service.fallback_model_for_workflow = lambda workflow: None
+
+        def fail_chat(*args, **kwargs):
+            raise RuntimeError("provider unavailable")
+
+        self.service.chat = fail_chat
+
+        with self.assertRaises(self.service.ConversationGenerationError):
+            self.service.generate_turn_feedback(self._turn_feedback_request())
 
     def test_session_feedback_uses_quality_primary_model_when_primary_returns_json(self):
         called_models = []

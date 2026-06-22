@@ -2250,9 +2250,11 @@ def _call_chat(
     temperature: float,
     workflow: str,
 ) -> str:
-    primary_model = model_for_workflow(workflow)
-    fallback_model = fallback_model_for_workflow(workflow)
+    primary_model = "-"
+    fallback_model = None
     try:
+        primary_model = model_for_workflow(workflow)
+        fallback_model = fallback_model_for_workflow(workflow)
         return _call_chat_once(
             system,
             user,
@@ -2262,8 +2264,10 @@ def _call_chat(
             model=primary_model,
         )
     except Exception as exc:
-        if fallback_model is None:
+        if isinstance(exc, ConversationGenerationError):
             raise
+        if fallback_model is None:
+            raise ConversationGenerationError(f"{workflow} LLM call failed") from exc
         logger.warning(
             "LLM primary 호출 실패로 fallback 재시도 | requestId=%s workflow=%s primaryModel=%s fallbackModel=%s reason=%s",
             _request_id_for_log(),
@@ -2272,14 +2276,19 @@ def _call_chat(
             fallback_model,
             type(exc).__name__,
         )
-        return _call_chat_once(
-            system,
-            user,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            workflow=workflow,
-            model=fallback_model,
-        )
+        try:
+            return _call_chat_once(
+                system,
+                user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                workflow=workflow,
+                model=fallback_model,
+            )
+        except Exception as fallback_exc:
+            if isinstance(fallback_exc, ConversationGenerationError):
+                raise
+            raise ConversationGenerationError(f"{workflow} fallback LLM call failed") from fallback_exc
 
 
 def _call_chat_json(
@@ -2290,9 +2299,11 @@ def _call_chat_json(
     temperature: float,
     workflow: str,
 ) -> tuple[str, dict[str, Any]]:
-    primary_model = model_for_workflow(workflow)
-    fallback_model = fallback_model_for_workflow(workflow)
+    primary_model = "-"
+    fallback_model = None
     try:
+        primary_model = model_for_workflow(workflow)
+        fallback_model = fallback_model_for_workflow(workflow)
         raw = _call_chat_once(
             system,
             user,
@@ -2304,7 +2315,9 @@ def _call_chat_json(
         return raw, _parse_json_object(raw, workflow=workflow)
     except Exception as exc:
         if fallback_model is None:
-            raise
+            if isinstance(exc, ConversationGenerationError):
+                raise
+            raise ConversationGenerationError(f"{workflow} LLM call failed") from exc
         logger.warning(
             "LLM primary JSON 생성 실패로 fallback 재시도 | requestId=%s workflow=%s primaryModel=%s fallbackModel=%s reason=%s",
             _request_id_for_log(),
@@ -2313,15 +2326,20 @@ def _call_chat_json(
             fallback_model,
             type(exc).__name__,
         )
-        raw = _call_chat_once(
-            system,
-            user,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            workflow=workflow,
-            model=fallback_model,
-        )
-        return raw, _parse_json_object(raw, workflow=workflow)
+        try:
+            raw = _call_chat_once(
+                system,
+                user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                workflow=workflow,
+                model=fallback_model,
+            )
+            return raw, _parse_json_object(raw, workflow=workflow)
+        except ConversationGenerationError:
+            raise
+        except Exception as fallback_exc:
+            raise ConversationGenerationError(f"{workflow} fallback LLM call failed") from fallback_exc
 
 
 def _call_chat_once(
