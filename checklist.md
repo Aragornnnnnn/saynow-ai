@@ -28,6 +28,15 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 의미 있는 단위로 커밋한다.
 
+## LAN-28 OpenRouter provider 추가
+
+- [x] `LLM_PROVIDER=openrouter` 설정과 라우팅 RED 테스트를 추가한다.
+- [x] OpenRouter API key, base URL, 모델 설정을 `Settings`에 추가한다.
+- [x] OpenRouter provider가 OpenAI 호환 chat client를 사용하도록 LLM 라우터를 수정한다.
+- [x] README에 로컬 env와 AWS SSM 적용 방법을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## 턴별 benchmarkMessage 문장형 전환
 
 - [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.

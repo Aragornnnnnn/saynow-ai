@@ -118,6 +118,23 @@ class LlmTest(unittest.TestCase):
         self.assertEqual(options.base_url, "https://api.upstage.ai/v1")
         self.assertEqual(options.model, "solar-pro3")
 
+    def test_resolve_llm_options_uses_openrouter_provider(self):
+        from app.config import Settings
+        from app.core.llm import fallback_model_for_workflow, model_for_workflow, resolve_llm_options
+
+        settings = Settings(
+            llm_provider="openrouter",
+            openrouter_api_key="test-openrouter-key",
+        )
+
+        options = resolve_llm_options(settings)
+
+        self.assertEqual(options.api_key, "test-openrouter-key")
+        self.assertEqual(options.base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(options.model, "openai/gpt-5.4-mini")
+        self.assertEqual(model_for_workflow("turn_feedback", settings), "openai/gpt-5.4-mini")
+        self.assertIsNone(fallback_model_for_workflow("turn_feedback", settings))
+
     def test_openai_workflow_model_routing_uses_quality_models_for_all_user_facing_workflows(self):
         from app.config import Settings
         from app.core.llm import fallback_model_for_workflow, model_for_workflow

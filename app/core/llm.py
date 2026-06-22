@@ -24,6 +24,15 @@ def resolve_llm_options(config=settings) -> LlmOptions:
             base_url=config.upstage_base_url,
         )
 
+    if provider == "openrouter":
+        if not config.openrouter_api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter")
+        return LlmOptions(
+            api_key=config.openrouter_api_key,
+            model=config.openrouter_model,
+            base_url=config.openrouter_base_url,
+        )
+
     if provider == "openai":
         if not config.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")

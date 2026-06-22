@@ -33,6 +33,19 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.upstage_base_url, "https://api.upstage.ai/v1")
         self.assertEqual(settings.upstage_model, "solar-pro3")
 
+    def test_settings_support_openrouter_provider_values(self):
+        from app.config import Settings
+
+        settings = Settings(
+            llm_provider="openrouter",
+            openrouter_api_key="test-openrouter-key",
+        )
+
+        self.assertEqual(settings.llm_provider, "openrouter")
+        self.assertEqual(settings.openrouter_api_key, "test-openrouter-key")
+        self.assertEqual(settings.openrouter_base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(settings.openrouter_model, "openai/gpt-5.4-mini")
+
     def test_settings_support_workflow_openai_models_and_fallback(self):
         from app.config import Settings
 

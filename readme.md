@@ -125,10 +125,27 @@ OPENAI_NEXT_QUESTION_MODEL=gpt-5.4-mini
 OPENAI_TURN_FEEDBACK_MODEL=gpt-5.4-mini
 OPENAI_SESSION_FEEDBACK_MODEL=gpt-5.4-mini
 OPENAI_FALLBACK_MODEL=gpt-4o-mini
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openai/gpt-5.4-mini
 LLM_REQUEST_TIMEOUT_SECONDS=60
 LOG_LEVEL=INFO
 SENTRY_DSN=
 ```
+
+## AWS SSM
+
+배포 워크플로우는 `/saynow/develop` 또는 `/saynow/prod` 아래 SSM Parameter Store 값을 읽어 leaf name을 그대로 `.env` key로 씁니다. OpenRouter를 쓰려면 아래 값을 추가합니다.
+
+```bash
+aws ssm put-parameter --name /saynow/develop/LLM_PROVIDER --type String --value openrouter --overwrite
+aws ssm put-parameter --name /saynow/develop/OPENROUTER_API_KEY --type SecureString --value '<openrouter-key>' --overwrite
+aws ssm put-parameter --name /saynow/develop/OPENROUTER_BASE_URL --type String --value https://openrouter.ai/api/v1 --overwrite
+aws ssm put-parameter --name /saynow/develop/OPENROUTER_MODEL --type String --value openai/gpt-5.4-mini --overwrite
+```
+
+운영 환경은 path만 `/saynow/prod/...`로 바꿔서 넣습니다. `OPENROUTER_API_KEY`는 반드시 `SecureString`으로 저장합니다.
 
 ## Development
 

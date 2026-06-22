@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     upstage_api_key: str | None = None
     upstage_base_url: str = "https://api.upstage.ai/v1"
     upstage_model: str = "solar-pro3"
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-5.4-mini"
     log_level: str = "INFO"
     sentry_dsn: str | None = None
     sentry_environment: str = "local"
