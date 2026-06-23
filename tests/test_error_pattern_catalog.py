@@ -44,6 +44,16 @@ class ErrorPatternCatalogTest(unittest.TestCase):
         self.assertIn("간접의문문", pattern.feedback_copy)
         self.assertIn("korean_pct=40", prompt_catalog)
 
+    def test_preposition_feedback_copy_uses_korean_percentage_style(self):
+        from app.services.error_pattern_catalog import get_error_pattern
+
+        pattern = get_error_pattern("prep_omission")
+
+        self.assertIsNotNone(pattern)
+        self.assertEqual(pattern.feedback_copy, "한국인의 25%가 놓치는 전치사를 정확히 챙긴 사람")
+        self.assertNotIn("4번 중 1번", pattern.feedback_copy)
+        self.assertNotIn("한국인이", pattern.feedback_copy)
+
 
 if __name__ == "__main__":
     unittest.main()

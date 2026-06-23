@@ -105,7 +105,7 @@
     "correction_priority": "medium",
     "gamifiable": true,
     "level_tone": "초급은 장소와 기간 앞에 영어식 연결어가 필요하다고 설명한다.",
-    "feedback_copy": "한국인이 4번 중 1번은 빠뜨리는 전치사를 정확히 챙긴 사람",
+    "feedback_copy": "한국인의 25%가 놓치는 전치사를 정확히 챙긴 사람",
     "example_wrong": "I arrived Hong Kong.",
     "example_right": "I arrived in Hong Kong.",
     "denominator_type": "attempt",
