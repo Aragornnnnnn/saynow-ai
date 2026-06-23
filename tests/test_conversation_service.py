@@ -1753,6 +1753,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("성의 없", cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_turn_feedback_normalizes_underwhelming_good_news_reaction_when_already_needs(self):
+        from app.models.conversation import TurnFeedbackRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"좋네\"라고만 말해서 살짝 무심하게 들려요.",
+            "positiveFeedback": "상대의 말에 반응하려는 시도는 있었어요.",
+            "feedbackDetail": None,
+            "correctionExpression": "That’s great! Congratulations!",
+            "correctionReason": "Good.은 좋은 소식에 조금 짧게 들릴 수 있어요.",
+            "benchmarkMessage": None,
+        })
+
+        request = TurnFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "turnId": 5000,
+            "sequence": 3,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "카페에서 수다떨면서 주말 약속 잡기",
+                "briefing": "룸메이트와 주말 계획과 좋은 소식을 이야기합니다.",
+                "conversationGoal": "상대의 좋은 소식에 자연스럽게 반응한다.",
+                "counterpartRole": "roommate",
+            },
+            "turn": {
+                "aiQuestion": "I passed the interview yesterday. What do you think?",
+                "translatedQuestion": "나 어제 면접 붙었어. 어떻게 생각해?",
+                "userUtterance": "Good.",
+            },
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.koreanAnalogy, "\"좋네\"라고만 짧게 말해서 축하보다 무심한 반응처럼 들려요.")
+        self.assertEqual(cached.correctionExpression, "That's amazing! Congratulations.")
+        self.assertIn("성의 없", cached.correctionReason)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_turn_feedback_contextualizes_hate_food_without_noise_correction(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,

@@ -449,3 +449,4 @@
 - 2026-06-24 이번 보정은 특정 세션 ID나 전체 문장 하드코딩이 아니라 역할과 발화 패턴 기반의 좁은 repair로 처리했다. 룸메이트에게 직접 `buy/get/bring/give me`로 요구하면 명령형 tone issue로 보고, 연애 상태를 바로 묻는 질문은 사적인 질문으로 보며, 좋은 소식에 `Good.`, `Nice.`, `OK.`만 답하면 축하 의도가 부족한 `NEEDS_IMPROVEMENT`로 보정한다. 명확한 GOOD 룸메이트 답변은 generic NORMAL 속마음을 실제 룸메이트의 1인칭 반응으로 대체한다.
 - 2026-06-24 `games`, `parents`처럼 실제 복수형 명사 근거가 있는 benchmark는 유지한다. 이번 수정 대상은 사실에 어긋나는 benchmark가 아니라 feedbackType, innerThoughtType, innerThought 내용, 그리고 맥락상 무성의한 짧은 반응의 불일치다.
 - 2026-06-24 로컬 검증은 focused 7개 테스트, `tests.test_conversation_service` 117개, 전체 `unittest discover` 151개, `compileall app tests`, `git diff --check`로 통과했다. 배포 후에는 동일 실패 유형을 AI 서버 직접 live smoke로 다시 확인한다.
+- 2026-06-24 첫 배포 후 live smoke는 8개 중 7개가 통과했다. 실패 1건은 `Good.` 축하 반응이 이미 `NEEDS_IMPROVEMENT`로는 맞게 내려왔지만 개선 표현이 `That’s great! Congratulations!`로 변형된 케이스였다. 같은 문제 유형은 프론트와 학습 경험의 일관성을 위해 `That's amazing! Congratulations.`로 canonical 보정한다.

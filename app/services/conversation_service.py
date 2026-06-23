@@ -2104,6 +2104,10 @@ def _postprocess_turn_feedback(
     if tone_feedback:
         return tone_feedback
 
+    underwhelming_good_news_feedback = _feedback_for_underwhelming_good_news_reaction(request, feedback)
+    if underwhelming_good_news_feedback:
+        return underwhelming_good_news_feedback
+
     if _is_detail_only_overcorrection(request, feedback):
         if _looks_like_clear_travel_plan_answer(request.turn.userUtterance):
             return _good_feedback_for_clear_travel_plan_answer(request, feedback)
@@ -2294,6 +2298,24 @@ def _feedback_for_tone_issue(
     return None
 
 
+def _feedback_for_underwhelming_good_news_reaction(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData | None:
+    if not _looks_like_underwhelming_good_news_reaction(request):
+        return None
+    return TurnFeedbackData(
+        turnId=feedback.turnId,
+        feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+        koreanAnalogy="\"좋네\"라고만 짧게 말해서 축하보다 무심한 반응처럼 들려요.",
+        feedbackDetail=None,
+        correctionExpression="That's amazing! Congratulations.",
+        correctionReason="Good.만 말하면 상대의 좋은 소식에 성의 없어 보일 수 있어요. That's amazing! Congratulations.처럼 말하면 기뻐하고 축하한다는 뜻이 더 자연스럽게 전달돼요.",
+        positiveFeedback="상대의 말에 바로 반응하려는 의도는 보였어요.",
+        benchmarkMessage=None,
+    )
+
+
 def _needs_feedback_for_good_misclassified_actionable_issue(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
@@ -2301,17 +2323,6 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
     if feedback.feedbackType != FeedbackType.GOOD:
         return None
     utterance = _normalize_visible_text(request.turn.userUtterance)
-    if _looks_like_underwhelming_good_news_reaction(request):
-        return TurnFeedbackData(
-            turnId=feedback.turnId,
-            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-            koreanAnalogy="\"좋네\"라고만 짧게 말해서 축하보다 무심한 반응처럼 들려요.",
-            feedbackDetail=None,
-            correctionExpression="That's amazing! Congratulations.",
-            correctionReason="Good.만 말하면 상대의 좋은 소식에 성의 없어 보일 수 있어요. That's amazing! Congratulations.처럼 말하면 기뻐하고 축하한다는 뜻이 더 자연스럽게 전달돼요.",
-            positiveFeedback="상대의 말에 바로 반응하려는 의도는 보였어요.",
-            benchmarkMessage=None,
-        )
     bare_because_feedback = _needs_feedback_for_bare_noun_because_answer(request, feedback, utterance)
     if bare_because_feedback:
         return bare_because_feedback
