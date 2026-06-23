@@ -360,6 +360,45 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThoughtType, "BAD")
         self.assertIn("명령", result.innerThought)
 
+    def test_next_question_repairs_generic_normal_inner_thought_for_clear_reason_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Nice, that’s a really convenient mix. Have you ever seen an artist live in concert?",
+            "translatedQuestion": "좋아, 정말 편리한 조합이네. 라이브 콘서트에서 아티스트를 본 적 있어?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 2,
+            "scenario": {
+                "scenarioId": 12,
+                "title": "음악 취향 이야기하기",
+                "briefing": "좋아하는 음악과 앱 사용 이유를 이야기합니다.",
+                "conversationGoal": "음악 취향과 이유를 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "What music app do you use, and what makes it your favorite?",
+                "translatedQuestion": "어떤 음악 앱을 써? 왜 그 앱을 좋아해?",
+                "userUtterance": "I use YouTube Music because it works well with videos and playlists.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 3,
+                "questionEn": "Have you ever seen an artist live in concert?",
+                "questionKo": "라이브 콘서트에서 아티스트를 본 적 있어?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
+        self.assertIn("대화하기 편", result.innerThought)
+
     def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -849,8 +888,6 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인의 79%가 틀리는 a/an을 정확히 쓴 사람")
-        self.assertIn("Cached detected pattern JSON", captured["user"])
-        self.assertIn("article_a_omission", captured["user"])
         self.assertIn("Allowed quantitative highlight candidates JSON", captured["user"])
         self.assertIn("한국인의 79%가 틀리는 a/an", captured["user"])
 
@@ -1508,12 +1545,12 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertIn("Evidence Priority", system_prompt)
         self.assertIn("benchmarkMessage", system_prompt)
-        self.assertIn("gamifiable detectedPatterns", system_prompt)
+        self.assertIn("Do not create quantitative highlights from NEEDS_IMPROVEMENT detectedPatterns", system_prompt)
         self.assertIn("Do not invent a new percentage hook", system_prompt)
         self.assertIn("Allowed quantitative highlight candidates JSON", system_prompt)
         self.assertIn("copy one candidate exactly", system_prompt)
         self.assertIn("only use the final cached benchmarkMessage", system_prompt)
-        self.assertIn("validated gamifiable detectedPatterns", system_prompt)
+        self.assertIn("Do not use NEEDS_IMPROVEMENT detectedPatterns as quantitative evidence", system_prompt)
         self.assertIn("Do not include nativeScore", system_prompt)
         self.assertIn("use repeated concrete themes", system_prompt)
 
@@ -1662,7 +1699,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
         self.assertNotIn("%", result.highlightMessage)
 
-    def test_session_feedback_replaces_weak_highlight_with_needs_attempt_hook_when_no_good_benchmark(self):
+    def test_session_feedback_replaces_weak_highlight_with_non_quantitative_needs_hook_when_no_good_benchmark(self):
         from app.models.conversation import SessionFeedbackRequest
 
         responses = [
@@ -1699,8 +1736,51 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문에 도전한 사람")
-        self.assertIn("%", result.highlightMessage)
+        self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
+        self.assertNotIn("%", result.highlightMessage)
+
+    def test_session_feedback_does_not_use_quantitative_needs_pattern_as_highlight(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "\"그게 뭔지 모르겠어\"라고 어순이 살짝 꼬인 말처럼 들려요.",
+                "positiveFeedback": "헷갈리는 간접의문문 구조를 직접 써 보려는 시도는 좋아요.",
+                "feedbackDetail": None,
+                "correctionExpression": "I don't know what it is.",
+                "correctionReason": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [
+                    {
+                        "errorType": "indirect_question_word_order",
+                        "status": "incorrect",
+                        "evidence": "what is it",
+                    }
+                ],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "한국인 40%가 헷갈리는 간접의문문에 도전한 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertNotIn("%", result.highlightMessage)
+        self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
+        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
 
     def test_session_feedback_rejects_overpositive_highlight_for_tone_issue(self):
         from app.models.conversation import SessionFeedbackRequest

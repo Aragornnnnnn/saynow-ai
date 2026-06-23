@@ -894,8 +894,9 @@ def _session_feedback_system_prompt() -> str:
             "It is a title-like badge phrase, not a full summary sentence. "
             "It must hook the user into reading turn-level feedback. "
             "Prefer a quantitative noun phrase about what the user did well, such as 한국인의 79%가 틀리는 a/an을 정확히 쓴 사람. "
-            "When there is no GOOD quantitative hook, use a NEEDS_IMPROVEMENT challenge hook such as 한국인 40%가 헷갈리는 간접의문문에 도전한 사람. "
-            "Do not invent a new percentage hook that is not present in cached benchmarkMessage or allowed NEEDS_IMPROVEMENT detected pattern evidence. "
+            "Only GOOD cached benchmarkMessage may provide a quantitative highlight candidate. "
+            "Do not create quantitative highlights from NEEDS_IMPROVEMENT detectedPatterns. "
+            "Do not invent a new percentage hook that is not present in cached benchmarkMessage. "
             "If Allowed quantitative highlight candidates JSON is empty, highlightMessage must not contain %, 퍼센트, or count-based claims such as 4번 중 1번. "
             "If Allowed quantitative highlight candidates JSON is non-empty, copy one candidate exactly, preferably the first item. "
             "Do not paraphrase allowed candidates. "
@@ -907,15 +908,15 @@ def _session_feedback_system_prompt() -> str:
             "Evidence Priority:\n"
             "1. Prefer one exact item from Allowed quantitative highlight candidates JSON when it is non-empty. "
             "2. For GOOD turns, only use the final cached benchmarkMessage as quantitative evidence, not extra detectedPatterns. "
-            "3. If no GOOD quantitative hook exists, use validated gamifiable detectedPatterns from NEEDS_IMPROVEMENT turns as a challenge hook when koreanPct is available. "
-            "4. If no quantitative evidence exists, use repeated concrete themes from feedbackDetail or positiveFeedback."
+            "3. Do not use NEEDS_IMPROVEMENT detectedPatterns as quantitative evidence. "
+            "4. If no quantitative evidence exists, use repeated concrete themes from feedbackDetail, positiveFeedback, correctionExpression, or correctionReason."
         ),
         (
             "Self-check before final JSON:\n"
             "1. highlightMessage is Korean. "
             "2. highlightMessage is a noun phrase or title-like badge, not a summary sentence. "
             "3. highlightMessage has no final punctuation. "
-            "4. highlightMessage is grounded in cached turn feedback or allowed NEEDS_IMPROVEMENT detected pattern evidence. "
+            "4. highlightMessage is grounded in cached turn feedback. "
             "5. When allowed quantitative candidates are empty, highlightMessage has no percentage or numeric learner claim. "
             "6. If allowed quantitative highlight candidates are provided, highlightMessage equals one exact candidate. "
             "7. Do not include nativeScore, nativeScoreBreakdown, nativeLevelLabel, summary, or turnFeedbacks."
@@ -943,21 +944,6 @@ def _session_feedback_user_prompt(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    detected_pattern_json = json.dumps(
-        [
-            {
-                "turnId": entry.feedback.turnId,
-                "patterns": [
-                    detected_pattern.to_prompt_dict()
-                    for detected_pattern in entry.detected_patterns
-                ],
-            }
-            for entry in turn_feedback_entries
-            if entry.detected_patterns
-        ],
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
     quantitative_highlight_candidate_json = json.dumps(
         _quantitative_highlight_candidates(turn_feedback_entries),
         ensure_ascii=False,
@@ -972,7 +958,6 @@ def _session_feedback_user_prompt(
         f"Expected turn IDs: {request.expectedTurnIds}\n\n"
         f"Cached turn feedback counts: GOOD={good_count}, NEEDS_IMPROVEMENT={needs_count}\n\n"
         f"Cached turn feedback JSON:\n{feedback_json}\n\n"
-        f"Cached detected pattern JSON:\n{detected_pattern_json}\n\n"
         f"Allowed quantitative highlight candidates JSON:\n{quantitative_highlight_candidate_json}"
     )
 
@@ -1064,9 +1049,19 @@ def _repair_next_question_inner_thought(
     expected_type = _fallback_inner_thought_type(request)
     should_replace_thought = (
         expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
+    ) or (
+        expected_type == "GOOD"
+        and response.innerThoughtType == "NORMAL"
+        and _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
     updates: dict[str, Any] = {}
     if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
+        updates["innerThoughtType"] = expected_type
+    if (
+        expected_type == "GOOD"
+        and response.innerThoughtType == "NORMAL"
+        and _is_generic_normal_inner_thought(response.innerThought)
+    ):
         updates["innerThoughtType"] = expected_type
     if should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought(request)
@@ -1140,6 +1135,17 @@ def _is_meta_inner_thought(inner_thought: str) -> bool:
         "next question",
     ]
     return any(marker in normalized for marker in meta_markers)
+
+
+def _is_generic_normal_inner_thought(inner_thought: str) -> bool:
+    normalized = _normalize_visible_text(inner_thought)
+    generic_markers = [
+        "무슨 말인지는 알겠",
+        "조금만 더 자연스럽",
+        "조금 더 자연스럽",
+        "조금 더 차분",
+    ]
+    return any(marker in normalized for marker in generic_markers)
 
 
 def _looks_like_short_broken_or_flat_answer(normalized_utterance: str) -> bool:
@@ -1850,7 +1856,8 @@ def _has_clear_reason_clause(normalized_utterance: str) -> bool:
         r"(?:am|are|is|was|were|can|could|would|will|want|wants|wanted|like|likes|liked|"
         r"love|loves|loved|feel|feels|felt|give|gives|gave|make|makes|made|have|has|had|"
         r"need|needs|needed|enjoy|enjoys|enjoyed|prefer|prefers|preferred|eat|eats|ate|"
-        r"go|goes|went|see|sees|saw|use|uses|used|sound|sounds|look|looks|seem|seems)\b",
+        r"go|goes|went|see|sees|saw|use|uses|used|work|works|worked|"
+        r"sound|sounds|look|looks|seem|seems)\b",
         normalized_utterance,
     ) is not None
 
@@ -2132,6 +2139,7 @@ def _highlight_conflicts_with_turn_feedback(
         "채워",
         "선명하게 만든",
         "잘 말",
+        "잘 표현",
     ]
     return any(marker in normalized for marker in overpositive_markers)
 
@@ -2188,20 +2196,6 @@ def _quantitative_highlight_candidates(
                 highlight_candidate or entry.feedback.benchmarkMessage,
                 _good_surface_rank_for_benchmark_message(entry.feedback.benchmarkMessage),
             )
-    for entry in turn_feedback_entries:
-        if entry.feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
-            continue
-        for detected_pattern in entry.detected_patterns:
-            pattern = detected_pattern.pattern
-            if (
-                pattern.gamifiable
-                and pattern.korean_pct is not None
-                and _detected_pattern_has_session_highlight_evidence(entry, detected_pattern)
-            ):
-                add_candidate(
-                    _attempt_highlight_message(pattern.korean_pct, pattern.display_name),
-                    100 + _good_surface_rank_for_error_type(pattern.error_type),
-                )
     return [
         candidate
         for _, _, candidate in sorted(candidates, key=lambda item: (item[0], item[1]))

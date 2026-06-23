@@ -803,3 +803,12 @@
 - [x] 기본 `benchmarkMessage`를 title-like highlight로 쓰지 않는 RED 테스트를 추가한다.
 - [x] 세션 하이라이트 후처리를 좁게 보강한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## live 재테스트 기반 highlight와 속마음 보정
+
+- [x] GOOD 발화가 generic NORMAL 속마음으로 내려오는 케이스를 RED 테스트로 고정한다.
+- [x] 명확한 이유 답변의 속마음이 GOOD 1인칭 반응으로 보정되도록 후처리를 보강한다.
+- [x] NEEDS_IMPROVEMENT detectedPatterns에서 수치형 세션 highlight를 만들지 않는 정책을 RED 테스트로 고정한다.
+- [x] all-NEEDS 세션에서 과긍정 highlight가 나오면 도전형 비수치 fallback으로 되돌린다.
+- [x] 세션 highlight 프롬프트와 후보 생성을 GOOD cached benchmark 중심으로 좁힌다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
