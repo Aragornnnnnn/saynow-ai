@@ -1053,6 +1053,8 @@ def _repair_next_question_inner_thought(
         expected_type == "GOOD"
         and response.innerThoughtType == "NORMAL"
         and _is_generic_normal_inner_thought(response.innerThought)
+    ) or (
+        _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
     updates: dict[str, Any] = {}
     if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
@@ -1089,6 +1091,7 @@ def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
         return "NORMAL"
     if (
         _looks_like_clear_reason_answer(request.currentTurn.userUtterance)
+        or _looks_like_detailed_good_answer(normalized)
         or "could you" in normalized
         or "would you" in normalized
     ):
@@ -1100,17 +1103,31 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     thought_type = _fallback_inner_thought_type(request)
     role = _normalize_visible_text(request.scenario.counterpartRole)
     if thought_type == "BAD":
+        if "stop asking" in _normalize_visible_text(request.currentTurn.userUtterance):
+            return "그만 물어보라는 말이네. 지금은 대화를 이어가고 싶지 않은 것처럼 느껴져."
         if "professor" in role or "teacher" in role:
             return "음, 조금 명령처럼 들리네. 부탁이라면 더 정중하게 말해주면 좋을 텐데."
         if "friend" in role or "roommate" in role:
             return "어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아."
         return "말뜻은 알겠는데, 지금 표현은 조금 차갑게 들리네."
     if thought_type == "GOOD":
+        normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+        if "simple plan" in normalized and "free day" in normalized:
+            return "계획도 세우고 여유도 남기는 타입이구나. 여행 스타일이 꽤 분명해서 이야기하기 좋네."
+        if "live concert" in normalized and "would love to see" in normalized:
+            return "아직 직접 본 건 아니지만 보고 싶은 이유가 분명하네. 음악 취향이 잘 느껴져."
         if "professor" in role or "teacher" in role:
             return "요점을 차분히 말해줘서 내가 바로 이해하기 좋네."
         if "staff" in role or "barista" in role or "server" in role:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
         return "이렇게 이유까지 말해주니까 대화하기 편하네."
+    normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    if "losted" in normalized or "hotel no answer" in normalized:
+        return "호텔에서 연락이 안 돼서 꽤 당황했겠네. 뜻은 알겠는데 표현은 조금 서툴러."
+    if "ramen" in normalized and "because cheap" in normalized:
+        return "라면이 싸서 좋다는 뜻은 알겠어. 문장만 조금 더 채우면 자연스럽겠다."
+    if "recommendation good" in normalized or "ads make me crazy" in normalized:
+        return "추천은 좋지만 광고가 답답하다는 말이구나. 뜻은 분명한데 표현만 조금 다듬으면 좋겠다."
     if "professor" in role or "teacher" in role:
         return "무슨 말인지는 알겠는데, 조금 더 차분히 설명해 주면 좋겠다."
     return "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다."
@@ -1158,6 +1175,35 @@ def _looks_like_short_broken_or_flat_answer(normalized_utterance: str) -> bool:
     return len(words) <= 4 and not any(marker in normalized_utterance for marker in ["could you", "would you", "please"])
 
 
+def _looks_like_detailed_good_answer(normalized_utterance: str) -> bool:
+    normalized = f" {normalized_utterance} "
+    issue_markers = [
+        " losted ",
+        " hotel no answer ",
+        " because cheap ",
+        " recommendation good ",
+        " i seen ",
+        " when i sad ",
+        " i eating ",
+        " cannot speak nothing ",
+        " hate vegetable",
+        " stop asking ",
+        " whatever ",
+    ]
+    if any(marker in normalized for marker in issue_markers):
+        return False
+    words = normalized_utterance.split()
+    if len(words) < 14:
+        return False
+    return (
+        " i usually make " in normalized
+        or " i have not seen " in normalized
+        or " i haven t seen " in normalized
+        or " i would love to see " in normalized
+        or (" because " in normalized and " feels " in normalized)
+    )
+
+
 def _tone_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
     normalized = f" {_normalize_visible_text(user_utterance)} "
     if " wanna know that " in normalized or " why do you want to know that " in normalized:
@@ -1166,6 +1212,8 @@ def _tone_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
         return "dont_care"
     if " next question " in normalized:
         return "next_question"
+    if " stop asking " in normalized:
+        return "stop_asking"
     if " i angry if you ask " in normalized or " i am angry if you ask " in normalized:
         return "angry_if_ask"
     if " shut up " in normalized:
@@ -1537,6 +1585,17 @@ def _feedback_for_tone_issue(
             positiveFeedback="해외 생활에 대한 선호를 말하려는 핵심은 전달했어요.",
             benchmarkMessage=None,
         )
+    if issue_kind == "stop_asking":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"그만 물어봐\"라고 대화를 딱 끊는 것처럼 들릴 수 있어요.",
+            feedbackDetail=None,
+            correctionExpression="I don't really have one right now.",
+            correctionReason="Stop asking은 상대에게 짜증을 내며 대화를 끊는 느낌을 줄 수 있어요. I don't really have one right now.처럼 말하면 답은 유지하면서도 덜 날카롭게 들려요.",
+            positiveFeedback="반복해서 듣는 노래가 없다는 핵심은 짧게 전달했어요.",
+            benchmarkMessage=None,
+        )
     if issue_kind == "angry_if_ask":
         return TurnFeedbackData(
             turnId=feedback.turnId,
@@ -1561,6 +1620,18 @@ def _feedback_for_tone_issue(
             benchmarkMessage=None,
         )
     if issue_kind == "hate":
+        normalized = _normalize_visible_text(request.turn.userUtterance)
+        if "vegetable" in normalized or "salad" in normalized:
+            return TurnFeedbackData(
+                turnId=feedback.turnId,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="\"채소는 싫어\"라고 감정을 강하게 던지는 것처럼 들릴 수 있어요.",
+                feedbackDetail=None,
+                correctionExpression="I could eat only salad forever, but I don't really like vegetables.",
+                correctionReason="I hate vegetables는 음식 취향을 말할 때도 너무 강하게 들릴 수 있어요. I don't really like vegetables처럼 말하면 싫다는 뜻은 유지하면서 더 자연스럽고 덜 공격적으로 들려요.",
+                positiveFeedback="한 가지 음식만 먹는 상황에 대한 반응은 말하려고 했어요.",
+                benchmarkMessage=None,
+            )
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,

@@ -812,3 +812,11 @@
 - [x] all-NEEDS 세션에서 과긍정 highlight가 나오면 도전형 비수치 fallback으로 되돌린다.
 - [x] 세션 highlight 프롬프트와 후보 생성을 GOOD cached benchmark 중심으로 좁힌다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## 3개 시나리오 2회 재테스트 후속 보정
+
+- [x] GOOD 긴 답변이 generic NORMAL 속마음으로 남는 문제를 RED 테스트로 고정한다.
+- [x] EDGE 답변의 generic NORMAL 속마음을 발화 맥락이 있는 1인칭 반응으로 바꾼다.
+- [x] `Stop asking`처럼 대화를 끊는 표현은 BAD 속마음과 tone issue로 보정한다.
+- [x] 음식 맥락의 `I hate vegetable` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
+- [x] focused 테스트와 전체 unittest를 실행한다.

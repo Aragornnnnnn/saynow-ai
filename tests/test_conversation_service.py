@@ -399,6 +399,122 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
         self.assertIn("대화하기 편", result.innerThought)
 
+    def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds flexible. Would you want to live abroad for a while?",
+            "translatedQuestion": "유연한 계획이네. 해외에서 한동안 살아보고 싶어?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "여행 취향 이야기하기",
+                "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
+                "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "Do you usually plan trips in detail, or do you leave room for surprises?",
+                "translatedQuestion": "여행 계획을 자세히 세우는 편이야, 아니면 즉흥적으로 두는 편이야?",
+                "userUtterance": "I usually make a simple plan, but I leave one free day. Once my flight was delayed, so I had to change my hotel check-in time.",
+            },
+            "nextQuestion": {
+                "questionId": 104,
+                "sequence": 4,
+                "questionEn": "Would you want to live abroad for a while?",
+                "questionKo": "해외에서 한동안 살아보고 싶어?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("계획", result.innerThought)
+
+    def test_next_question_replaces_generic_normal_inner_thought_for_broken_but_understandable_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds stressful. Would you want to live abroad for a while?",
+            "translatedQuestion": "스트레스였겠네. 해외에서 한동안 살아보고 싶어?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "여행 취향 이야기하기",
+                "briefing": "가고 싶은 여행지, 여행 방식, 예상치 못한 상황, 해외 생활에 대해 이야기합니다.",
+                "conversationGoal": "여행 취향과 해외 생활에 대한 생각을 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "Have you ever had a problem while traveling?",
+                "translatedQuestion": "여행 중에 문제를 겪은 적 있어?",
+                "userUtterance": "I was losted and hotel no answer, so I cried little.",
+            },
+            "nextQuestion": {
+                "questionId": 104,
+                "sequence": 4,
+                "questionEn": "Would you want to live abroad for a while?",
+                "questionKo": "해외에서 한동안 살아보고 싶어?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("호텔", result.innerThought)
+
+    def test_next_question_marks_stop_asking_as_bad_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Okay. What music app do you use?",
+            "translatedQuestion": "알겠어. 어떤 음악 앱을 써?",
+            "innerThought": "좀 짜증난 듯한 말투네. 괜히 더 캐묻지 않는 게 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 12,
+                "title": "음악 취향 이야기하기",
+                "briefing": "좋아하는 음악과 앱 사용 이유를 이야기합니다.",
+                "conversationGoal": "음악 취향과 이유를 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "What song have you been playing on repeat lately?",
+                "translatedQuestion": "요즘 반복해서 듣는 노래가 있어?",
+                "userUtterance": "No song. Stop asking.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "What music app do you use?",
+                "questionKo": "어떤 음악 앱을 써?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertIn("그만 물어", result.innerThought)
+
     def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1043,6 +1159,34 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Next question", cached.correctionReason)
         self.assertIn("재촉", cached.correctionReason)
         self.assertNotIn("Next question", cached.correctionExpression)
+
+    def test_turn_feedback_contextualizes_hate_food_without_noise_correction(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"채소는 싫어\"라고 강하게 말하는 것과 같아요.",
+            "positiveFeedback": "한 가지 음식만 먹는 상황에 대한 반응은 말하려고 했어요.",
+            "feedbackDetail": None,
+            "correctionExpression": "It is a little hard for me because it feels noisy.",
+            "correctionReason": "I hate처럼 강한 표현은 불만이 커 보일 수 있어요.",
+            "benchmarkMessage": None,
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="Only salad forever? maybe, but I hate vegetable."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(
+            cached.correctionExpression,
+            "I could eat only salad forever, but I don't really like vegetables.",
+        )
+        self.assertIn("vegetables", cached.correctionReason)
+        self.assertNotIn("noisy", cached.correctionExpression)
+        self.assertNotIn("noisy", cached.correctionReason)
 
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
