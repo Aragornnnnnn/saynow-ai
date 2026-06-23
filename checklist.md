@@ -788,3 +788,11 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] live smoke에서 문제 발화 세트를 다시 검증한다.
 - [x] 결과와 남은 리스크를 context notes에 기록한다.
+
+## GOOD benchmarkMessage 기본값 복구
+
+- [x] GOOD에서 정량 근거가 없을 때 비정량 기본 `benchmarkMessage`를 반환하는 RED 테스트를 추가한다.
+- [x] NEEDS_IMPROVEMENT에서는 `benchmarkMessage=null` 정책이 유지되는지 확인한다.
+- [x] 턴 피드백 프롬프트와 후처리를 새 정책에 맞게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.

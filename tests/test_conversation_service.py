@@ -600,9 +600,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertNotEqual(cached.benchmarkMessage, "한국인의 40%가 헷갈려하는 간접의문문 어순을 정확히 쓴 사람")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
-    def test_good_turn_feedback_keeps_benchmark_null_without_detected_pattern(self):
+    def test_good_turn_feedback_uses_default_benchmark_message_without_detected_pattern(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -621,7 +621,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_good_turn_feedback_does_not_use_numeric_catalog_for_article_surface_usage_only(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -642,7 +642,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_good_turn_feedback_does_not_use_numeric_catalog_for_tense_surface_usage_only(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -661,7 +661,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_good_turn_feedback_overwrites_non_quantitative_llm_benchmark_message(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -682,7 +682,7 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_good_turn_feedback_ignores_detected_pattern_when_evidence_is_not_in_utterance(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -706,7 +706,7 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertIsNone(cached.benchmarkMessage)
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_turn_feedback_prompt_includes_seed_pattern_policy(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -718,8 +718,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not mark NEEDS_IMPROVEMENT only because of low-priority", system_prompt)
         self.assertIn("I would go to Italy because I want to see old cities", system_prompt)
         self.assertIn("No-pattern GOOD example", system_prompt)
-        self.assertIn("Do not create a non-quantitative benchmarkMessage", system_prompt)
-        self.assertIn("benchmarkMessage must be null", system_prompt)
+        self.assertIn("unsupported numeric benchmarkMessage", system_prompt)
+        self.assertIn("default non-quantitative benchmarkMessage", system_prompt)
+        self.assertIn("질문에 맞는 핵심을 자연스럽게 전달했어요", system_prompt)
         self.assertIn("validated correct detectedPattern", system_prompt)
         self.assertIn("Return one JSON object, not an array", system_prompt)
 
@@ -1799,8 +1800,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
         self.assertNotIn("%", result.highlightMessage)
         self.assertNotIn("간접의문문", result.highlightMessage)
-        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
-        self.assertIsNone(result.turnFeedbacks[1].benchmarkMessage)
+        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
+        self.assertEqual(result.turnFeedbacks[1].benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
 
     def test_session_feedback_maps_three_all_good_to_near_native_band(self):
         result = self._session_feedback_result_for_types(

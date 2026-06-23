@@ -58,6 +58,7 @@ _GOOD_SURFACE_PATTERN_RANK = {
     error_type: index
     for index, error_type in enumerate(_GOOD_SURFACE_PATTERN_PRIORITY)
 }
+_DEFAULT_GOOD_BENCHMARK_MESSAGE = "질문에 맞는 핵심을 자연스럽게 전달했어요"
 
 
 @dataclass(frozen=True)
@@ -420,7 +421,10 @@ def _postprocess_turn_benchmark_message(
 ) -> TurnFeedbackData:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback
-    benchmark_message = _benchmark_message_from_detected_patterns(request, detected_patterns)
+    benchmark_message = (
+        _benchmark_message_from_detected_patterns(request, detected_patterns)
+        or _DEFAULT_GOOD_BENCHMARK_MESSAGE
+    )
     if feedback.benchmarkMessage == benchmark_message:
         return feedback
     return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
@@ -744,8 +748,8 @@ def _turn_feedback_system_prompt() -> str:
             "detectedPatterns evidence must be a short phrase copied from the user utterance. "
             "For GOOD benchmarkMessage, reuse this numeric catalog only when a validated detectedPattern proves the user used that pattern correctly. "
             "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage should use that pattern's catalog copy. "
-            "If no validated detectedPattern exists, benchmarkMessage must be null. "
-            "Do not create a non-quantitative benchmarkMessage for GOOD. "
+            "Do not create an unsupported numeric benchmarkMessage. "
+            f"If no validated correct detectedPattern exists, use the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}'. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -769,8 +773,8 @@ def _turn_feedback_system_prompt() -> str:
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
-            "For GOOD, benchmarkMessage may be null. "
-            "For GOOD, benchmarkMessage must be a short Korean feedback sentence with a visible numeric hook from the existing catalog only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise return null. "
+            "For GOOD, benchmarkMessage must be a Korean feedback sentence. "
+            f"For GOOD, benchmarkMessage must use a visible numeric hook from the existing catalog only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise return the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}'. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "'I don't care', 'Next question', 'I angry if you ask that', and direct commands to professors or staff are tone or role-appropriateness issues even when the literal meaning is understandable. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
@@ -784,12 +788,12 @@ def _turn_feedback_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
             "2. NEEDS_IMPROVEMENT has positiveFeedback, correctionExpression, correctionReason, feedbackDetail=null, and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and benchmarkMessage only when a validated correct detectedPattern supports it. "
+            "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and a benchmarkMessage string. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT correctionReason uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. GOOD benchmarkMessage must be null when no supported detectedPattern exists. "
+            "8. GOOD numeric benchmarkMessage is allowed only when a supported detectedPattern exists; otherwise use the default non-quantitative benchmarkMessage. "
             "9. No legacy fields are present."
         ),
         (
@@ -804,7 +808,7 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
-            "No-pattern GOOD example: User utterance 'I would go to Italy because I want to see old cities.' should use benchmarkMessage=null unless detectedPatterns contains a validated correct catalog pattern with copied evidence. "
+            f"No-pattern GOOD example: User utterance 'I would go to Italy because I want to see old cities.' should use benchmarkMessage='{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' unless detectedPatterns contains a validated correct catalog pattern with copied evidence. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason='what is it → what it is...', feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
@@ -2142,7 +2146,10 @@ def _default_highlight_message(turn_feedback_entries: list[_TurnFeedbackCacheEnt
     if concrete_highlight:
         return concrete_highlight
     for feedback in turn_feedbacks:
-        if feedback.benchmarkMessage:
+        if (
+            feedback.benchmarkMessage
+            and feedback.benchmarkMessage != _DEFAULT_GOOD_BENCHMARK_MESSAGE
+        ):
             return re.sub(r"[.!。]+$", "", feedback.benchmarkMessage).strip()
     return "핵심 질문에 자연스럽게 답한 사람"
 
