@@ -1665,6 +1665,40 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.highlightMessage, "한국인 40%가 헷갈리는 간접의문문에 도전한 사람")
         self.assertIn("%", result.highlightMessage)
 
+    def test_session_feedback_rejects_overpositive_highlight_for_tone_issue(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "\"상관없어\"라고 솔직하게 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "어디든 괜찮다는 뜻을 간단히 전달했어요.",
+                "benchmarkMessage": None,
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "상황에 딱 맞는 단어를 사용한 사람",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="Anywhere is fine. I don't care.")
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "부드러운 표현에 도전한 사람")
+        self.assertEqual(result.turnFeedbacks[0].feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
+
     def test_session_feedback_ignores_weak_detected_pattern_candidate_when_evidence_is_not_in_detail(self):
         from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
         from app.services.error_pattern_catalog import DetectedErrorPattern, get_error_pattern

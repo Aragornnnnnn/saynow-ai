@@ -2080,6 +2080,8 @@ def _postprocess_highlight_message(
         return _default_highlight_message(turn_feedback_entries)
     if len(repaired) > 80 or _looks_like_sentence_summary(repaired):
         return _default_highlight_message(turn_feedback_entries)
+    if _highlight_conflicts_with_turn_feedback(repaired, turn_feedbacks):
+        return _default_highlight_message(turn_feedback_entries)
     return repaired
 
 
@@ -2103,6 +2105,29 @@ def _looks_like_sentence_summary(highlight_message: str) -> bool:
         "해요.",
     ]
     return any(marker in highlight_message for marker in sentence_markers)
+
+
+def _highlight_conflicts_with_turn_feedback(
+    highlight_message: str,
+    turn_feedbacks: list[TurnFeedbackData],
+) -> bool:
+    if not turn_feedbacks:
+        return False
+    if any(feedback.feedbackType == FeedbackType.GOOD for feedback in turn_feedbacks):
+        return False
+    normalized = _normalize_visible_text(highlight_message)
+    overpositive_markers = [
+        "딱 맞",
+        "정확히",
+        "자연스럽게",
+        "분명하게",
+        "챙긴 사람",
+        "사용한 사람",
+        "채워",
+        "선명하게 만든",
+        "잘 말",
+    ]
+    return any(marker in normalized for marker in overpositive_markers)
 
 
 def _default_highlight_message(turn_feedback_entries: list[_TurnFeedbackCacheEntry] | list[TurnFeedbackData]) -> str:
@@ -2235,6 +2260,20 @@ def _detected_pattern_has_session_highlight_evidence(
 
 def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str | None:
     combined_detail = _normalize_visible_text(" ".join(_turn_feedback_search_text(feedback) for feedback in turn_feedbacks))
+    if any(
+        marker in combined_detail
+        for marker in [
+            "i don t care",
+            "차갑",
+            "무심",
+            "재촉",
+            "방어적",
+            "명령",
+            "무례",
+            "위협",
+        ]
+    ):
+        return "부드러운 표현에 도전한 사람"
     if "because i love nature" in combined_detail or "travel" in combined_detail or "canada" in combined_detail:
         if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
             return "여행지와 이유 표현에 도전한 사람"
