@@ -1457,6 +1457,42 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
         self.assertFalse(hasattr(result, "summary"))
 
+    def test_session_feedback_replaces_default_good_benchmark_message_as_highlight(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        responses = [
+            {
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "\"김치찌개가 제일 좋아요. 따뜻해서요\"라고 이유를 바로 붙여 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "좋아하는 음식과 이유를 질문에 맞게 분명히 전달했어요.",
+                "benchmarkMessage": None,
+                "detectedPatterns": [],
+            },
+            {
+                "sessionId": 1000,
+                "highlightMessage": "질문에 맞는 핵심을 자연스럽게 전달했어요",
+            },
+        ]
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="Kimchi stew is my favorite because it feels warm and comforting."
+            )
+        )
+
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.turnFeedbacks[0].benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
+        self.assertEqual(result.highlightMessage, "핵심 질문에 자연스럽게 답한 사람")
+
     def test_session_feedback_prompt_delegates_highlight_to_model_and_score_to_server(self):
         system_prompt = self.service._session_feedback_system_prompt()
 

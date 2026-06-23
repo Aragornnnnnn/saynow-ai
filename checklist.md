@@ -796,3 +796,10 @@
 - [x] 턴 피드백 프롬프트와 후처리를 새 정책에 맞게 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## GOOD 기본 benchmark 하이라이트 보정
+
+- [x] live smoke에서 기본 `benchmarkMessage`가 세션 `highlightMessage`로 그대로 승격되는 문제를 확인한다.
+- [x] 기본 `benchmarkMessage`를 title-like highlight로 쓰지 않는 RED 테스트를 추가한다.
+- [x] 세션 하이라이트 후처리를 좁게 보강한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.

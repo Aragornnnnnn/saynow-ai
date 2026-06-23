@@ -2080,6 +2080,8 @@ def _postprocess_highlight_message(
         return _default_highlight_message(turn_feedback_entries)
     repaired = _repair_legacy_highlight_style(highlight_message).strip()
     repaired = re.sub(r"[.!。]+$", "", repaired).strip()
+    if repaired == _DEFAULT_GOOD_BENCHMARK_MESSAGE:
+        return _default_highlight_message(turn_feedback_entries)
     if _contains_quantitative_hook(repaired):
         return _default_highlight_message(turn_feedback_entries)
     if len(repaired) > 80 or _looks_like_sentence_summary(repaired):

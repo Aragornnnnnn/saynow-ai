@@ -429,3 +429,4 @@
 - 2026-06-23 프론트 계약 안정성을 위해 `GOOD`의 `benchmarkMessage`는 항상 문자열로 내려주기로 다시 결정했다. 정량 근거가 있으면 기존 정량 문구를 쓰고, 정량 근거가 없으면 비정량 기본 문구를 사용한다. `NEEDS_IMPROVEMENT`는 의미가 섞이지 않도록 기존처럼 `benchmarkMessage=null`을 유지한다.
 - 2026-06-23 새 기준 구현 방향은 `GOOD` 후처리에서 검증된 정량 catalog 문구를 우선하고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요`를 넣는 것이다. 이 기본 문구는 세션 `highlightMessage`의 정량 후보로 취급하지 않는다.
 - 2026-06-23 검증 결과 focused 테스트 3개, 전체 `unittest discover -s tests -p 'test*.py'` 124개, `compileall app tests`, `git diff --check`가 통과했다.
+- 2026-06-23 배포 후 live smoke에서 `Kimchi stew is my favorite because it feels warm and comforting.`는 `GOOD`과 기본 `benchmarkMessage`를 반환했지만, 모델이 같은 문장을 세션 `highlightMessage`로 복사했다. 하이라이트는 칭호형이어야 하므로 기본 benchmark 문구가 highlight로 들어오면 `핵심 질문에 자연스럽게 답한 사람`으로 되돌리도록 보강했다. 보강 후 focused 테스트 3개, 전체 `unittest discover -s tests -p 'test*.py'` 125개, `compileall app tests`, `git diff --check`가 통과했다.
