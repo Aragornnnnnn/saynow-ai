@@ -864,4 +864,4 @@
 - [x] 축하 상황의 `Good.` 같은 무성의한 반응이 GOOD으로 남지 않도록 RED 테스트로 고정한다.
 - [x] 역할 기반 속마음 보정과 짧은 반응 tone issue를 일반 규칙으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] live smoke를 실행하고 결과를 context notes에 기록한다.
+- [x] live smoke를 실행하고 결과를 context notes에 기록한다.
