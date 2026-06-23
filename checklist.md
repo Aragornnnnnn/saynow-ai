@@ -854,5 +854,5 @@
 - [x] 룸메이트/친구 역할에서도 민감한 연애 상태 질문은 NEEDS_IMPROVEMENT로 보정하는 RED 테스트를 추가한다.
 - [x] evidence 검증과 tone issue 보정을 일반 규칙으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] live smoke를 실행한다.
-- [ ] 결과를 context notes에 기록하고 커밋/push한다.
+- [x] live smoke를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
