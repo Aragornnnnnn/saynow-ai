@@ -477,6 +477,46 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
         self.assertIn("다시 물어", result.innerThought)
 
+    def test_next_question_repairs_live_roommate_hobby_intro_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Nice, that sounds like a fun mix. What made you decide to come all the way here?",
+            "translatedQuestion": "좋네, 꽤 재밌는 조합이네. 어쩌다 여기까지 오게 된 거야?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "입주 첫날 룸메이트 charlie와 서로를 소개합니다.",
+                "conversationGoal": "룸메이트와 첫 만남에서 자기소개와 공동생활 방식을 말한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "What are you studying, and what are you into?",
+                "translatedQuestion": "뭐 전공하고 뭐 좋아해?",
+                "userUtterance": "I'm studying business, and I like playing games and trying new food. I’m excited to learn more about you too.",
+            },
+            "nextQuestion": {
+                "questionId": 2,
+                "sequence": 2,
+                "questionEn": "What made you decide to come all the way here?",
+                "questionKo": "어쩌다 여기까지 오게 된 거야?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("전공", result.innerThought)
+        self.assertIn("좋아", result.innerThought)
+
     def test_next_question_repairs_generic_normal_inner_thought_for_roommate_schedule(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -515,6 +555,124 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThoughtType, "GOOD")
         self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
         self.assertIn("청소", result.innerThought)
+
+    def test_next_question_repairs_live_cleaning_schedule_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds easy to keep up with. Wanna share dinner tonight?",
+            "translatedQuestion": "그럼 지키기 쉽겠다. 오늘 저녁 같이 먹을래?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "입주 첫날 룸메이트 charlie와 공동생활 방식을 이야기합니다.",
+                "conversationGoal": "룸메이트와 청소와 식사 방식을 자연스럽게 조율한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "How should we split the cleaning and stuff?",
+                "translatedQuestion": "청소 같은 거 어떻게 나눌까?",
+                "userUtterance": "A cleaning schedule sounds good to me. We could alternate each week and adjust if one of us gets busy.",
+            },
+            "nextQuestion": {
+                "questionId": 4,
+                "sequence": 4,
+                "questionEn": "Wanna share dinner tonight?",
+                "questionKo": "오늘 저녁 같이 먹을래?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("청소", result.innerThought)
+        self.assertIn("조율", result.innerThought)
+
+    def test_next_question_repairs_live_weekend_plan_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds fun. I have some good news.",
+            "translatedQuestion": "재밌겠다. 나 좋은 소식이 있어.",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 2,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "카페에서 수다떨면서 주말 약속 잡기",
+                "briefing": "룸메이트와 주말에 하고 싶은 일을 이야기합니다.",
+                "conversationGoal": "주말 계획을 자연스럽게 제안한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "What do you like doing on weekends?",
+                "translatedQuestion": "주말에는 뭐 하는 걸 좋아해?",
+                "userUtterance": "I usually like visiting cafes and walking around new neighborhoods. I also want to try a local festival while I’m here.",
+            },
+            "nextQuestion": {
+                "questionId": 6,
+                "sequence": 3,
+                "questionEn": "I have some good news.",
+                "questionKo": "나 좋은 소식이 있어.",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("주말", result.innerThought)
+        self.assertIn("계획", result.innerThought)
+
+    def test_next_question_marks_fish_boundary_with_anything_else_as_good_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Got it. What should we cook together?",
+            "translatedQuestion": "알겠어. 같이 뭐 해 먹을까?",
+            "innerThought": "같이 먹겠다고 해줘서 좋다. 못 먹는 음식만 알면 서로 편하게 지낼 수 있겠어.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "입주 첫날 룸메이트 charlie와 식사 취향을 이야기합니다.",
+                "conversationGoal": "못 먹는 음식을 공격적이지 않게 말한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "Would you like to share dinner tonight?",
+                "translatedQuestion": "오늘 저녁 같이 먹을래?",
+                "userUtterance": "I'd love to share dinner. I can't eat fish, but I'm fine with almost anything else.",
+            },
+            "nextQuestion": {
+                "questionId": 5,
+                "sequence": 5,
+                "questionEn": "What should we cook together?",
+                "questionKo": "같이 뭐 해 먹을까?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertIn("못 먹는 음식", result.innerThought)
 
     def test_next_question_replaces_generic_normal_inner_thought_for_broken_but_understandable_answer(self):
         from app.models.conversation import NextQuestionRequest
@@ -592,6 +750,85 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.innerThoughtType, "BAD")
         self.assertIn("그만 물어", result.innerThought)
+
+    def test_next_question_marks_roommate_buy_me_milk_as_bad_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Okay. Do you want to come with me?",
+            "translatedQuestion": "알겠어. 같이 갈래?",
+            "innerThought": "짧고 딱 잘 말했네. 부탁도 받았고, 이제 자연스럽게 마무리하면 되겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "카페에서 수다떨면서 주말 약속 잡기",
+                "briefing": "룸메이트와 장보기 계획을 이야기합니다.",
+                "conversationGoal": "부탁을 부드럽게 말한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "Do you need anything from the store?",
+                "translatedQuestion": "가게에서 필요한 거 있어?",
+                "userUtterance": "No. Buy me milk.",
+            },
+            "nextQuestion": {
+                "questionId": 8,
+                "sequence": 5,
+                "questionEn": "Do you want to come with me?",
+                "questionKo": "같이 갈래?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertNotIn("짧고 딱 잘 말했네", result.innerThought)
+        self.assertIn("시키", result.innerThought)
+
+    def test_next_question_uses_specific_bad_inner_thought_for_sensitive_relationship_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That is a lot to ask. What is your dream?",
+            "translatedQuestion": "꽤 많이 물어보네. 네 꿈은 뭐야?",
+            "innerThought": "어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아.",
+            "innerThoughtType": "BAD",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 3,
+                "title": "서로 더 알아가는 밤 — 룸메 토크",
+                "briefing": "룸메이트와 서로에 대해 더 알아갑니다.",
+                "conversationGoal": "상대가 불편하지 않게 질문한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "You can ask me something if you want.",
+                "translatedQuestion": "원하면 나한테 뭐 물어봐도 돼.",
+                "userUtterance": "How old are you? Do you have a boyfriend? Why are you single?",
+            },
+            "nextQuestion": {
+                "questionId": 10,
+                "sequence": 2,
+                "questionEn": "What is your dream?",
+                "questionKo": "네 꿈은 뭐야?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertNotIn("차갑게", result.innerThought)
+        self.assertIn("사적", result.innerThought)
+        self.assertIn("불편", result.innerThought)
 
     def test_closing_message_returns_final_ai_message_and_inner_thought(self):
         from app.models.conversation import ClosingMessageRequest
@@ -1473,6 +1710,47 @@ class ConversationServiceTest(unittest.TestCase):
         )
         self.assertIn("Why are you single", cached.correctionReason)
         self.assertIn("사적인", cached.correctionReason)
+        self.assertIsNone(cached.benchmarkMessage)
+
+    def test_turn_feedback_repairs_underwhelming_good_reaction_to_roommate_good_news(self):
+        from app.models.conversation import TurnFeedbackRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"좋네\"라고 짧게 반응하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "상대의 좋은 소식에 짧게 반응했어요.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": "질문에 맞는 핵심을 자연스럽게 전달했어요",
+        })
+
+        request = TurnFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "turnId": 5000,
+            "sequence": 3,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "카페에서 수다떨면서 주말 약속 잡기",
+                "briefing": "룸메이트와 주말 계획과 좋은 소식을 이야기합니다.",
+                "conversationGoal": "상대의 좋은 소식에 자연스럽게 반응한다.",
+                "counterpartRole": "roommate",
+            },
+            "turn": {
+                "aiQuestion": "I passed the interview yesterday. What do you think?",
+                "translatedQuestion": "나 어제 면접 붙었어. 어떻게 생각해?",
+                "userUtterance": "Good.",
+            },
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "That's amazing! Congratulations.")
+        self.assertIn("Good.", cached.correctionReason)
+        self.assertIn("성의 없", cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
 
     def test_turn_feedback_contextualizes_hate_food_without_noise_correction(self):
