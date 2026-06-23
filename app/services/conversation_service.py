@@ -417,6 +417,8 @@ def _infer_missing_detected_patterns(
     feedback: TurnFeedbackData,
     detected_patterns: tuple[DetectedErrorPattern, ...],
 ) -> tuple[DetectedErrorPattern, ...]:
+    if feedback.feedbackType == FeedbackType.GOOD:
+        return _infer_correct_good_surface_patterns(request, detected_patterns)
     if any(pattern.error_type == "indirect_question_word_order" for pattern in detected_patterns):
         return detected_patterns
     if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
@@ -436,6 +438,195 @@ def _infer_missing_detected_patterns(
             pattern=pattern,
         ),
     )
+
+
+def _infer_correct_good_surface_patterns(
+    request: TurnFeedbackRequest,
+    detected_patterns: tuple[DetectedErrorPattern, ...],
+) -> tuple[DetectedErrorPattern, ...]:
+    inferred_patterns: list[DetectedErrorPattern] = []
+    existing_keys = {
+        (detected_pattern.error_type, _normalize_visible_text(detected_pattern.evidence))
+        for detected_pattern in detected_patterns
+    }
+    for error_type in _GOOD_SURFACE_PATTERN_PRIORITY:
+        pattern = get_error_pattern(error_type)
+        if pattern is None or not pattern.gamifiable or pattern.korean_pct is None:
+            continue
+        evidence = _correct_good_surface_evidence(request.turn.userUtterance, error_type)
+        if not evidence:
+            continue
+        key = (error_type, _normalize_visible_text(evidence))
+        if key in existing_keys:
+            continue
+        existing_keys.add(key)
+        inferred_patterns.append(
+            DetectedErrorPattern(
+                error_type=error_type,
+                status="correct",
+                evidence=evidence,
+                pattern=pattern,
+            )
+        )
+    return (*detected_patterns, *inferred_patterns)
+
+
+def _correct_good_surface_evidence(user_utterance: str, error_type: str) -> str | None:
+    normalized = _normalize_visible_text(user_utterance)
+    if error_type == "article_a_omission":
+        return _article_a_evidence(normalized)
+    if error_type == "article_the":
+        return _article_the_evidence(normalized)
+    if error_type == "noun_plural":
+        return _noun_plural_evidence(normalized)
+    if error_type == "prep_omission":
+        return _preposition_evidence(normalized)
+    if error_type == "tense_aspect":
+        return _tense_aspect_evidence(normalized)
+    return None
+
+
+def _article_a_evidence(normalized_utterance: str) -> str | None:
+    tokens = normalized_utterance.split()
+    skip_heads = {"few", "lot", "little", "bit", "while"}
+    stop_words = {
+        "and",
+        "because",
+        "but",
+        "so",
+        "if",
+        "when",
+        "that",
+        "which",
+        "who",
+        "where",
+        "with",
+        "from",
+        "for",
+        "in",
+        "on",
+        "at",
+        "to",
+        "of",
+        "is",
+        "are",
+        "was",
+        "were",
+        "would",
+        "could",
+        "should",
+        "will",
+        "can",
+        "may",
+        "might",
+        "here",
+        "there",
+    }
+    for index, token in enumerate(tokens[:-1]):
+        if token not in {"a", "an"}:
+            continue
+        next_word = tokens[index + 1]
+        if next_word in skip_heads or len(next_word) <= 1:
+            continue
+        phrase = [token, next_word]
+        for following_word in tokens[index + 2:index + 4]:
+            if following_word in stop_words:
+                break
+            phrase.append(following_word)
+        return " ".join(phrase)
+    return None
+
+
+def _article_the_evidence(normalized_utterance: str) -> str | None:
+    tokens = normalized_utterance.split()
+    stop_words = {"and", "because", "but", "so", "if", "when", "is", "are", "was", "were"}
+    for index, token in enumerate(tokens[:-1]):
+        if token != "the":
+            continue
+        phrase = [token, tokens[index + 1]]
+        for following_word in tokens[index + 2:index + 3]:
+            if following_word in stop_words:
+                break
+            phrase.append(following_word)
+        return " ".join(phrase)
+    return None
+
+
+def _noun_plural_evidence(normalized_utterance: str) -> str | None:
+    tokens = normalized_utterance.split()
+    excluded_tokens = {
+        "always",
+        "because",
+        "does",
+        "feels",
+        "is",
+        "makes",
+        "needs",
+        "this",
+        "was",
+    }
+    phrase_modifiers = {"different", "many", "new", "old", "other", "several", "some", "two", "three"}
+    for index, token in enumerate(tokens):
+        if token in excluded_tokens or len(token) <= 3:
+            continue
+        if token.endswith("ss") or not token.endswith(("s", "es", "ies")):
+            continue
+        phrase = [token]
+        if index > 0 and tokens[index - 1] in phrase_modifiers:
+            phrase.insert(0, tokens[index - 1])
+        return " ".join(phrase)
+    return None
+
+
+def _preposition_evidence(normalized_utterance: str) -> str | None:
+    tokens = normalized_utterance.split()
+    prepositions = {"around", "at", "for", "from", "in", "on", "with"}
+    stop_words = {"and", "because", "but", "so", "that", "when"}
+    for index, token in enumerate(tokens[:-1]):
+        if token not in prepositions:
+            continue
+        phrase = [token]
+        for following_word in tokens[index + 1:index + 4]:
+            if following_word in stop_words:
+                break
+            phrase.append(following_word)
+            if len(phrase) >= 2 and following_word not in {"a", "an", "my", "new", "the"}:
+                break
+        if len(phrase) >= 2:
+            return " ".join(phrase)
+    return None
+
+
+def _tense_aspect_evidence(normalized_utterance: str) -> str | None:
+    perfect_match = re.search(r"\b(?:i ve|ive|you ve|youve|we ve|weve|they ve|theyve|has|have|had)\s+(?:just\s+)?\w+(?:ed|en)?\b", normalized_utterance)
+    if perfect_match:
+        return perfect_match.group(0)
+    irregular_past_verbs = {
+        "ate",
+        "became",
+        "began",
+        "bought",
+        "came",
+        "did",
+        "found",
+        "gave",
+        "got",
+        "had",
+        "made",
+        "met",
+        "said",
+        "saw",
+        "took",
+        "was",
+        "went",
+        "were",
+    }
+    for token in normalized_utterance.split():
+        if token in irregular_past_verbs:
+            return token
+        if len(token) > 4 and token.endswith("ed"):
+            return token
+    return None
 
 
 def _filter_detected_patterns_by_evidence(
@@ -872,10 +1063,10 @@ def _turn_feedback_system_prompt() -> str:
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
             "detectedPatterns evidence must be a short phrase copied from the user utterance. "
-            "For GOOD benchmarkMessage, reuse this numeric catalog only when a validated detectedPattern proves the user used that pattern correctly. "
-            "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage should use that pattern's catalog copy. "
+            "For GOOD benchmarkMessage, prefer a visible numeric catalog hook whenever the user clearly used a gamifiable pattern correctly. "
+            "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage should use that pattern's catalog copy instead of the default message. "
             "Do not create an unsupported numeric benchmarkMessage. "
-            f"If no validated correct detectedPattern exists, use the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}'. "
+            f"Use the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' only when no validated or clearly inferable correct catalog pattern exists. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
         (
@@ -900,7 +1091,7 @@ def _turn_feedback_system_prompt() -> str:
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
             "For GOOD, benchmarkMessage must be a Korean feedback sentence. "
-            f"For GOOD, benchmarkMessage must use a visible numeric hook from the existing catalog only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise return the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}'. "
+            f"For GOOD, benchmarkMessage should use a visible numeric hook from the existing catalog whenever a gamifiable correct detectedPattern has koreanPct and copied evidence; return the default non-quantitative benchmarkMessage '{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' only as a last fallback. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
             "'I don't care', 'Next question', 'I angry if you ask that', and direct commands to professors or staff are tone or role-appropriateness issues even when the literal meaning is understandable. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
@@ -919,7 +1110,7 @@ def _turn_feedback_system_prompt() -> str:
             "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT correctionReason uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. GOOD numeric benchmarkMessage is allowed only when a supported detectedPattern exists; otherwise use the default non-quantitative benchmarkMessage. "
+            "8. GOOD numeric benchmarkMessage is preferred when a supported correct detectedPattern exists; otherwise use the default non-quantitative benchmarkMessage. "
             "9. No legacy fields are present."
         ),
         (
@@ -934,7 +1125,8 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
-            f"No-pattern GOOD example: User utterance 'I would go to Italy because I want to see old cities.' should use benchmarkMessage='{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' unless detectedPatterns contains a validated correct catalog pattern with copied evidence. "
+            "GOOD example: User utterance 'I came here because I wanted to learn how people live in a different culture.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'a different culture'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
+            f"No-pattern GOOD example should use benchmarkMessage='{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' only when no catalog pattern is visible in the utterance. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason='what is it → what it is...', feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
@@ -2637,7 +2829,7 @@ def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) 
 def _correct_highlight_message(korean_pct: float, display_name: str, feedback_copy: str) -> str:
     if _contains_quantitative_hook(feedback_copy):
         return feedback_copy
-    return f"한국인 {_format_percentage(korean_pct)}%가 헷갈리는 {display_name}을 챙긴 사람"
+    return f"한국인의 {_format_percentage(korean_pct)}%가 헷갈리는 {display_name}을 챙긴 사람"
 
 
 def _attempt_highlight_message(korean_pct: float, display_name: str) -> str:

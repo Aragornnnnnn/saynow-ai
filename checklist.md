@@ -838,3 +838,11 @@
 - [x] 속마음 fallback과 tone issue 후처리를 좁게 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## GOOD benchmarkMessage 수치형 우선 정책
+
+- [x] GOOD 턴에서 LLM이 detectedPatterns를 누락해도 명확한 surface usage를 수치형 benchmark로 복구하는 RED 테스트를 추가한다.
+- [x] 기본 benchmark 문구를 “정량 catalog 근거가 전혀 없을 때만” 쓰도록 후처리를 수정한다.
+- [x] 턴 피드백 프롬프트의 benchmark 정책을 새 기준에 맞게 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
