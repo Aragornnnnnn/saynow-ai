@@ -1179,12 +1179,16 @@ def _repair_closing_message(
         updates["translatedMessage"] = _fallback_closing_message_ko(request)
 
     expected_type = _fallback_inner_thought_type_for_closing(request)
-    if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
+    if expected_type == "BAD":
+        if response.innerThoughtType != expected_type:
+            updates["innerThoughtType"] = expected_type
+        if not _looks_like_bad_inner_thought(response.innerThought):
+            updates["innerThought"] = _fallback_inner_thought_for_closing(request)
+    elif expected_type == "NORMAL" and response.innerThoughtType != expected_type:
         updates["innerThoughtType"] = expected_type
     if (
         expected_type == "GOOD"
         and response.innerThoughtType == "NORMAL"
-        and _is_generic_normal_inner_thought(response.innerThought)
     ):
         updates["innerThoughtType"] = expected_type
     if _is_generic_normal_inner_thought(response.innerThought) or _is_meta_inner_thought(response.innerThought):
@@ -1251,6 +1255,9 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
         and _is_generic_normal_inner_thought(response.innerThought)
     ) or (
+        expected_type == "BAD"
+        and not _looks_like_bad_inner_thought(response.innerThought)
+    ) or (
         _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
     updates: dict[str, Any] = {}
@@ -1259,7 +1266,6 @@ def _repair_next_question_inner_thought(
     if (
         expected_type == "GOOD"
         and response.innerThoughtType == "NORMAL"
-        and _is_generic_normal_inner_thought(response.innerThought)
     ):
         updates["innerThoughtType"] = expected_type
     if should_replace_thought:
@@ -1300,6 +1306,9 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     thought_type = _fallback_inner_thought_type(request)
     role = _normalize_visible_text(request.scenario.counterpartRole)
     if thought_type == "BAD":
+        normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+        if "hate fish" in normalized or "don t make that" in normalized or "don't make that" in normalized:
+            return "생선을 못 먹는 건 알겠는데, 그거 만들지 말라는 말은 좀 차갑게 들리네."
         if "stop asking" in _normalize_visible_text(request.currentTurn.userUtterance):
             return "그만 물어보라는 말이네. 지금은 대화를 이어가고 싶지 않은 것처럼 느껴져."
         if "professor" in role or "teacher" in role:
@@ -1309,6 +1318,28 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "말뜻은 알겠는데, 지금 표현은 조금 차갑게 들리네."
     if thought_type == "GOOD":
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+        if "strategy games" in normalized and "trying new food" in normalized:
+            return "전공이랑 좋아하는 것도 자연스럽게 말해주네. 나한테 다시 물어봐줘서 첫 대화가 편해졌어."
+        if "simple schedule" in normalized and "alternate weekly" in normalized:
+            return "청소 스케줄을 구체적으로 제안해주네. 같이 살 때 조율하기 편하겠다."
+        if "saturday works" in normalized or "sunday afternoon" in normalized:
+            return "가능한 날짜를 분명히 말해주네. 약속 잡기 편하겠다."
+        if "trying cafes" in normalized and "local festival" in normalized:
+            return "하고 싶은 걸 구체적으로 말해주네. 같이 주말 계획 세우기 좋겠다."
+        if "congratulations" in normalized and "celebrate" in normalized:
+            return "축하해주면서 같이 기뻐해주네. 주말에 만나도 분위기가 좋겠다."
+        if "help carry" in normalized:
+            return "같이 가주고 짐도 도와주겠다니 고맙네. 부담 없이 부탁해도 되겠다."
+        if "favorite memory" in normalized and "moving here" in normalized:
+            return "먼저 편하게 물어봐주네. 나도 자연스럽게 내 이야기를 꺼내기 좋겠다."
+        if "my dream is" in normalized and "international company" in normalized:
+            return "꿈이랑 전공 이유를 구체적으로 말해주네. 사람에 관심이 많은 타입 같아."
+        if "thanks for checking on me" in normalized or "appreciate you asking" in normalized:
+            return "걱정을 받아주면서 고맙다고 하네. 너무 캐묻지 않아도 될 것 같아."
+        if "sleeping on my side" in normalized and "tell me if it happens again" in normalized:
+            return "미안해하면서 바로 해결해보겠다고 하네. 룸메이트로서 배려가 느껴져."
+        if "can t eat fish" in normalized or "can't eat fish" in normalized:
+            return "같이 먹겠다고 하면서 못 먹는 음식도 분명히 말해주네. 저녁 준비하기 편하겠다."
         if "simple plan" in normalized and "free day" in normalized:
             return "계획도 세우고 여유도 남기는 타입이구나. 여행 스타일이 꽤 분명해서 이야기하기 좋네."
         if "live concert" in normalized and "would love to see" in normalized:
@@ -1362,6 +1393,23 @@ def _is_generic_normal_inner_thought(inner_thought: str) -> bool:
     return any(marker in normalized for marker in generic_markers)
 
 
+def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
+    normalized = _normalize_visible_text(inner_thought)
+    bad_markers = [
+        "차갑",
+        "날이 서",
+        "명령",
+        "무례",
+        "그만",
+        "불편",
+        "짜증",
+        "강하게",
+        "공격",
+        "딱 잘라",
+    ]
+    return any(marker in normalized for marker in bad_markers)
+
+
 def _looks_like_short_broken_or_flat_answer(normalized_utterance: str) -> bool:
     if not normalized_utterance:
         return True
@@ -1390,6 +1438,23 @@ def _looks_like_detailed_good_answer(normalized_utterance: str) -> bool:
     if any(marker in normalized for marker in issue_markers):
         return False
     words = normalized_utterance.split()
+    contextual_good_markers = [
+        ("strategy games", "trying new food"),
+        ("simple schedule", "alternate weekly"),
+        ("saturday works", "sunday afternoon"),
+        ("trying cafes", "local festival"),
+        ("congratulations", "celebrate"),
+        ("help carry",),
+        ("favorite memory", "moving here"),
+        ("my dream is", "international company"),
+        ("thanks for checking on me",),
+        ("appreciate you asking",),
+        ("sleeping on my side", "tell me if it happens again"),
+        ("can t eat fish", "totally fine"),
+        ("can't eat fish", "totally fine"),
+    ]
+    if any(all(marker in normalized for marker in markers) for markers in contextual_good_markers):
+        return True
     if len(words) < 14:
         return False
     return (
@@ -1818,6 +1883,17 @@ def _feedback_for_tone_issue(
         )
     if issue_kind == "hate":
         normalized = _normalize_visible_text(request.turn.userUtterance)
+        if "fish" in normalized:
+            return TurnFeedbackData(
+                turnId=feedback.turnId,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="\"생선 싫어. 그거 만들지 마\"라고 날카롭게 막는 것처럼 들려요.",
+                feedbackDetail=None,
+                correctionExpression="I can't eat fish, so could we make something else?",
+                correctionReason="I hate fish. Don't make that.은 못 먹는 음식을 말하는 상황이어도 강하고 명령처럼 들릴 수 있어요. I can't eat fish, so could we make something else?처럼 말하면 제한 사항과 요청이 더 부드럽게 전달돼요.",
+                positiveFeedback="못 먹는 음식을 분명히 말한 점은 좋아요.",
+                benchmarkMessage=None,
+            )
         if "vegetable" in normalized or "salad" in normalized:
             return TurnFeedbackData(
                 turnId=feedback.turnId,

@@ -829,3 +829,12 @@
 - [x] README에 BE 연동 기준과 응답 형식을 정리한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 커밋하고 `feat/LAN-28`, `develop`에 push한다.
+
+## 룸메이트 카테고리 라이브 재테스트 후속 보정
+
+- [x] GOOD 룸메이트 발화가 generic NORMAL 속마음으로 남는 문제를 RED 테스트로 고정한다.
+- [x] `I hate fish. Don't make that.` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
+- [x] closing-message에서 BAD 타입과 긍정 속마음 텍스트가 불일치하는 문제를 RED 테스트로 고정한다.
+- [x] 속마음 fallback과 tone issue 후처리를 좁게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
