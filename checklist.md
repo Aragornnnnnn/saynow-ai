@@ -777,3 +777,14 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 변경 사항을 커밋하고 `origin`과 `origin/develop`에 push한다.
 - [x] GitHub Actions develop 배포와 live smoke를 확인한다.
+
+## live 품질 테스트 기반 AI 응답 튜닝
+
+- [x] BE live 테스트 결과에서 품질 실패 유형을 분류한다.
+- [x] `I don't care`, `Next question`, 방어적/무례한 발화가 GOOD으로 저장되지 않는 RED 테스트를 추가한다.
+- [x] 속마음이 튜터 관찰문이 아니라 상대방의 1인칭 반응으로 보정되는 RED 테스트를 추가한다.
+- [x] 근거 없는 benchmark/highlight 숫자 hook이 남지 않는 RED 테스트를 추가한다.
+- [x] 프롬프트와 deterministic postprocess를 최소 변경으로 보강한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] live smoke에서 문제 발화 세트를 다시 검증한다.
+- [ ] 결과와 남은 리스크를 context notes에 기록한다.

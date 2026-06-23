@@ -130,6 +130,7 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
 
     stage_started_at = time.perf_counter()
     response = _repair_next_question_drift(request, response)
+    response = _repair_next_question_inner_thought(request, response)
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
 
@@ -419,10 +420,7 @@ def _postprocess_turn_benchmark_message(
 ) -> TurnFeedbackData:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback
-    benchmark_message = (
-        _benchmark_message_from_detected_patterns(request, detected_patterns)
-        or _fallback_good_benchmark_message(request, feedback)
-    )
+    benchmark_message = _benchmark_message_from_detected_patterns(request, detected_patterns)
     if feedback.benchmarkMessage == benchmark_message:
         return feedback
     return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": benchmark_message})
@@ -442,20 +440,6 @@ def _benchmark_message_from_detected_patterns(
         ):
             return _correct_turn_benchmark_message_from_pattern(pattern)
     return None
-
-
-def _fallback_good_benchmark_message(
-    request: TurnFeedbackRequest,
-    feedback: TurnFeedbackData,
-) -> str:
-    del feedback
-    pattern = _good_surface_pattern_from_utterance(request.turn.userUtterance)
-    if pattern is not None:
-        return _correct_turn_benchmark_message_from_pattern(pattern)
-    fallback_pattern = get_error_pattern("tense_aspect")
-    if fallback_pattern is not None:
-        return _correct_turn_benchmark_message_from_pattern(fallback_pattern)
-    return "한국인 학습자가 자주 헷갈리는 표현을 챙겼어요"
 
 
 def _correct_turn_benchmark_message_from_pattern(pattern: ErrorPattern) -> str:
@@ -491,82 +475,6 @@ def _turn_benchmark_sentence_from_highlight_message(highlight_message: str) -> s
     if cleaned.endswith("한 사람"):
         return f"{cleaned[:-len('한 사람')]}했어요"
     return cleaned
-
-
-def _good_surface_pattern_from_utterance(user_utterance: str) -> ErrorPattern | None:
-    normalized = f" {_normalize_visible_text(user_utterance)} "
-    for error_type in _GOOD_SURFACE_PATTERN_PRIORITY:
-        if _matches_good_surface_usage(error_type, normalized):
-            return get_error_pattern(error_type)
-    return None
-
-
-def _matches_good_surface_usage(error_type: str, normalized_utterance: str) -> bool:
-    if error_type == "indirect_question_word_order":
-        return _contains_indirect_question_pattern(normalized_utterance) or bool(
-            re.search(
-                r"\b(?:what|who|where|when|why|how)\s+(?:i|you|he|she|it|we|they)\s+\w+",
-                normalized_utterance,
-            )
-        )
-    if error_type == "article_a_omission":
-        return bool(re.search(r"\b(?:a|an)\s+[a-z][a-z'-]*", normalized_utterance))
-    if error_type == "article_the":
-        return bool(re.search(r"\bthe\s+[a-z][a-z'-]*", normalized_utterance))
-    if error_type == "noun_plural":
-        return _contains_plural_noun_surface(normalized_utterance)
-    if error_type == "sv_agreement":
-        return bool(
-            re.search(
-                r"\b(?:it|he|she|this|that|voice|meat|food|song|music|app|sharing)\s+(?!(?:is|was|has|does)\b)[a-z]+s\b",
-                normalized_utterance,
-            )
-        )
-    if error_type == "be_omission":
-        return bool(re.search(r"\b(?:am|is|are|was|were|be|been|being)\b", normalized_utterance))
-    if error_type == "prep_omission":
-        return bool(
-            re.search(
-                r"\b(?:in|on|at|to|with|for|from|after|before|by|about|into|over|under)\b",
-                normalized_utterance,
-            )
-        )
-    if error_type == "tense_aspect":
-        return bool(
-            re.search(
-                r"\b(?:was|were|saw|went|ate|tried|played|used|did|had|would|could|should|have been|has been)\b",
-                normalized_utterance,
-            )
-            or re.search(r"\b[a-z]+ed\b", normalized_utterance)
-        )
-    return False
-
-
-def _contains_plural_noun_surface(normalized_utterance: str) -> bool:
-    excluded_words = {
-        "always",
-        "because",
-        "does",
-        "feels",
-        "has",
-        "is",
-        "looks",
-        "makes",
-        "news",
-        "series",
-        "sounds",
-        "this",
-        "was",
-        "yes",
-    }
-    words = re.findall(r"\b[a-z][a-z'-]*\b", normalized_utterance)
-    return any(
-        len(word) > 3
-        and word.endswith("s")
-        and not word.endswith("ss")
-        and word not in excluded_words
-        for word in words
-    )
 
 
 def _fallback_turn_score_breakdown(feedback: TurnFeedbackData) -> NativeScoreBreakdown:
@@ -734,7 +642,10 @@ def _next_question_system_prompt() -> str:
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Use the provided Counterpart role. A professor, friend, roommate, cafe staff, or stranger may feel differently about the same sentence. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
-            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate."
+            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
+            "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
+            "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
+            "Direct commands such as 'Send me the file now' can feel rude to a professor or staff member."
         ),
         (
             "Conversation Style Examples:\n"
@@ -744,6 +655,8 @@ def _next_question_system_prompt() -> str:
             '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?","innerThought":"무슨 일을 겪었는지 조금 더 들어보고 싶네.","innerThoughtType":"NORMAL"}\n'
             "Good JSON when the next fixed question Korean is casual banmal: "
             '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"여행 이야기를 편하게 꺼내 줘서 나도 계속 묻기 좋네.","innerThoughtType":"GOOD"}\n'
+            "Good JSON for blunt user 'Anywhere is fine. I don't care.': "
+            '{"aiQuestion":"Okay, anywhere works. Do you cook often?","translatedQuestion":"그래요, 어디든 괜찮군요. 요리는 자주 하나요?","innerThought":"어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아.","innerThoughtType":"BAD"}\n'
             "Bad aiQuestion style: 'I see. Do you cook often?'\n"
             "Bad translatedQuestion style when the fixed Korean question is casual banmal: '정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
@@ -829,9 +742,9 @@ def _turn_feedback_system_prompt() -> str:
             f"{prompt_error_pattern_catalog()}\n"
             "Use this catalog to populate detectedPatterns. "
             "detectedPatterns evidence must be a short phrase copied from the user utterance. "
-            "For GOOD benchmarkMessage, reuse this numeric catalog as a fun learning hook, not as a strict error diagnosis. "
+            "For GOOD benchmarkMessage, reuse this numeric catalog only when a validated detectedPattern proves the user used that pattern correctly. "
             "When a gamifiable pattern is used correctly, korean_pct is available, and evidence appears in the user utterance, GOOD benchmarkMessage should use that pattern's catalog copy. "
-            "If no validated detectedPattern exists, choose a numeric catalog hook from visible surface usage in the user utterance, such as a/an, the, plural -s, third-person singular -s, be verbs, prepositions, or tense/aspect words. "
+            "If no validated detectedPattern exists, benchmarkMessage must be null. "
             "Do not create a non-quantitative benchmarkMessage for GOOD. "
             "When a high-priority meaning-breaking pattern is incorrect, choose it as the main correction point."
         ),
@@ -856,8 +769,10 @@ def _turn_feedback_system_prompt() -> str:
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
-            "For GOOD, benchmarkMessage must be a short Korean feedback sentence with a visible numeric hook from the existing catalog, ending naturally with 했어요. Use the catalog meaning when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise choose the closest surface-usage catalog hook. "
+            "For GOOD, benchmarkMessage may be null. "
+            "For GOOD, benchmarkMessage must be a short Korean feedback sentence with a visible numeric hook from the existing catalog only when a gamifiable correct detectedPattern has koreanPct and copied evidence; otherwise return null. "
             "For NEEDS_IMPROVEMENT, benchmarkMessage must be null. "
+            "'I don't care', 'Next question', 'I angry if you ask that', and direct commands to professors or staff are tone or role-appropriateness issues even when the literal meaning is understandable. "
             "GOOD feedbackDetail must name the concrete content, choice, reason, place, or action from the user's utterance. "
             "Avoid generic praise such as '좋은 대답이에요!' or '질문에 맞게 하고 싶은 말을 분명하게 전달했어요.' "
             "For routine-change answers, praise the routine and reason, not a generic preference-and-reason pattern. "
@@ -869,12 +784,12 @@ def _turn_feedback_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. turnId copied exactly from the Turn ID line. "
             "2. NEEDS_IMPROVEMENT has positiveFeedback, correctionExpression, correctionReason, feedbackDetail=null, and benchmarkMessage=null. "
-            "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and benchmarkMessage is present. "
+            "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and benchmarkMessage only when a validated correct detectedPattern supports it. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
             "6. NEEDS_IMPROVEMENT correctionReason uses a short before→after expression plus a Korean reason. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
-            "8. GOOD benchmarkMessage contains a percentage hook from the catalog, either from a supported detectedPattern or visible surface usage. "
+            "8. GOOD benchmarkMessage must be null when no supported detectedPattern exists. "
             "9. No legacy fields are present."
         ),
         (
@@ -889,7 +804,7 @@ def _turn_feedback_system_prompt() -> str:
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
-            "Surface-usage GOOD example: User utterance 'I would go to Italy because I want to see old cities.' has plural -s surface usage, so it can use benchmarkMessage='한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요'. "
+            "No-pattern GOOD example: User utterance 'I would go to Italy because I want to see old cities.' should use benchmarkMessage=null unless detectedPatterns contains a validated correct catalog pattern with copied evidence. "
             "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason='what is it → what it is...', feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
@@ -1138,6 +1053,26 @@ def _repair_next_question_drift(
     )
 
 
+def _repair_next_question_inner_thought(
+    request: NextQuestionRequest,
+    response: NextQuestionResponse,
+) -> NextQuestionResponse:
+    expected_type = _fallback_inner_thought_type(request)
+    should_replace_thought = (
+        expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
+    ) or _is_meta_inner_thought(response.innerThought)
+    updates: dict[str, Any] = {}
+    if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
+        updates["innerThoughtType"] = expected_type
+    if should_replace_thought:
+        updates["innerThought"] = _fallback_inner_thought(request)
+    if not updates:
+        return response
+    data = response.model_dump(mode="json")
+    data.update(updates)
+    return NextQuestionResponse.model_validate(data)
+
+
 def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
     return NextQuestionResponse(
         aiQuestion=f"{_fallback_acknowledgement_en(request)} {request.nextQuestion.questionEn}",
@@ -1149,8 +1084,10 @@ def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQu
 
 def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    if any(marker in normalized for marker in ["i don t care", "i don't care", "wanna know that", "shut up"]):
+    if _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole):
         return "BAD"
+    if _looks_like_short_broken_or_flat_answer(normalized):
+        return "NORMAL"
     if (
         _looks_like_clear_reason_answer(request.currentTurn.userUtterance)
         or "could you" in normalized
@@ -1178,6 +1115,100 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     if "professor" in role or "teacher" in role:
         return "무슨 말인지는 알겠는데, 조금 더 차분히 설명해 주면 좋겠다."
     return "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다."
+
+
+def _is_meta_inner_thought(inner_thought: str) -> bool:
+    normalized = _normalize_visible_text(inner_thought)
+    meta_markers = [
+        "대화 이어가기",
+        "다음 질문",
+        "다음 얘기",
+        "넘어가",
+        "좋은 답변",
+        "피드백",
+        "문법",
+        "교정",
+        "학습자",
+        "사용자",
+        "learner",
+        "feedback",
+        "grammar",
+        "next question",
+    ]
+    return any(marker in normalized for marker in meta_markers)
+
+
+def _looks_like_short_broken_or_flat_answer(normalized_utterance: str) -> bool:
+    if not normalized_utterance:
+        return True
+    normalized_utterance = f" {normalized_utterance} "
+    if any(marker in normalized_utterance for marker in [" no plan ", " i just go ", " lost hotel "]):
+        return True
+    words = normalized_utterance.split()
+    return len(words) <= 4 and not any(marker in normalized_utterance for marker in ["could you", "would you", "please"])
+
+
+def _tone_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
+    normalized = f" {_normalize_visible_text(user_utterance)} "
+    if " wanna know that " in normalized or " why do you want to know that " in normalized:
+        return "wanna_know_that"
+    if " i don t care " in normalized or " i don't care " in normalized or " don t care " in normalized:
+        return "dont_care"
+    if " next question " in normalized:
+        return "next_question"
+    if " i angry if you ask " in normalized or " i am angry if you ask " in normalized:
+        return "angry_if_ask"
+    if " shut up " in normalized:
+        return "hate"
+    if re.search(r"\b(?:i hate|hate plan|hate this|hate it)\b", normalized):
+        return "hate"
+    if _looks_like_direct_command(user_utterance, counterpart_role):
+        return "direct_command"
+    return None
+
+
+def _looks_like_direct_command(user_utterance: str, counterpart_role: str) -> bool:
+    normalized = _normalize_visible_text(user_utterance)
+    if any(marker in normalized for marker in ["could you", "would you", "can you", "please"]):
+        return False
+    starts_like_command = re.search(
+        r"^(?:send|give|tell|show|bring|make|do|call|email|reply|open|close)\b",
+        normalized,
+    ) is not None
+    if not starts_like_command:
+        return False
+    role = _normalize_visible_text(counterpart_role)
+    return (
+        any(marker in role for marker in ["professor", "teacher", "staff", "server", "barista", "stranger"])
+        or " now" in normalized
+    )
+
+
+def _correction_expression_for_dont_care(user_utterance: str) -> str:
+    normalized = _normalize_visible_text(user_utterance)
+    if "anywhere" in normalized:
+        return "Anywhere works for me."
+    if "health" in normalized:
+        return "I'm not too worried about my health right now."
+    if "either" in normalized or "both" in normalized:
+        return "Either option works for me."
+    return "I'm okay with either option."
+
+
+def _correction_expression_for_next_question(user_utterance: str) -> str:
+    normalized = _normalize_visible_text(user_utterance)
+    if "abroad" in normalized or "korea" in normalized:
+        return "I prefer staying in Korea for now."
+    return "I'd rather talk about something else for now."
+
+
+def _correction_expression_for_direct_command(user_utterance: str) -> str:
+    normalized = _normalize_visible_text(user_utterance)
+    if "file" in normalized:
+        return "Could you send me the file when you have time?"
+    if "email" in normalized or "reply" in normalized:
+        return "Could you reply when you have time?"
+    return "Could you help me with this when you have time?"
 
 
 def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
@@ -1384,6 +1415,10 @@ def _postprocess_turn_feedback(
     if safety_feedback:
         return safety_feedback
 
+    tone_feedback = _feedback_for_tone_issue(request, feedback)
+    if tone_feedback:
+        return tone_feedback
+
     if _is_detail_only_overcorrection(request, feedback):
         if _looks_like_clear_travel_plan_answer(request.turn.userUtterance):
             return _good_feedback_for_clear_travel_plan_answer(request, feedback)
@@ -1448,6 +1483,85 @@ def _feedback_for_prompt_injection_utterance(
         positiveFeedback="영어로 문장을 만들어 보려는 시도는 이어갈 수 있어요.",
         benchmarkMessage=None,
     )
+
+
+def _feedback_for_tone_issue(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData | None:
+    issue_kind = _tone_issue_kind(request.turn.userUtterance, request.scenario.counterpartRole)
+    if issue_kind is None:
+        return None
+    if issue_kind == "wanna_know_that":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"그걸 왜 알고 싶은데?\"라고 살짝 방어적으로 되묻는 것과 같아요.",
+            feedbackDetail=None,
+            correctionExpression="I wonder why you are curious about it.",
+            correctionReason="Why do you wanna know that?은 친구 사이에서도 상대를 몰아붙이거나 방어적으로 들릴 수 있어요. I wonder why you are curious about it.처럼 말하면 궁금해서 묻는다는 의도가 더 부드럽게 전달돼요.",
+            positiveFeedback="상대의 질문 의도를 확인하려고 한 시도는 대화 흐름을 이해하려는 좋은 신호예요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "dont_care":
+        correction_expression = _correction_expression_for_dont_care(request.turn.userUtterance)
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"상관없어\"라고 딱 잘라 말해서 조금 차갑게 들리는 것과 같아요.",
+            feedbackDetail=None,
+            correctionExpression=correction_expression,
+            correctionReason=f"I don't care는 선택지를 받아들이는 뜻이어도 상대에게 차갑거나 무심하게 들릴 수 있어요. {correction_expression}처럼 말하면 괜찮다는 의도를 더 부드럽게 전달할 수 있어요.",
+            positiveFeedback="어떤 선택도 괜찮다는 핵심 의도는 짧게 전달했어요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "next_question":
+        correction_expression = _correction_expression_for_next_question(request.turn.userUtterance)
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"그 얘기는 됐고 다음 질문\"이라고 대화를 끊는 것처럼 들릴 수 있어요.",
+            feedbackDetail=None,
+            correctionExpression=correction_expression,
+            correctionReason=f"Next question은 상대에게 대화를 빨리 넘기라고 재촉하는 느낌을 줄 수 있어요. {correction_expression}처럼 말하면 내 생각은 유지하면서도 덜 차갑게 들려요.",
+            positiveFeedback="해외 생활에 대한 선호를 말하려는 핵심은 전달했어요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "angry_if_ask":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"그거 물어보면 나 화낼 거야\"라고 경고하듯 말하는 것과 같아요.",
+            feedbackDetail=None,
+            correctionExpression="I would rather not talk about that right now.",
+            correctionReason="I angry if you ask that은 문법도 어색하고 상대를 위협하듯 들릴 수 있어요. I would rather not talk about that right now.라고 하면 불편하다는 뜻을 차분하게 전할 수 있어요.",
+            positiveFeedback="말하고 싶지 않은 주제가 있다는 의도는 표현하려고 했어요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "direct_command":
+        correction_expression = _correction_expression_for_direct_command(request.turn.userUtterance)
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"지금 바로 보내세요\"라고 명령하듯 말하는 것과 같아요.",
+            feedbackDetail=None,
+            correctionExpression=correction_expression,
+            correctionReason=f"상대 역할이 교수님이나 직원이면 바로 명령하는 표현은 무례하게 들릴 수 있어요. {correction_expression}처럼 말하면 요청 의도는 유지하면서 더 정중해져요.",
+            positiveFeedback="필요한 것을 분명하게 말하려는 의도는 보였어요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "hate":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"싫어, 짜증 나\"라고 감정을 바로 던지는 것처럼 들릴 수 있어요.",
+            feedbackDetail=None,
+            correctionExpression="It is a little hard for me because it feels noisy.",
+            correctionReason="I hate처럼 강한 표현은 불만이 커 보일 수 있어요. It is a little hard for me because it feels noisy.처럼 말하면 불편함은 전달하면서도 상대가 받아들이기 쉬워요.",
+            positiveFeedback="불편한 상황을 설명하려는 의도는 분명했어요.",
+            benchmarkMessage=None,
+        )
+    return None
 
 
 def _needs_feedback_for_good_misclassified_actionable_issue(
