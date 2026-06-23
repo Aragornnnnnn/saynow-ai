@@ -515,6 +515,84 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThoughtType, "BAD")
         self.assertIn("그만 물어", result.innerThought)
 
+    def test_closing_message_returns_final_ai_message_and_inner_thought(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        captured = {}
+
+        def fake_chat(system_prompt, user_prompt, **kwargs):
+            captured["system"] = system_prompt
+            captured["user"] = user_prompt
+            return json.dumps({
+                "aiMessage": "Got it. That was clear enough for this situation. Let's wrap up here.",
+                "translatedMessage": "알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.",
+                "innerThought": "요청을 꽤 분명하게 말했네. 이 정도면 상황을 마무리해도 괜찮겠다.",
+                "innerThoughtType": "GOOD",
+            })
+
+        self.service.chat = fake_chat
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 11,
+                "title": "기숙사에서 조용히 해달라고 말하기",
+                "briefing": "룸메이트에게 밤에 조용히 해달라고 말하는 상황입니다.",
+                "conversationGoal": "불편함을 너무 공격적이지 않게 전달하고 조용히 해달라고 요청할 수 있다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "What do you want me to do?",
+                "translatedQuestion": "내가 어떻게 해주면 좋겠어?",
+                "userUtterance": "Could you keep it down at night? I have an early class tomorrow.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.aiMessage, "Got it. That was clear enough for this situation. Let's wrap up here.")
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertIn("마무리", result.translatedMessage)
+        self.assertIn("Closing reason: GOAL_COMPLETED", captured["user"])
+        self.assertIn("Counterpart role: roommate", captured["user"])
+        self.assertIn("Do not ask a new follow-up question", captured["system"])
+        self.assertNotIn("\\u0027", captured["system"])
+
+    def test_closing_message_fallback_keeps_ai_as_final_speaker_for_bad_tone(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: "not json"
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 12,
+                "title": "음악 취향 이야기하기",
+                "briefing": "좋아하는 음악과 앱 사용 이유를 이야기합니다.",
+                "conversationGoal": "음악 취향과 이유를 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "What song have you been playing on repeat lately?",
+                "translatedQuestion": "요즘 반복해서 듣는 노래가 있어?",
+                "userUtterance": "No song. Stop asking.",
+            },
+            "closingReason": "MAX_TURNS_REACHED",
+            "goalCompletionStatus": "PARTIAL",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertIn("Let's pause here", result.aiMessage)
+        self.assertIn("마무리", result.translatedMessage)
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertIn("그만 물어", result.innerThought)
+        self.assertFalse(result.aiMessage.endswith("?"))
+
     def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
 

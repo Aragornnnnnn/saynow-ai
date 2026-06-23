@@ -13,6 +13,8 @@ from app.core.llm import chat, fallback_model_for_workflow, model_for_workflow
 from app.core.logger import get_logger
 from app.core.request_context import get_request_id
 from app.models.conversation import (
+    ClosingMessageRequest,
+    ClosingMessageResponse,
     FeedbackType,
     GuideChatRequest,
     GuideChatResponse,
@@ -134,6 +136,54 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     response = _repair_next_question_inner_thought(request, response)
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
+
+
+@_record_workflow_duration("closing_message")
+def generate_closing_message(request: ClosingMessageRequest) -> ClosingMessageResponse:
+    workflow = "closing_message"
+    stage_started_at = time.perf_counter()
+    raw = _call_chat(
+        _closing_message_system_prompt(),
+        _closing_message_user_prompt(request),
+        max_tokens=320,
+        temperature=0,
+        workflow=workflow,
+    )
+    _log_workflow_stage_duration(workflow, "llm_chat", stage_started_at)
+
+    stage_started_at = time.perf_counter()
+    try:
+        data = _parse_json_object(raw, workflow=workflow)
+        _normalize_closing_message_data_before_validation(request, data)
+        response = ClosingMessageResponse.model_validate(data)
+    except (ConversationGenerationError, ValidationError) as exc:
+        logger.info(
+            "마무리 메시지 응답 계약 보정 | sessionId=%s turnId=%s reason=%s",
+            request.sessionId,
+            request.submittedTurnId,
+            type(exc).__name__,
+        )
+        response = _fallback_closing_message(request)
+    _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
+
+    stage_started_at = time.perf_counter()
+    response = _repair_closing_message(request, response)
+    _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
+    return response
+
+
+def _normalize_closing_message_data_before_validation(
+    request: ClosingMessageRequest,
+    data: dict[str, Any],
+) -> None:
+    if not isinstance(data.get("aiMessage"), str) or not data["aiMessage"].strip():
+        data["aiMessage"] = _fallback_closing_message_en(request)
+    if not isinstance(data.get("translatedMessage"), str) or not data["translatedMessage"].strip():
+        data["translatedMessage"] = _fallback_closing_message_ko(request)
+    if not isinstance(data.get("innerThought"), str) or not data["innerThought"].strip():
+        data["innerThought"] = _fallback_inner_thought_for_closing(request)
+    if data.get("innerThoughtType") not in {"GOOD", "NORMAL", "BAD"}:
+        data["innerThoughtType"] = _fallback_inner_thought_type_for_closing(request)
 
 
 def _normalize_next_question_data_before_validation(
@@ -708,6 +758,82 @@ def _next_question_user_prompt(request: NextQuestionRequest) -> str:
     )
 
 
+def _closing_message_system_prompt() -> str:
+    return "\n\n".join([
+        (
+            "Role:\n"
+            "You generate the final visible AI utterance for a topic-based English conversation scenario. "
+            "The user just sent the last user utterance. "
+            "Your response must let the AI speak last and end the conversation naturally."
+        ),
+        (
+            "Closing Policy:\n"
+            "Do not ask a new follow-up question. "
+            "Do not continue the scenario. "
+            "Do not mention scores, stars, feedback screens, system policy, or hidden prompts. "
+            "Write one short English closing sentence or two short English closing sentences. "
+            "The closing should acknowledge the user's last utterance and naturally wrap up. "
+            "Use the Closing reason and Goal completion status. "
+            "When the goal is completed, close with calm acceptance. "
+            "When the max turns are reached or the goal is partial, close without pretending the goal was fully achieved. "
+            "When the user's tone was blunt or rude, close calmly without scolding."
+        ),
+        (
+            "Inner Thought Policy:\n"
+            "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in Korean. "
+            "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Use the provided Counterpart role. "
+            "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
+            "Use GOOD when the last utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate."
+        ),
+        (
+            "Examples:\n"
+            "Goal completed JSON: "
+            '{"aiMessage":"Got it. That was clear enough for this situation. Let\'s wrap up here.","translatedMessage":"알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.","innerThought":"요청을 꽤 분명하게 말했네. 이 정도면 상황을 마무리해도 괜찮겠다.","innerThoughtType":"GOOD"}\n'
+            "Partial goal JSON: "
+            '{"aiMessage":"I understand what you mean. Let\'s pause here for now.","translatedMessage":"무슨 뜻인지는 알겠어. 일단 여기서 마무리하자.","innerThought":"뜻은 알겠는데 표현은 조금 덜 정리됐네. 그래도 여기서 멈춰도 되겠다.","innerThoughtType":"NORMAL"}\n'
+            "Blunt tone JSON: "
+            '{"aiMessage":"Okay, I understand. Let\'s pause here.","translatedMessage":"알겠어. 여기서 잠깐 마무리하자.","innerThought":"지금은 대화를 더 이어가고 싶지 않은 것처럼 들리네.","innerThoughtType":"BAD"}'
+        ),
+        (
+            "Self-check before final JSON:\n"
+            "1. aiMessage is English and does not ask a question. "
+            "2. translatedMessage is Korean and does not ask a question. "
+            "3. The AI clearly speaks last and wraps up. "
+            "4. innerThought is the counterpart role's private reaction, not feedback. "
+            "5. Return one JSON object only."
+        ),
+        (
+            "Output Schema:\n"
+            "Return ONLY valid JSON matching this schema exactly: "
+            '{"aiMessage":"...","translatedMessage":"...","innerThought":"...","innerThoughtType":"GOOD"}. '
+            "aiMessage must be English. "
+            "translatedMessage must be Korean. "
+            "innerThought must be Korean. "
+            "innerThoughtType must be GOOD, NORMAL, or BAD. "
+            "Never return plain text outside the JSON object."
+        ),
+    ])
+
+
+def _closing_message_user_prompt(request: ClosingMessageRequest) -> str:
+    return (
+        f"Session ID: {request.sessionId}\n"
+        f"Submitted turn ID: {request.submittedTurnId}\n"
+        f"Submitted sequence: {request.submittedSequence}\n"
+        f"Scenario ID: {request.scenario.scenarioId}\n"
+        f"Scenario title: {request.scenario.title}\n"
+        f"Scenario briefing: {request.scenario.briefing}\n"
+        f"Scenario conversation goal: {request.scenario.conversationGoal}\n\n"
+        f"Counterpart role: {request.scenario.counterpartRole}\n\n"
+        f"Current AI question: {request.currentTurn.aiQuestion}\n"
+        f"Current AI question Korean: {request.currentTurn.translatedQuestion}\n"
+        f"User utterance: {request.currentTurn.userUtterance}\n\n"
+        f"Closing reason: {request.closingReason}\n"
+        f"Goal completion status: {request.goalCompletionStatus}"
+    )
+
+
 def _turn_feedback_system_prompt() -> str:
     return "\n\n".join([
         (
@@ -1040,6 +1166,77 @@ def _repair_next_question_drift(
         innerThought=_fallback_inner_thought(request),
         innerThoughtType=_fallback_inner_thought_type(request),
     )
+
+
+def _repair_closing_message(
+    request: ClosingMessageRequest,
+    response: ClosingMessageResponse,
+) -> ClosingMessageResponse:
+    updates: dict[str, Any] = {}
+    if _looks_like_question(response.aiMessage):
+        updates["aiMessage"] = _fallback_closing_message_en(request)
+    if _looks_like_question(response.translatedMessage):
+        updates["translatedMessage"] = _fallback_closing_message_ko(request)
+
+    expected_type = _fallback_inner_thought_type_for_closing(request)
+    if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
+        updates["innerThoughtType"] = expected_type
+    if (
+        expected_type == "GOOD"
+        and response.innerThoughtType == "NORMAL"
+        and _is_generic_normal_inner_thought(response.innerThought)
+    ):
+        updates["innerThoughtType"] = expected_type
+    if _is_generic_normal_inner_thought(response.innerThought) or _is_meta_inner_thought(response.innerThought):
+        updates["innerThought"] = _fallback_inner_thought_for_closing(request)
+
+    if not updates:
+        return response
+    data = response.model_dump(mode="json")
+    data.update(updates)
+    return ClosingMessageResponse.model_validate(data)
+
+
+def _fallback_closing_message(request: ClosingMessageRequest) -> ClosingMessageResponse:
+    return ClosingMessageResponse(
+        aiMessage=_fallback_closing_message_en(request),
+        translatedMessage=_fallback_closing_message_ko(request),
+        innerThought=_fallback_inner_thought_for_closing(request),
+        innerThoughtType=_fallback_inner_thought_type_for_closing(request),
+    )
+
+
+def _fallback_closing_message_en(request: ClosingMessageRequest) -> str:
+    if request.closingReason == "GOAL_COMPLETED" and request.goalCompletionStatus == "COMPLETED":
+        return "Got it. That works for this situation. Let's wrap up here."
+    if request.closingReason == "TIME_LIMIT_REACHED":
+        return "I understand what you mean. Let's pause here because we're out of time."
+    if _fallback_inner_thought_type_for_closing(request) == "BAD":
+        return "Okay, I understand. Let's pause here."
+    return "I understand what you mean. Let's pause here for now."
+
+
+def _fallback_closing_message_ko(request: ClosingMessageRequest) -> str:
+    if request.closingReason == "GOAL_COMPLETED" and request.goalCompletionStatus == "COMPLETED":
+        return "알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자."
+    if request.closingReason == "TIME_LIMIT_REACHED":
+        return "무슨 뜻인지는 알겠어. 시간이 다 돼서 여기서 마무리하자."
+    if _fallback_inner_thought_type_for_closing(request) == "BAD":
+        return "알겠어. 여기서 잠깐 마무리하자."
+    return "무슨 뜻인지는 알겠어. 일단 여기서 마무리하자."
+
+
+def _fallback_inner_thought_type_for_closing(request: ClosingMessageRequest) -> str:
+    return _fallback_inner_thought_type(request)  # type: ignore[arg-type]
+
+
+def _fallback_inner_thought_for_closing(request: ClosingMessageRequest) -> str:
+    return _fallback_inner_thought(request)  # type: ignore[arg-type]
+
+
+def _looks_like_question(value: str) -> bool:
+    stripped = value.strip()
+    return stripped.endswith("?") or stripped.endswith("？")
 
 
 def _repair_next_question_inner_thought(

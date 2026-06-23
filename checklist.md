@@ -820,3 +820,12 @@
 - [x] `Stop asking`처럼 대화를 끊는 표현은 BAD 속마음과 tone issue로 보정한다.
 - [x] 음식 맥락의 `I hate vegetable` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
 - [x] focused 테스트와 전체 unittest를 실행한다.
+
+## closing-message API 추가
+
+- [x] BE 종료 흐름에서 필요한 closing-message 계약을 정리한다.
+- [x] 마지막 사용자 발화에 대한 속마음과 마지막 AI 발화를 반환하는 RED 테스트를 추가한다.
+- [x] `POST /api/v1/conversation/closing-message` 모델, 서비스, 라우트를 구현한다.
+- [x] README에 BE 연동 기준과 응답 형식을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋하고 `feat/LAN-28`, `develop`에 push한다.

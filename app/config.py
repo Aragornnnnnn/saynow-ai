@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_next_question_model: str = "gpt-5.4-mini"
+    openai_closing_message_model: str = "gpt-5.4-mini"
     openai_turn_feedback_model: str = "gpt-5.4-mini"
     openai_session_feedback_model: str = "gpt-5.4-mini"
     openai_fallback_model: str = "gpt-4o-mini"

@@ -6,11 +6,13 @@
 
 - 직전 사용자 발화에 대한 짧은 맞장구와 백엔드가 전달한 다음 고정 질문을 하나의 `aiQuestion`으로 연결합니다.
 - `next-question` 응답에는 상대 역할 기준의 속마음인 `innerThought`, `innerThoughtType`을 함께 내려줍니다.
+- 대화를 종료할 때는 마지막 사용자 발화에 대한 속마음과 마지막 AI 발화를 `closing-message`로 생성합니다.
 - 사용자 발화 1개에 대한 턴별 피드백을 생성하고 AI 서버 프로세스 메모리 캐시에 최대 3시간 보관합니다.
 - 최종 피드백 생성 시 캐시된 턴별 피드백을 모아 `nativeScore`, `highlightMessage`와 함께 반환합니다.
 - 영어 학습 가이드 질문은 기존 `guide` API로 계속 처리합니다.
 
 슬롯 완료 판정, 세션/턴 생성, DB 저장, NPS, 최종 완료 상태 관리는 백엔드 책임입니다.
+대화 종료 조건도 백엔드가 판단합니다. 종료가 필요하면 백엔드는 다음 질문을 요청하지 않고 `closing-message`를 호출해 AI가 마지막으로 말하게 저장합니다.
 
 ## API
 
@@ -26,6 +28,52 @@
   "aiQuestion": "Oh, you like spicy pizza. Do you cook often?",
   "translatedQuestion": "매운 피자를 좋아하는군요. 요리는 자주 하나요?",
   "innerThought": "이렇게 이유까지 말해주니까 대화하기 편하네.",
+  "innerThoughtType": "GOOD"
+}
+```
+
+### `POST /api/v1/conversation/closing-message`
+
+백엔드가 목표 달성, 최대 턴 도달, 사용자 종료, 시간 제한 같은 종료 조건을 판단한 뒤 호출합니다. AI 서버는 새 꼬리 질문을 만들지 않고 마지막 AI 발화만 생성합니다. 응답의 `innerThought`, `innerThoughtType`은 마지막 사용자 발화에 대해 상대 역할이 느끼는 속마음입니다.
+
+BE 연동 기준.
+
+- 종료 조건을 만족하면 `next-question`을 호출하지 않고 `closing-message`를 호출합니다.
+- `closing-message.aiMessage`를 세션의 마지막 AI 메시지로 저장합니다.
+- `closing-message.innerThought`, `closing-message.innerThoughtType`은 직전 USER 메시지의 속마음으로 저장하거나 화면용 스냅샷으로 저장합니다.
+- 마지막 AI 발화는 질문으로 끝나면 안 됩니다. 서버 후처리도 `?`로 끝나는 응답을 fallback 마무리 문장으로 보정합니다.
+
+요청.
+
+```json
+{
+  "sessionId": 1000,
+  "submittedTurnId": 5000,
+  "submittedSequence": 4,
+  "scenario": {
+    "scenarioId": 10,
+    "title": "기숙사에서 조용히 해달라고 말하기",
+    "briefing": "밤에 소음이 있는 룸메이트에게 조용히 부탁합니다.",
+    "conversationGoal": "정중하게 조용히 해달라고 요청합니다.",
+    "counterpartRole": "roommate"
+  },
+  "currentTurn": {
+    "aiQuestion": "Is the noise bothering you?",
+    "translatedQuestion": "소음 때문에 불편해?",
+    "userUtterance": "Could you keep it down at night? I have an early class tomorrow."
+  },
+  "closingReason": "GOAL_COMPLETED",
+  "goalCompletionStatus": "COMPLETED"
+}
+```
+
+응답.
+
+```json
+{
+  "aiMessage": "Got it. That works for this situation. Let's wrap up here.",
+  "translatedMessage": "알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.",
+  "innerThought": "정중하게 이유까지 말해주니까 부탁으로 받아들이기 편하네.",
   "innerThoughtType": "GOOD"
 }
 ```
@@ -122,6 +170,7 @@
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_NEXT_QUESTION_MODEL=gpt-5.4-mini
+OPENAI_CLOSING_MESSAGE_MODEL=gpt-5.4-mini
 OPENAI_TURN_FEEDBACK_MODEL=gpt-5.4-mini
 OPENAI_SESSION_FEEDBACK_MODEL=gpt-5.4-mini
 OPENAI_FALLBACK_MODEL=gpt-4o-mini

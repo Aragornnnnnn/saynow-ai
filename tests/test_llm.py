@@ -142,9 +142,11 @@ class LlmTest(unittest.TestCase):
         settings = Settings(openai_api_key="test-key")
 
         self.assertEqual(model_for_workflow("next_question", settings), "gpt-5.4-mini")
+        self.assertEqual(model_for_workflow("closing_message", settings), "gpt-5.4-mini")
         self.assertEqual(model_for_workflow("turn_feedback", settings), "gpt-5.4-mini")
         self.assertEqual(model_for_workflow("session_feedback", settings), "gpt-5.4-mini")
         self.assertEqual(fallback_model_for_workflow("next_question", settings), "gpt-4o-mini")
+        self.assertEqual(fallback_model_for_workflow("closing_message", settings), "gpt-4o-mini")
         self.assertEqual(fallback_model_for_workflow("turn_feedback", settings), "gpt-4o-mini")
         self.assertEqual(fallback_model_for_workflow("session_feedback", settings), "gpt-4o-mini")
 

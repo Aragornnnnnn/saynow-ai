@@ -13,6 +13,7 @@ class ConversationRoutesTest(unittest.TestCase):
         from app.main import app
         from app.api.routes import conversation
         from app.models.conversation import (
+            ClosingMessageResponse,
             FeedbackType,
             GuideChatResponse,
             NextQuestionResponse,
@@ -25,6 +26,7 @@ class ConversationRoutesTest(unittest.TestCase):
         self.client = TestClient(app)
         self.conversation_route = conversation
         self.original_next_question = conversation.generate_next_question
+        self.original_closing_message = conversation.generate_closing_message
         self.original_turn_feedback = conversation.generate_turn_feedback
         self.original_session_feedback = conversation.generate_session_feedback
         self.original_guide_answer = conversation.generate_guide_answer
@@ -34,6 +36,12 @@ class ConversationRoutesTest(unittest.TestCase):
             aiQuestion="Oh, you like spicy pizza. Do you cook often?",
             translatedQuestion="매운 피자를 좋아하는군요. 요리는 자주 하나요?",
             innerThought="매운 피자를 좋아한다고 이유까지 말해주니 대화가 편하네요.",
+            innerThoughtType="GOOD",
+        )
+        conversation.generate_closing_message = lambda request: ClosingMessageResponse(
+            aiMessage="Got it. Let's wrap up here.",
+            translatedMessage="알겠어. 여기서 마무리하자.",
+            innerThought="마지막 답변까지 들었으니 자연스럽게 마무리해도 되겠다.",
             innerThoughtType="GOOD",
         )
         conversation.generate_turn_feedback = lambda request: TurnFeedbackCreationResponse(
@@ -62,6 +70,7 @@ class ConversationRoutesTest(unittest.TestCase):
 
     def tearDown(self):
         self.conversation_route.generate_next_question = self.original_next_question
+        self.conversation_route.generate_closing_message = self.original_closing_message
         self.conversation_route.generate_turn_feedback = self.original_turn_feedback
         self.conversation_route.generate_session_feedback = self.original_session_feedback
         self.conversation_route.generate_guide_answer = self.original_guide_answer
@@ -148,6 +157,22 @@ class ConversationRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["X-Request-Id"], "trace-ai-3mvp")
         self.assertEqual(seen_request_ids, ["trace-ai-3mvp"])
+
+    def test_closing_message_route_returns_documented_shape(self):
+        payload = self._next_question_payload()
+        payload.pop("nextQuestion")
+        payload["closingReason"] = "GOAL_COMPLETED"
+        payload["goalCompletionStatus"] = "COMPLETED"
+
+        response = self.client.post("/api/v1/conversation/closing-message", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "aiMessage": "Got it. Let's wrap up here.",
+            "translatedMessage": "알겠어. 여기서 마무리하자.",
+            "innerThought": "마지막 답변까지 들었으니 자연스럽게 마무리해도 되겠다.",
+            "innerThoughtType": "GOOD",
+        })
 
     def test_turn_feedback_route_returns_preparing_shape(self):
         response = self.client.post("/api/v1/conversation/turn-feedback", json=self._turn_feedback_payload())

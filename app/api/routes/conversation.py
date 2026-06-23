@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 from app.core.logger import get_logger
 from app.core.observability import capture_exception
 from app.models.conversation import (
+    ClosingMessageRequest,
+    ClosingMessageResponse,
     GuideChatRequest,
     GuideChatResponse,
     NextQuestionRequest,
@@ -18,6 +20,7 @@ from app.services.conversation_service import (
     ConversationGenerationError,
     TurnFeedbackNotReadyError,
     generate_guide_answer,
+    generate_closing_message,
     generate_next_question,
     generate_session_feedback,
     generate_turn_feedback,
@@ -44,6 +47,25 @@ async def next_question(request: NextQuestionRequest):
         return generate_next_question(request)
     except ConversationGenerationError as exc:
         return _generation_error_response(exc, "다음 질문 생성에 실패했습니다.")
+
+
+@router.post(
+    "/closing-message",
+    response_model=ClosingMessageResponse,
+    summary="대화 종료용 마지막 AI 발화 생성",
+)
+async def closing_message(request: ClosingMessageRequest):
+    logger.info(
+        "POST /api/v1/conversation/closing-message | sessionId=%s scenarioId=%s submittedTurnId=%s reason=%s",
+        request.sessionId,
+        request.scenario.scenarioId,
+        request.submittedTurnId,
+        request.closingReason,
+    )
+    try:
+        return generate_closing_message(request)
+    except ConversationGenerationError as exc:
+        return _generation_error_response(exc, "대화 종료 메시지 생성에 실패했습니다.")
 
 
 @router.post(

@@ -50,6 +50,8 @@ def model_for_workflow(workflow: str, config=settings) -> str:
         return resolve_llm_options(config).model
     if workflow == "next_question":
         return config.openai_next_question_model or config.openai_model
+    if workflow == "closing_message":
+        return config.openai_closing_message_model or config.openai_model
     if workflow == "turn_feedback":
         return config.openai_turn_feedback_model or config.openai_model
     if workflow == "session_feedback":

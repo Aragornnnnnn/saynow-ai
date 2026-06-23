@@ -10,6 +10,7 @@
 - 2026-06-23 프롬프트 품질 보강은 `prompt-engineering-patterns` 기준으로 역할 컨텍스트 누락, GOOD/NEEDS few-shot 부족, `koreanAnalogy` 접두어 회귀 가능성을 테스트로 고정하는 방향으로 진행했다.
 - 2026-06-23 앞으로 운영 LLM provider는 OpenRouter를 쓴다. `LLM_PROVIDER=openrouter`를 정식 지원하고, OpenRouter는 OpenAI SDK의 `base_url=https://openrouter.ai/api/v1` 호환 경로로 호출한다.
 - 2026-06-23 OpenRouter provider의 기본 모델은 `openai/gpt-5.4-mini`다. 처음 연결 확인은 `openai/gpt-4o-mini`로 했지만, OpenRouter catalog에서 `openai/gpt-5.4-mini`가 확인되어 기본값과 SSM 예시를 5.4 mini로 맞췄다. 최소 live smoke도 `openai/gpt-5.4-mini`, `max_tokens=16`에서 `RESULT OK`를 확인했다.
+- 2026-06-23 대화 종료 시 AI가 마지막으로 말하는 정책으로 간다. BE는 종료 조건을 판단하고 `next-question` 대신 `closing-message`를 호출한다. AI는 새 꼬리 질문 없이 마지막 AI 발화와 마지막 사용자 발화 기준 `innerThought`, `innerThoughtType`을 내려준다. 이렇게 해야 마지막 사용자 발화에도 속마음을 보여주면서 대화가 AI 발화로 자연스럽게 끝난다.
 
 - 2026-06-10 `app/data/error_patterns.json`은 첨부 JSON을 source of truth로 갱신했다. 변경은 schema나 pattern key 변경이 아니라 `feedback_copy` 문구 수정이며, 12개 패턴 중 11개의 표시 문구가 바뀌었다. 새 문구에는 `한국인의 79%가 틀리는 a/an`, `한국인의 37%가 놓치는 복수형 명사+s`, `한국인이 4번 중 1번은 빠뜨리는 전치사`처럼 더 직접적인 재미용 hook이 들어간다.
 - 2026-06-10 catalog 문구 갱신에 맞춰 턴별 `benchmarkMessage` 변환 규칙에 `쓴 사람 -> 썼어요`를 추가했다. 세션 `highlightMessage`는 여전히 `...한 사람` 칭호형이고, 턴별 `benchmarkMessage`는 `...했어요` 문장형이다.

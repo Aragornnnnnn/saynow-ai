@@ -92,6 +92,41 @@ class NextQuestionResponse(BaseModel):
         return _validate_not_blank(value)
 
 
+class ClosingReason(StrEnum):
+    GOAL_COMPLETED = "GOAL_COMPLETED"
+    MAX_TURNS_REACHED = "MAX_TURNS_REACHED"
+    USER_ENDED = "USER_ENDED"
+    TIME_LIMIT_REACHED = "TIME_LIMIT_REACHED"
+
+
+class GoalCompletionStatus(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    PARTIAL = "PARTIAL"
+    COMPLETED = "COMPLETED"
+
+
+class ClosingMessageRequest(BaseModel):
+    sessionId: int = Field(gt=0)
+    submittedTurnId: int = Field(gt=0)
+    submittedSequence: int = Field(gt=0)
+    scenario: ScenarioContext
+    currentTurn: CurrentTurnForNextQuestion
+    closingReason: ClosingReason
+    goalCompletionStatus: GoalCompletionStatus
+
+
+class ClosingMessageResponse(BaseModel):
+    aiMessage: str
+    translatedMessage: str
+    innerThought: str
+    innerThoughtType: InnerThoughtType
+
+    @field_validator("aiMessage", "translatedMessage", "innerThought", "innerThoughtType")
+    @classmethod
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
+
+
 class TurnForFeedback(BaseModel):
     aiQuestion: str
     translatedQuestion: str
