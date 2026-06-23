@@ -786,5 +786,5 @@
 - [x] 근거 없는 benchmark/highlight 숫자 hook이 남지 않는 RED 테스트를 추가한다.
 - [x] 프롬프트와 deterministic postprocess를 최소 변경으로 보강한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] live smoke에서 문제 발화 세트를 다시 검증한다.
-- [ ] 결과와 남은 리스크를 context notes에 기록한다.
+- [x] live smoke에서 문제 발화 세트를 다시 검증한다.
+- [x] 결과와 남은 리스크를 context notes에 기록한다.
