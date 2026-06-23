@@ -1033,6 +1033,78 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "GOOD")
         self.assertEqual(cached.benchmarkMessage, "한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요")
 
+    def test_good_turn_feedback_does_not_treat_third_person_verb_as_plural_noun(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"토요일이 더 편해요\"라고 자연스럽게 일정 조율하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "토요일과 일요일 오후를 비교하면서 상대가 편한 시간도 배려했어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="Saturday works better for me, but Sunday afternoon also works if that is easier for you."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인의 25%가 놓치는 전치사를 정확히 챙겼어요")
+        self.assertNotIn("복수형", cached.benchmarkMessage)
+
+    def test_good_turn_feedback_does_not_treat_congratulations_as_plural_noun(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"축하해. 정말 열심히 했으니까 같이 축하하자\"라고 따뜻하게 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "상대의 좋은 소식에 축하와 공감을 자연스럽게 이어 붙였어요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="That's amazing! Congratulations. You worked really hard for it, so we should celebrate this weekend."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "한국인의 25%가 놓치는 전치사를 정확히 챙겼어요")
+        self.assertNotIn("복수형", cached.benchmarkMessage)
+
+    def test_good_turn_feedback_ignores_sv_agreement_pattern_without_third_person_s_evidence(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"나는 코 안 골아. 그거 안 웃겨\"라고 딱 잘라 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "룸메이트의 농담에 자신의 입장을 짧고 분명하게 전달했어요.",
+            "benchmarkMessage": "한국인의 22%가 까먹는 she·he 같은 3인칭 단수 주어 뒤 동사에 -s 챙기는 걸 정확히 해냈어요",
+            "detectedPatterns": [
+                {
+                    "errorType": "sv_agreement",
+                    "status": "correct",
+                    "evidence": "snore",
+                }
+            ],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="I don't snore. That's not funny."
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
+        self.assertNotIn("3인칭 단수", cached.benchmarkMessage)
+
     def test_good_turn_feedback_overwrites_non_quantitative_llm_benchmark_message(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -1374,6 +1446,34 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Next question", cached.correctionReason)
         self.assertIn("재촉", cached.correctionReason)
         self.assertNotIn("Next question", cached.correctionExpression)
+
+    def test_turn_feedback_repairs_sensitive_relationship_question_even_in_roommate_truth_game(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"몇 살이야? 남자친구 있어? 왜 혼자야?\"라고 연달아 묻는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "진실게임 분위기에 맞게 호기심을 이어 갔어요.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": "한국인의 79%가 틀리는 a/an을 정확히 썼어요",
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                user_utterance="How old are you? Do you have a boyfriend? Why are you single?"
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(
+            cached.correctionExpression,
+            "Can I ask something a little less personal first?",
+        )
+        self.assertIn("Why are you single", cached.correctionReason)
+        self.assertIn("사적인", cached.correctionReason)
+        self.assertIsNone(cached.benchmarkMessage)
 
     def test_turn_feedback_contextualizes_hate_food_without_noise_correction(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

@@ -846,3 +846,13 @@
 - [x] 턴 피드백 프롬프트의 benchmark 정책을 새 기준에 맞게 갱신한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## LAN-28 feedback benchmark quality tuning
+
+- [x] 복수형 benchmark가 `works`, `Congratulations` 같은 비명사 s 토큰에서 생성되지 않도록 RED 테스트를 추가한다.
+- [x] LLM이 근거 약한 `sv_agreement` detectedPattern을 보내도 구조 검증 없이 benchmark로 통과하지 않도록 RED 테스트를 추가한다.
+- [x] 룸메이트/친구 역할에서도 민감한 연애 상태 질문은 NEEDS_IMPROVEMENT로 보정하는 RED 테스트를 추가한다.
+- [x] evidence 검증과 tone issue 보정을 일반 규칙으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] live smoke를 실행한다.
+- [ ] 결과를 context notes에 기록하고 커밋/push한다.
