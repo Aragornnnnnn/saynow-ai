@@ -984,7 +984,10 @@ def _next_question_system_prompt() -> str:
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in Korean. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Before writing innerThought, imagine you are exactly the provided Counterpart role, not the app, tutor, narrator, evaluator, or scenario controller. "
             "Use the provided Counterpart role. A professor, friend, roommate, cafe staff, or stranger may feel differently about the same sentence. "
+            "Write the honest private feeling a real person in that role would have immediately after hearing the user's current utterance. "
+            "It may be relieved, grateful, awkward, hurt, annoyed, uncomfortable, or unsure. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
@@ -992,6 +995,7 @@ def _next_question_system_prompt() -> str:
             "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
             "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
             "Do not mention wrapping up, revealing news later, asking more, joking later, or moving to the next scene unless the user explicitly said that. "
+            "Do not write what the counterpart plans to do next. "
             "If the user says their parents decided something for them, the private reaction should reflect that family-decision context instead of only saying the user has a weak opinion. "
             "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
             "Direct roommate commands such as 'Buy me X' can feel like being ordered around. "
@@ -1017,6 +1021,8 @@ def _next_question_system_prompt() -> str:
             "Bad innerThought style: '같이 살면서 이런 얘기 나누면 좀 더 친해질 수 있겠네.'\n"
             "Bad innerThought style: '같이 사는 사람끼리 이런 얘기 나누니까 분위기 괜찮네.'\n"
             "Bad innerThought style: '왠지 더 캐묻기보다 분위기를 풀어주고 싶네.'\n"
+            "Bad innerThought style: '우유 챙겨서 가면 되겠다.'\n"
+            "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1087,18 +1093,24 @@ def _closing_message_system_prompt() -> str:
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in Korean. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Before writing innerThought, imagine you are exactly the provided Counterpart role, not the app, tutor, narrator, evaluator, or scenario controller. "
             "Use the provided Counterpart role. "
+            "Write the honest private feeling a real person in that role would have immediately after hearing the user's last utterance. "
+            "Do not write what the counterpart plans to do next, how the lesson should progress, or whether the conversation can end. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the last utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate."
         ),
         (
             "Examples:\n"
             "Goal completed JSON: "
-            '{"aiMessage":"Got it. That was clear enough for this situation. Let\'s wrap up here.","translatedMessage":"알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.","innerThought":"요청을 꽤 분명하게 말했네. 이 정도면 상황을 마무리해도 괜찮겠다.","innerThoughtType":"GOOD"}\n'
+            '{"aiMessage":"Got it. That was clear enough for this situation. Let\'s wrap up here.","translatedMessage":"알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.","innerThought":"내가 좀 시끄러웠나 보네. 내일 일찍 수업 있다니 미안하다.","innerThoughtType":"GOOD"}\n'
             "Partial goal JSON: "
-            '{"aiMessage":"I understand what you mean. Let\'s pause here for now.","translatedMessage":"무슨 뜻인지는 알겠어. 일단 여기서 마무리하자.","innerThought":"뜻은 알겠는데 표현은 조금 덜 정리됐네. 그래도 여기서 멈춰도 되겠다.","innerThoughtType":"NORMAL"}\n'
+            '{"aiMessage":"I understand what you mean. Let\'s pause here for now.","translatedMessage":"무슨 뜻인지는 알겠어. 일단 여기서 마무리하자.","innerThought":"뜻은 알겠는데 한마디라 정확한 마음은 잘 모르겠다.","innerThoughtType":"NORMAL"}\n'
             "Blunt tone JSON: "
-            '{"aiMessage":"Okay, I understand. Let\'s pause here.","translatedMessage":"알겠어. 여기서 잠깐 마무리하자.","innerThought":"지금은 대화를 더 이어가고 싶지 않은 것처럼 들리네.","innerThoughtType":"BAD"}'
+            '{"aiMessage":"Okay, I understand. Let\'s pause here.","translatedMessage":"알겠어. 여기서 잠깐 마무리하자.","innerThought":"지금은 대화를 더 이어가고 싶지 않은 것처럼 들리네.","innerThoughtType":"BAD"}\n'
+            "Bad innerThought style: '이 정도면 상황을 마무리해도 괜찮겠다.'\n"
+            "Bad innerThought style: '그래도 여기서 멈춰도 되겠다.'\n"
+            "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'"
         ),
         (
             "Self-check before final JSON:\n"
@@ -1500,7 +1512,11 @@ def _repair_closing_message(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    if _is_generic_normal_inner_thought(response.innerThought) or _is_meta_inner_thought(response.innerThought):
+    if (
+        _is_generic_normal_inner_thought(response.innerThought)
+        or _is_meta_inner_thought(response.innerThought)
+        or _has_future_inner_thought_marker(response.innerThought)
+    ):
         updates["innerThought"] = _fallback_inner_thought_for_closing(request)
 
     if not updates:
@@ -1608,7 +1624,10 @@ def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQu
 
 def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    if _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole):
+    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    if issue_kind == "defensive_joke_rejection":
+        return "NORMAL"
+    if issue_kind:
         return "BAD"
     if _looks_like_short_broken_or_flat_answer(normalized):
         return "NORMAL"
@@ -1645,6 +1664,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "말뜻은 알겠는데, 지금 표현은 조금 차갑게 들리네."
     if thought_type == "GOOD":
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+        if "keep it down" in normalized and "early class" in normalized:
+            return "내가 좀 시끄러웠나 보네. 내일 일찍 수업 있다니 미안하다."
         if "studying business" in normalized and "playing games" in normalized and "trying new food" in normalized:
             return "전공이랑 좋아하는 걸 자연스럽게 말해주네. 나한테도 관심을 보여줘서 첫 대화가 편해졌어."
         if "strategy games" in normalized and "trying new food" in normalized:
@@ -1685,6 +1706,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
         return "이렇게 이유까지 말해주니까 대화하기 편하네."
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    if _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole) == "defensive_joke_rejection":
+        return "장난으로 넘긴 말이 아니라 기분이 상했구나. 조금 미안하다."
     if "business games that s all" in normalized or "business games thats all" in normalized:
         return "자기소개를 아주 짧게 끝내네. 말은 알겠지만 아직 거리를 두는 느낌이야."
     if "nothing i just sleep" in normalized:
@@ -1744,6 +1767,13 @@ def _is_scripted_future_inner_thought(
     request: NextQuestionRequest,
     inner_thought: str,
 ) -> bool:
+    if _has_future_inner_thought_marker(inner_thought):
+        return True
+    normalized = _normalize_visible_text(inner_thought)
+    return _leaks_next_question_topic(request, normalized)
+
+
+def _has_future_inner_thought_marker(inner_thought: str) -> bool:
     normalized = _normalize_visible_text(inner_thought)
     future_markers = [
         "다음 주제",
@@ -1774,9 +1804,7 @@ def _is_scripted_future_inner_thought(
         "이런 얘기 나누",
         "분위기를 풀어주",
     ]
-    if any(marker in normalized for marker in future_markers):
-        return True
-    return _leaks_next_question_topic(request, normalized)
+    return any(marker in normalized for marker in future_markers)
 
 
 def _leaks_next_question_topic(request: NextQuestionRequest, normalized_inner_thought: str) -> bool:
@@ -1870,6 +1898,8 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
         return any(marker in normalized for marker in ["사적", "연애", "불편"])
     if issue_kind == "direct_command":
         return any(marker in normalized for marker in ["시키", "명령", "부탁"])
+    if issue_kind == "defensive_joke_rejection":
+        return any(marker in normalized for marker in ["기분", "농담", "상했", "미안"])
     return True
 
 
@@ -1950,6 +1980,10 @@ def _tone_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
         return "hate"
     if re.search(r"\b(?:i hate|hate plan|hate this|hate it)\b", normalized):
         return "hate"
+    if (" that s not funny " in normalized or " that's not funny " in normalized) and (
+        " snore " in normalized or " joke " in normalized
+    ):
+        return "defensive_joke_rejection"
     if _looks_like_sensitive_personal_question(user_utterance, counterpart_role):
         return "sensitive_personal_question"
     if _looks_like_direct_command(user_utterance, counterpart_role):
@@ -2399,14 +2433,25 @@ def _feedback_for_tone_issue(
             positiveFeedback="말하고 싶지 않은 주제가 있다는 의도는 표현하려고 했어요.",
             benchmarkMessage=None,
         )
+    if issue_kind == "defensive_joke_rejection":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"나 코 안 골아. 그거 안 웃겨\"라고 방어적으로 선을 긋는 것처럼 들려요.",
+            feedbackDetail=None,
+            correctionExpression="I don't think I snore, but sorry if it bothered you.",
+            correctionReason="I don't snore. That's not funny.는 억울하거나 기분이 상한 뜻은 전달되지만, 룸메이트에게 방어적이고 날카롭게 들릴 수 있어요. I don't think I snore, but sorry if it bothered you.처럼 말하면 내 입장은 유지하면서도 상대가 받아들이기 쉬워요.",
+            positiveFeedback="불편한 농담에는 선을 긋고 싶다는 의도는 분명히 보였어요.",
+            benchmarkMessage=None,
+        )
     if issue_kind == "sensitive_personal_question":
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
             koreanAnalogy="\"남자친구 있어? 왜 혼자야?\"라고 사적인 부분을 너무 바로 묻는 것과 같아요.",
             feedbackDetail=None,
-            correctionExpression="Can I ask something a little less personal first?",
-            correctionReason="Why are you single?처럼 연애 상태를 바로 묻는 말은 룸메이트나 친구 사이에서도 사적인 부분을 몰아붙이는 느낌이 날 수 있어요. Can I ask something a little less personal first?라고 하면 대화의 선을 지키면서 질문을 이어갈 수 있어요.",
+            correctionExpression="What do you like to do in your free time?",
+            correctionReason="Why are you single?처럼 연애 상태를 바로 묻는 말은 룸메이트나 친구 사이에서도 사적인 부분을 몰아붙이는 느낌이 날 수 있어요. What do you like to do in your free time?처럼 덜 사적인 질문으로 바꾸면 대화의 선을 지키면서도 상대를 알아갈 수 있어요.",
             positiveFeedback="상대에게 관심을 보이며 질문을 이어가려는 시도는 좋아요.",
             benchmarkMessage=None,
         )

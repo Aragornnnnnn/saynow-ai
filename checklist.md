@@ -890,3 +890,13 @@
 - [x] correction/benchmark 로직은 건드리지 않고 next-question innerThought 후처리만 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 배포 후 innerThought 전용 live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 role-grounded innerThought and turn feedback
+
+- [x] 룸메이트 역할에서 `No. Buy me milk.` 속마음이 긍정/실행 계획으로 남는 문제를 RED 테스트로 고정한다.
+- [x] `I don't snore. That's not funny.`가 GOOD 피드백으로 남거나 마무리 계획 속마음으로 나오는 문제를 RED 테스트로 고정한다.
+- [x] 사적인 연애 질문의 교정 표현이 메타 발화가 아니라 실제 사용 가능한 질문으로 나오도록 RED 테스트로 고정한다.
+- [x] 속마음 프롬프트와 후처리를 실제 상대 역할의 솔직한 사적 반응 기준으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] origin/feat/LAN-28와 origin/develop에 push하고 develop 배포를 확인한다.
+- [ ] dev 서버 live smoke에서 24개 발화 세트 치명적 오류 0건을 확인하고 context notes에 기록한다.

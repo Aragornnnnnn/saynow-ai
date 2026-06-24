@@ -757,8 +757,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Okay. Do you want to come with me?",
             "translatedQuestion": "알겠어. 같이 갈래?",
-            "innerThought": "짧고 딱 잘 말했네. 부탁도 받았고, 이제 자연스럽게 마무리하면 되겠다.",
-            "innerThoughtType": "NORMAL",
+            "innerThought": "짧고 딱 잘라 말했지만, 필요한 건 분명하네. 우유 챙겨서 가면 되겠다.",
+            "innerThoughtType": "BAD",
         })
         request = NextQuestionRequest.model_validate({
             "sessionId": 1000,
@@ -787,7 +787,7 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_next_question(request)
 
         self.assertEqual(result.innerThoughtType, "BAD")
-        self.assertNotIn("짧고 딱 잘 말했네", result.innerThought)
+        self.assertNotIn("우유 챙겨서", result.innerThought)
         self.assertIn("시키", result.innerThought)
 
     def test_next_question_replaces_generic_parent_reason_inner_thought_for_roommate(self):
@@ -1229,6 +1229,8 @@ class ConversationServiceTest(unittest.TestCase):
 
         self.assertEqual(result.aiMessage, "Got it. That was clear enough for this situation. Let's wrap up here.")
         self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("마무리", result.innerThought)
+        self.assertIn("시끄러", result.innerThought)
         self.assertIn("마무리", result.translatedMessage)
         self.assertIn("Closing reason: GOAL_COMPLETED", captured["user"])
         self.assertIn("Counterpart role: roommate", captured["user"])
@@ -1301,6 +1303,41 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThoughtType, "BAD")
         self.assertNotIn("준비하기 편하다", result.innerThought)
         self.assertIn("차갑", result.innerThought)
+
+    def test_closing_message_replaces_scripted_snore_inner_thought_with_private_reaction(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "Got it. Let's leave it there for now.",
+            "translatedMessage": "알겠어. 일단 여기까지 하자.",
+            "innerThought": "아, 기분이 상했구나. 더는 건드리지 말고 조용히 마무리해야겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 3,
+                "title": "밤에 코골이 얘기하기",
+                "briefing": "룸메이트가 코골이 농담을 했을 때 반응합니다.",
+                "conversationGoal": "불편한 농담에 너무 날카롭지 않게 반응한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "You snored a little last night.",
+                "translatedQuestion": "너 어젯밤에 코를 좀 골더라.",
+                "userUtterance": "I don't snore. That's not funny.",
+            },
+            "closingReason": "MAX_TURNS_REACHED",
+            "goalCompletionStatus": "PARTIAL",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("마무리", result.innerThought)
+        self.assertIn("기분", result.innerThought)
 
     def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
@@ -1673,7 +1710,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.benchmarkMessage, "한국인의 25%가 놓치는 전치사를 정확히 챙겼어요")
         self.assertNotIn("복수형", cached.benchmarkMessage)
 
-    def test_good_turn_feedback_ignores_sv_agreement_pattern_without_third_person_s_evidence(self):
+    def test_turn_feedback_repairs_defensive_snore_denial_to_tone_issue(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -1697,9 +1734,14 @@ class ConversationServiceTest(unittest.TestCase):
         )
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.feedbackType, "GOOD")
-        self.assertEqual(cached.benchmarkMessage, "질문에 맞는 핵심을 자연스럽게 전달했어요")
-        self.assertNotIn("3인칭 단수", cached.benchmarkMessage)
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(
+            cached.correctionExpression,
+            "I don't think I snore, but sorry if it bothered you.",
+        )
+        self.assertIn("That's not funny", cached.correctionReason)
+        self.assertIn("방어적", cached.correctionReason)
+        self.assertIsNone(cached.benchmarkMessage)
 
     def test_good_turn_feedback_overwrites_non_quantitative_llm_benchmark_message(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -2065,8 +2107,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
         self.assertEqual(
             cached.correctionExpression,
-            "Can I ask something a little less personal first?",
+            "What do you like to do in your free time?",
         )
+        self.assertNotIn("less personal", cached.correctionExpression.lower())
         self.assertIn("Why are you single", cached.correctionReason)
         self.assertIn("사적인", cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
@@ -2916,7 +2959,7 @@ class ConversationServiceTest(unittest.TestCase):
                 "koreanAnalogy": "\"남자친구 있어? 왜 혼자야?\"라고 사적인 부분을 너무 바로 묻는 것과 같아요.",
                 "positiveFeedback": "상대에게 관심을 보이며 질문을 이어가려는 시도는 좋아요.",
                 "feedbackDetail": None,
-                "correctionExpression": "Can I ask something a little less personal first?",
+                "correctionExpression": "What do you like to do in your free time?",
                 "correctionReason": "Why are you single?처럼 연애 상태를 바로 묻는 말은 룸메이트나 친구 사이에서도 사적인 부분을 몰아붙이는 느낌이 날 수 있어요.",
                 "benchmarkMessage": None,
             }),
