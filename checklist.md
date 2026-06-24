@@ -898,5 +898,5 @@
 - [x] 사적인 연애 질문의 교정 표현이 메타 발화가 아니라 실제 사용 가능한 질문으로 나오도록 RED 테스트로 고정한다.
 - [x] 속마음 프롬프트와 후처리를 실제 상대 역할의 솔직한 사적 반응 기준으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] origin/feat/LAN-28와 origin/develop에 push하고 develop 배포를 확인한다.
-- [ ] dev 서버 live smoke에서 24개 발화 세트 치명적 오류 0건을 확인하고 context notes에 기록한다.
+- [x] origin/feat/LAN-28와 origin/develop에 push하고 develop 배포를 확인한다.
+- [x] dev 서버 live smoke에서 24개 발화 세트 치명적 오류 0건을 확인하고 context notes에 기록한다.
