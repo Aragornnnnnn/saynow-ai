@@ -1328,6 +1328,46 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertIn(expected_a, result.innerThought)
                 self.assertIn(expected_b, result.innerThought)
 
+    def test_next_question_replaces_generic_inner_thought_for_mixed_korean_english(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds exciting. What would you say next?",
+            "translatedQuestion": "그거 흥미롭다. 다음에는 뭐라고 말할 거야?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1501,
+            "submittedTurnId": 5501,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 5,
+                "title": "친구와 여행 취향 이야기하기",
+                "briefing": "친구와 여행지, 여행 스타일, 계획 방식을 이야기합니다.",
+                "conversationGoal": "여행 취향과 이유를 자연스럽게 설명합니다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "Would you like to live abroad someday?",
+                "translatedQuestion": "언젠가 해외에서 살아보고 싶어?",
+                "userUtterance": "I want to live in 미국 because culture 좋아요.",
+            },
+            "nextQuestion": {
+                "questionId": 52,
+                "sequence": 2,
+                "questionEn": "What would you say next?",
+                "questionKo": "다음에는 뭐라고 말할 거야?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("미국", result.innerThought)
+        self.assertIn("한국어", result.innerThought)
+
     def test_closing_message_returns_final_ai_message_and_inner_thought(self):
         from app.models.conversation import ClosingMessageRequest
 
@@ -2528,6 +2568,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("무례", cached.correctionReason)
         self.assertNotIn("noisy", cached.correctionExpression)
         self.assertNotIn("It is a little hard", cached.correctionExpression)
+
+    def test_turn_feedback_marks_fragment_list_self_intro_as_needs_improvement(self):
+        from app.models.conversation import TurnFeedbackRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "\"저는 비즈니스. 게임. 그게 다예요.\"라고 핵심만 툭툭 끊어서 말하는 것과 같아요.",
+            "positiveFeedback": None,
+            "feedbackDetail": "비즈니스와 게임이라는 자기소개 핵심만 짧게 정리했어요.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": "한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요",
+        })
+        request = TurnFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "turnId": 5000,
+            "sequence": 1,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 - charlie와 첫 만남",
+                "briefing": "기숙사 입주 첫날 룸메이트와 자기소개를 합니다.",
+                "conversationGoal": "자신을 소개하고 같이 지낼 기본 규칙을 자연스럽게 조율합니다.",
+                "counterpartRole": "roommate",
+            },
+            "turn": {
+                "aiQuestion": "Tell me a little about yourself.",
+                "translatedQuestion": "너에 대해 조금 말해줘.",
+                "userUtterance": "Business. Games. That's all.",
+            },
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+        self.assertIn("I'm studying business", cached.correctionExpression)
+        self.assertIn("playing games", cached.correctionExpression)
+        self.assertIn("단어", cached.correctionReason)
 
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({

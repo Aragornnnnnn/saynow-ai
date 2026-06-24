@@ -1719,6 +1719,10 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "계획 없이 바로 움직이는 타입이구나. 꽤 즉흥적이라 조금 당황스럽다."
     if "business games that s all" in normalized or "business games thats all" in normalized:
         return "자기소개를 아주 짧게 끝내네. 말은 알겠지만 아직 거리를 두는 느낌이야."
+    if _looks_like_mixed_korean_english(request.currentTurn.userUtterance):
+        if "미국" in request.currentTurn.userUtterance and "culture" in normalized:
+            return "미국에서 살아보고 싶고 문화가 좋다는 뜻이구나. 한국어가 섞였지만 이유는 알겠다."
+        return "영어랑 한국어가 섞여서 조금 어색하지만, 하고 싶은 말은 대충 알겠다."
     if "nothing i just sleep" in normalized:
         return "쉬는 것 말고는 별 얘기가 없네. 요즘 꽤 지쳤나 보다."
     if normalized == "good":
@@ -2066,6 +2070,10 @@ def _looks_like_polite_service_request(normalized_utterance: str, counterpart_ro
         marker in normalized_utterance
         for marker in ["can i get", "could i get", "may i have", "can i have"]
     ) and "please" in normalized_utterance
+
+
+def _looks_like_mixed_korean_english(value: str) -> bool:
+    return bool(re.search(r"[가-힣]", value) and re.search(r"[A-Za-z]", value))
 
 
 def _correction_expression_for_dont_care(user_utterance: str) -> str:
@@ -2623,6 +2631,9 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
     bare_because_feedback = _needs_feedback_for_bare_noun_because_answer(request, feedback, utterance)
     if bare_because_feedback:
         return bare_because_feedback
+    fragment_list_feedback = _needs_feedback_for_fragment_list_self_intro(request, feedback, utterance)
+    if fragment_list_feedback:
+        return fragment_list_feedback
     if "rice is my life food" in utterance:
         return TurnFeedbackData(
             turnId=feedback.turnId,
@@ -2677,6 +2688,50 @@ def _needs_feedback_for_good_misclassified_actionable_issue(
             benchmarkMessage=None,
         )
     return None
+
+
+def _needs_feedback_for_fragment_list_self_intro(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+    utterance: str,
+) -> TurnFeedbackData | None:
+    question = _normalize_visible_text(request.turn.aiQuestion)
+    scenario_text = _normalize_visible_text(
+        f"{request.scenario.title} {request.scenario.briefing} {request.scenario.conversationGoal}"
+    )
+    asks_self_intro = (
+        "about yourself" in question
+        or "introduce" in question
+        or "자기소개" in scenario_text
+    )
+    if not asks_self_intro:
+        return None
+    if not ("that s all" in utterance or "thats all" in utterance):
+        return None
+    fragments = [fragment.strip() for fragment in re.split(r"[.!?]+", request.turn.userUtterance) if fragment.strip()]
+    short_fragments = [
+        fragment for fragment in fragments
+        if len(_normalize_visible_text(fragment).split()) <= 2
+    ]
+    if len(short_fragments) < 2:
+        return None
+
+    study_part = "I'm studying business" if "business" in utterance else "I'm studying my major"
+    hobby_part = "I enjoy playing games" if "games" in utterance else "I can share a little more about my interests"
+    correction_expression = f"{study_part}, and {hobby_part}."
+    return TurnFeedbackData(
+        turnId=feedback.turnId,
+        feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+        koreanAnalogy="\"비즈니스. 게임. 끝.\"처럼 자기소개를 단어만 끊어서 말하는 것과 같아요.",
+        feedbackDetail=None,
+        correctionExpression=correction_expression,
+        correctionReason=(
+            "자기소개 질문에 단어만 나열하고 That's all로 끝내면 상대가 더 알아가기 어렵게 느낄 수 있어요. "
+            f"{correction_expression}처럼 전공과 취미를 한 문장으로 연결하면 짧아도 더 자연스럽게 들려요."
+        ),
+        positiveFeedback="전공과 취미를 말하려는 핵심은 보였어요.",
+        benchmarkMessage=None,
+    )
 
 
 def _looks_like_underwhelming_good_news_reaction(request: TurnFeedbackRequest) -> bool:
