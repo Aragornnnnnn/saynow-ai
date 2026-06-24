@@ -830,6 +830,44 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
         self.assertIn("부모님", result.innerThought)
 
+    def test_next_question_keeps_parent_reason_content_in_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That makes sense. What do you like doing after class?",
+            "translatedQuestion": "그럴 수 있겠다. 수업 끝나고 뭐 하는 걸 좋아해?",
+            "innerThought": "생각보다 자기 의견이 약한가 보네. 좀 더 들어봐야겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 2,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "룸메이트와 처음 만나 서로를 알아갑니다.",
+                "conversationGoal": "여기 온 이유와 관심사를 자연스럽게 말한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "What made you decide to come all the way here?",
+                "translatedQuestion": "어쩌다 여기까지 오게 된 거야?",
+                "userUtterance": "Because my parents said so. I don't know.",
+            },
+            "nextQuestion": {
+                "questionId": 3,
+                "sequence": 3,
+                "questionEn": "What do you like doing after class?",
+                "questionKo": "수업 끝나고 뭐 하는 걸 좋아해?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertIn("부모님", result.innerThought)
+
     def test_next_question_uses_specific_bad_inner_thought_for_sensitive_relationship_question(self):
         from app.models.conversation import NextQuestionRequest
 

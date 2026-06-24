@@ -989,6 +989,7 @@ def _next_question_system_prompt() -> str:
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
+            "If the user says their parents decided something for them, the private reaction should reflect that family-decision context instead of only saying the user has a weak opinion. "
             "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
             "Direct roommate commands such as 'Buy me X' can feel like being ordered around. "
             "Private relationship questions such as 'Why are you single?' should feel invasive or uncomfortable, not merely cold. "
@@ -1546,6 +1547,7 @@ def _repair_next_question_inner_thought(
 ) -> NextQuestionResponse:
     expected_type = _fallback_inner_thought_type(request)
     issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
     should_replace_thought = (
         expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
     ) or (
@@ -1559,6 +1561,9 @@ def _repair_next_question_inner_thought(
         expected_type == "BAD"
         and issue_kind is not None
         and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
+    ) or (
+        parent_reason_answer
+        and "부모" not in response.innerThought
     ) or (
         _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
@@ -1667,7 +1672,7 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
         return "이렇게 이유까지 말해주니까 대화하기 편하네."
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    if "parents said so" in normalized or ("parents" in normalized and "i don t know" in normalized):
+    if _is_parent_reason_answer(request.currentTurn.userUtterance):
         return "부모님 때문에 온 거라고 솔직히 말하네. 아직 자기 생각은 잘 모르지만 이유는 대충 알겠다."
     if "losted" in normalized or "hotel no answer" in normalized:
         return "호텔에서 연락이 안 돼서 꽤 당황했겠네. 뜻은 알겠는데 표현은 조금 서툴러."
@@ -1699,6 +1704,19 @@ def _is_meta_inner_thought(inner_thought: str) -> bool:
         "next question",
     ]
     return any(marker in normalized for marker in meta_markers)
+
+
+def _is_parent_reason_answer(user_utterance: str) -> bool:
+    normalized = _normalize_visible_text(user_utterance)
+    if "parents said so" in normalized:
+        return True
+    if "parents" not in normalized:
+        return False
+    decision_markers = ("said", "told", "wanted", "asked", "made me")
+    uncertainty_markers = ("i don t know", "i dont know", "not sure")
+    return any(marker in normalized for marker in decision_markers) or any(
+        marker in normalized for marker in uncertainty_markers
+    )
 
 
 def _is_generic_normal_inner_thought(inner_thought: str) -> bool:
