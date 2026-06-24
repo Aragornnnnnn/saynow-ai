@@ -1825,6 +1825,7 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "해야겠다",
         "낫겠다",
         "묻지 않는 게",
+        "건드리지",
     ]
     return any(marker in normalized for marker in future_markers)
 

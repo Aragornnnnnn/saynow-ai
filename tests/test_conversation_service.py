@@ -1536,6 +1536,13 @@ class ConversationServiceTest(unittest.TestCase):
                 "expected": "차갑",
                 "forbidden": "묻지 않는 게 낫겠다",
             },
+            {
+                "userUtterance": "I don't snore. That's not funny.",
+                "innerThought": "장난처럼 들렸을 수도 있겠네. 더 건드리지 말아야겠다.",
+                "expectedType": "NORMAL",
+                "expected": "기분",
+                "forbidden": "건드리지",
+            },
         ]
 
         for index, case in enumerate(cases, start=1):
