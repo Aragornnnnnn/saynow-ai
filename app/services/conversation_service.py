@@ -990,7 +990,7 @@ def _next_question_system_prompt() -> str:
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
             "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
-            "Direct roommate commands such as 'Buy me milk' can feel like being ordered around. "
+            "Direct roommate commands such as 'Buy me X' can feel like being ordered around. "
             "Private relationship questions such as 'Why are you single?' should feel invasive or uncomfortable, not merely cold. "
             "Direct commands such as 'Send me the file now' can feel rude to a professor or staff member."
         ),
@@ -1667,6 +1667,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
         return "이렇게 이유까지 말해주니까 대화하기 편하네."
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    if "parents said so" in normalized or ("parents" in normalized and "i don t know" in normalized):
+        return "부모님 때문에 온 거라고 솔직히 말하네. 아직 자기 생각은 잘 모르지만 이유는 대충 알겠다."
     if "losted" in normalized or "hotel no answer" in normalized:
         return "호텔에서 연락이 안 돼서 꽤 당황했겠네. 뜻은 알겠는데 표현은 조금 서툴러."
     if "ramen" in normalized and "because cheap" in normalized:
@@ -1887,13 +1889,39 @@ def _correction_expression_for_next_question(user_utterance: str) -> str:
     return "I'd rather talk about something else for now."
 
 
-def _correction_expression_for_direct_command(user_utterance: str) -> str:
+def _correction_expression_for_direct_command(user_utterance: str, counterpart_role: str) -> str:
     normalized = _normalize_visible_text(user_utterance)
+    role = _normalize_visible_text(counterpart_role)
+    roommate_request = _roommate_request_object(normalized)
+    if roommate_request and "roommate" in role:
+        return f"Could you get me {roommate_request}?"
     if "file" in normalized:
         return "Could you send me the file when you have time?"
     if "email" in normalized or "reply" in normalized:
         return "Could you reply when you have time?"
     return "Could you help me with this when you have time?"
+
+
+def _roommate_request_object(normalized_utterance: str) -> str | None:
+    match = re.search(
+        r"(?:^|\b)(?:buy|get|bring)\s+me\s+(?P<object>[a-z0-9]+(?:\s+[a-z0-9]+){0,3})\b",
+        normalized_utterance,
+    )
+    if not match:
+        return None
+    requested_object = match.group("object").strip()
+    stop_words = {"when", "if", "and", "please"}
+    words = []
+    for word in requested_object.split():
+        if word in stop_words:
+            break
+        words.append(word)
+    if not words:
+        return None
+    object_text = " ".join(words)
+    if object_text.startswith(("a ", "an ", "the ", "some ", "my ", "your ", "this ", "that ")):
+        return object_text
+    return f"some {object_text}"
 
 
 def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
@@ -2250,14 +2278,25 @@ def _feedback_for_tone_issue(
             benchmarkMessage=None,
         )
     if issue_kind == "direct_command":
-        correction_expression = _correction_expression_for_direct_command(request.turn.userUtterance)
+        correction_expression = _correction_expression_for_direct_command(
+            request.turn.userUtterance,
+            request.scenario.counterpartRole,
+        )
+        correction_reason = _correction_reason_for_direct_command(
+            request.turn.userUtterance,
+            request.scenario.counterpartRole,
+            correction_expression,
+        )
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-            koreanAnalogy="\"지금 바로 보내세요\"라고 명령하듯 말하는 것과 같아요.",
+            koreanAnalogy=_korean_analogy_for_direct_command(
+                request.turn.userUtterance,
+                request.scenario.counterpartRole,
+            ),
             feedbackDetail=None,
             correctionExpression=correction_expression,
-            correctionReason=f"상대 역할이 교수님이나 직원이면 바로 명령하는 표현은 무례하게 들릴 수 있어요. {correction_expression}처럼 말하면 요청 의도는 유지하면서 더 정중해져요.",
+            correctionReason=correction_reason,
             positiveFeedback="필요한 것을 분명하게 말하려는 의도는 보였어요.",
             benchmarkMessage=None,
         )
@@ -2296,6 +2335,45 @@ def _feedback_for_tone_issue(
             benchmarkMessage=None,
         )
     return None
+
+
+def _korean_analogy_for_direct_command(user_utterance: str, counterpart_role: str) -> str:
+    normalized = _normalize_visible_text(user_utterance)
+    role = _normalize_visible_text(counterpart_role)
+    if "roommate" in role and _roommate_request_object(normalized):
+        return "\"그거 사 와\"처럼 부탁보다 지시하는 말로 들릴 수 있어요."
+    return "\"지금 바로 보내세요\"라고 명령하듯 말하는 것과 같아요."
+
+
+def _correction_reason_for_direct_command(
+    user_utterance: str,
+    counterpart_role: str,
+    correction_expression: str,
+) -> str:
+    normalized = _normalize_visible_text(user_utterance)
+    role = _normalize_visible_text(counterpart_role)
+    if "roommate" in role and _roommate_request_object(normalized):
+        source_phrase = _direct_command_source_phrase(user_utterance)
+        return (
+            f"{source_phrase}처럼 룸메이트에게 바로 시키는 표현은 부담스럽거나 무례하게 들릴 수 있어요. "
+            f"{correction_expression}처럼 말하면 필요한 것은 유지하면서 부탁하는 말투가 돼요."
+        )
+    return (
+        f"상대 역할이 교수님이나 직원이면 바로 명령하는 표현은 무례하게 들릴 수 있어요. "
+        f"{correction_expression}처럼 말하면 요청 의도는 유지하면서 더 정중해져요."
+    )
+
+
+def _direct_command_source_phrase(user_utterance: str) -> str:
+    match = re.search(
+        r"\b(?P<phrase>(?:buy|get|bring|give)\s+me\s+[^.!?]+)",
+        user_utterance,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return user_utterance.strip()
+    phrase = match.group("phrase").strip()
+    return phrase[:1].upper() + phrase[1:]
 
 
 def _feedback_for_underwhelming_good_news_reaction(
@@ -2839,10 +2917,13 @@ def _postprocess_highlight_message(
     highlight_message: str,
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
 ) -> str:
+    turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
+    priority_tone_highlight = _priority_tone_highlight_message(turn_feedbacks)
+    if priority_tone_highlight:
+        return priority_tone_highlight
     quantitative_hook = _quantitative_highlight_message(turn_feedback_entries)
     if quantitative_hook:
         return quantitative_hook
-    turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
     if not _is_korean_text(highlight_message):
         return _default_highlight_message(turn_feedback_entries)
     repaired = _repair_legacy_highlight_style(highlight_message).strip()
@@ -2906,10 +2987,13 @@ def _highlight_conflicts_with_turn_feedback(
 
 def _default_highlight_message(turn_feedback_entries: list[_TurnFeedbackCacheEntry] | list[TurnFeedbackData]) -> str:
     if turn_feedback_entries and isinstance(turn_feedback_entries[0], _TurnFeedbackCacheEntry):
+        turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
+        priority_tone_highlight = _priority_tone_highlight_message(turn_feedbacks)
+        if priority_tone_highlight:
+            return priority_tone_highlight
         quantitative_hook = _quantitative_highlight_message(turn_feedback_entries)
         if quantitative_hook:
             return quantitative_hook
-        turn_feedbacks = [entry.feedback for entry in turn_feedback_entries]
     else:
         turn_feedbacks = turn_feedback_entries
     concrete_highlight = _non_quantitative_highlight_message(turn_feedbacks)
@@ -3022,6 +3106,9 @@ def _detected_pattern_has_session_highlight_evidence(
 
 
 def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str | None:
+    priority_tone_highlight = _priority_tone_highlight_message(turn_feedbacks)
+    if priority_tone_highlight:
+        return priority_tone_highlight
     combined_detail = _normalize_visible_text(" ".join(_turn_feedback_search_text(feedback) for feedback in turn_feedbacks))
     if any(
         marker in combined_detail
@@ -3047,6 +3134,39 @@ def _non_quantitative_highlight_message(turn_feedbacks: list[TurnFeedbackData]) 
         return "음식 취향과 이유를 자연스럽게 말한 사람"
     if any(feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT for feedback in turn_feedbacks):
         return "어려운 표현에 도전한 사람"
+    return None
+
+
+def _priority_tone_highlight_message(turn_feedbacks: list[TurnFeedbackData]) -> str | None:
+    combined_detail = _normalize_visible_text(" ".join(_turn_feedback_search_text(feedback) for feedback in turn_feedbacks))
+    if any(
+        marker in combined_detail
+        for marker in [
+            "why are you single",
+            "boyfriend",
+            "girlfriend",
+            "연애 상태",
+            "사적인",
+            "대화의 선",
+            "몰아붙",
+        ]
+    ):
+        return "부드러운 질문에 도전한 사람"
+    if any(
+        marker in combined_detail
+        for marker in [
+            "i don t care",
+            "차갑",
+            "무심",
+            "재촉",
+            "방어적",
+            "명령",
+            "무례",
+            "시키",
+            "위협",
+        ]
+    ):
+        return "부드러운 표현에 도전한 사람"
     return None
 
 

@@ -865,3 +865,12 @@
 - [x] 역할 기반 속마음 보정과 짧은 반응 tone issue를 일반 규칙으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 roommate live quality second pass
+
+- [x] 룸메이트 직접 요청의 교정 표현과 설명이 role/context를 유지하도록 RED 테스트로 고정한다.
+- [x] 짧은 부모님 이유 답변의 generic 속마음을 실제 룸메이트 반응으로 바꾸는 RED 테스트를 추가한다.
+- [x] 큰 tone issue가 있는 혼합 세션에서 문법 수치 highlight가 과하게 우선되지 않도록 RED 테스트로 고정한다.
+- [x] 하드코딩 대신 role-aware 보정과 evidence 기반 highlight fallback으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
