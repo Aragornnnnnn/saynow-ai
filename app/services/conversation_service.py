@@ -1023,6 +1023,8 @@ def _next_question_system_prompt() -> str:
             "Bad innerThought style: '왠지 더 캐묻기보다 분위기를 풀어주고 싶네.'\n"
             "Bad innerThought style: '우유 챙겨서 가면 되겠다.'\n"
             "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
+            "Bad innerThought style: '바로 배려해야겠다.'\n"
+            "Bad innerThought style: '더 묻지 않는 게 낫겠다.'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1110,7 +1112,9 @@ def _closing_message_system_prompt() -> str:
             '{"aiMessage":"Okay, I understand. Let\'s pause here.","translatedMessage":"알겠어. 여기서 잠깐 마무리하자.","innerThought":"지금은 대화를 더 이어가고 싶지 않은 것처럼 들리네.","innerThoughtType":"BAD"}\n'
             "Bad innerThought style: '이 정도면 상황을 마무리해도 괜찮겠다.'\n"
             "Bad innerThought style: '그래도 여기서 멈춰도 되겠다.'\n"
-            "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'"
+            "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
+            "Bad innerThought style: '바로 배려해야겠다.'\n"
+            "Bad innerThought style: '더 묻지 않는 게 낫겠다.'"
         ),
         (
             "Self-check before final JSON:\n"
@@ -1805,6 +1809,9 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "친해질 수 있",
         "이런 얘기 나누",
         "분위기를 풀어주",
+        "해야겠다",
+        "낫겠다",
+        "묻지 않는 게",
     ]
     return any(marker in normalized for marker in future_markers)
 

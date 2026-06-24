@@ -1390,6 +1390,60 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("마무리", result.innerThought)
         self.assertIn("기분", result.innerThought)
 
+    def test_closing_message_replaces_action_plan_inner_thought(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        cases = [
+            {
+                "userUtterance": "Could you keep it down at night? I have an early class tomorrow.",
+                "innerThought": "아, 내가 좀 신경을 덜 썼구나. 이렇게 직접 말해줘서 고맙고, 바로 배려해야겠다.",
+                "expectedType": "GOOD",
+                "expected": "시끄러",
+                "forbidden": "해야겠다",
+            },
+            {
+                "userUtterance": "I don't care.",
+                "innerThought": "지금은 더 말해도 소용없겠네. 좀 차갑게 들리지만 더 묻지 않는 게 낫겠다.",
+                "expectedType": "BAD",
+                "expected": "차갑",
+                "forbidden": "묻지 않는 게 낫겠다",
+            },
+        ]
+
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(case=index):
+                self.service.chat = lambda *args, case=case, **kwargs: json.dumps({
+                    "aiMessage": "Okay. Let's leave it there for now.",
+                    "translatedMessage": "알겠어. 일단 여기까지 하자.",
+                    "innerThought": case["innerThought"],
+                    "innerThoughtType": case["expectedType"],
+                })
+                request = ClosingMessageRequest.model_validate({
+                    "sessionId": 1000 + index,
+                    "submittedTurnId": 5000 + index,
+                    "submittedSequence": 4,
+                    "scenario": {
+                        "scenarioId": 3,
+                        "title": "서로 더 알아가는 밤 — 룸메 토크",
+                        "briefing": "룸메이트와 생활 불편함을 이야기합니다.",
+                        "conversationGoal": "생활 문제를 부드럽게 말한다.",
+                        "counterpartRole": "roommate",
+                    },
+                    "currentTurn": {
+                        "aiQuestion": "What do you want me to do?",
+                        "translatedQuestion": "내가 어떻게 해주면 좋겠어?",
+                        "userUtterance": case["userUtterance"],
+                    },
+                    "closingReason": "GOAL_COMPLETED" if case["expectedType"] == "GOOD" else "MAX_TURNS_REACHED",
+                    "goalCompletionStatus": "COMPLETED" if case["expectedType"] == "GOOD" else "PARTIAL",
+                })
+
+                result = self.service.generate_closing_message(request)
+
+                self.assertEqual(result.innerThoughtType, case["expectedType"])
+                self.assertNotIn(case["forbidden"], result.innerThought)
+                self.assertIn(case["expected"], result.innerThought)
+
     def test_next_question_matches_korean_acknowledgement_tone_to_casual_fixed_question(self):
         from app.models.conversation import NextQuestionRequest
 
