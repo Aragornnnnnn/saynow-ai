@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## LAN-28 전체 엣지케이스 품질 재검증
+
+- [x] 현재 repo, 최근 live 결과, 테스트 자산에서 검증 가능한 시나리오와 edge case 범위를 정리한다.
+- [x] `next-question`, `closing-message`, `turn-feedback`, `session-feedback`를 함께 검증하는 live smoke matrix를 만든다.
+- [x] 룸메이트 3개 시나리오 GOOD/EDGE 24개 발화와 역할별 추가 edge case를 실행한다.
+- [x] 속마음, 피드백 타입, 교정 표현, benchmark, highlight의 치명 품질 오류를 분류한다.
+- [x] 문제가 있으면 RED 테스트로 재현한 뒤 프롬프트나 후처리를 최소 범위로 수정한다.
+- [ ] 전체 unittest, compileall, diff check, 최종 live smoke를 실행한다.
+- [ ] 결과 리포트와 원본 JSON 경로를 남기고 필요한 커밋과 배포를 완료한다.
+
 ## LAN-28 속마음과 개선 표현 계약
 
 - [x] `next-question`이 `scenario.counterpartRole`, `innerThought`, `innerThoughtType` 계약을 요구하는 RED 테스트를 추가한다.

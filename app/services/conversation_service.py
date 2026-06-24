@@ -1638,6 +1638,7 @@ def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
     if (
         _looks_like_clear_reason_answer(request.currentTurn.userUtterance)
         or _looks_like_detailed_good_answer(normalized)
+        or _looks_like_polite_service_request(normalized, request.scenario.counterpartRole)
         or "could you" in normalized
         or "would you" in normalized
     ):
@@ -1704,6 +1705,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "계획도 세우고 여유도 남기는 타입이구나. 여행 스타일이 꽤 분명해서 이야기하기 좋네."
         if "live concert" in normalized and "would love to see" in normalized:
             return "아직 직접 본 건 아니지만 보고 싶은 이유가 분명하네. 음악 취향이 잘 느껴져."
+        if _looks_like_polite_service_request(normalized, request.scenario.counterpartRole):
+            return "정중하게 주문해주네. 필요한 음료가 분명해서 응대하기 편하다."
         if "professor" in role or "teacher" in role:
             return "요점을 차분히 말해줘서 내가 바로 이해하기 좋네."
         if "staff" in role or "barista" in role or "server" in role:
@@ -1720,6 +1723,12 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "쉬는 것 말고는 별 얘기가 없네. 요즘 꽤 지쳤나 보다."
     if normalized == "good":
         return "축하는 해준 것 같지만 한마디라 조금 건조하게 느껴져."
+    if _looks_like_because_spicy_clause_issue(normalized):
+        return "피자가 매워서 좋다는 뜻이구나. 말은 조금 끊겼지만 취향은 알겠다."
+    if "rice is my life food" in normalized:
+        return "밥이 정말 중요하다는 말이구나. 표현은 낯설지만 어떤 느낌인지는 알겠다."
+    if "canada because nature" in normalized:
+        return "캐나다 자연이 좋아서 가고 싶다는 뜻이구나. 조금 짧지만 이유는 짐작된다."
     if normalized in {"i m fine", "im fine", "i am fine"}:
         return "괜찮다고는 하는데 너무 짧게 말해서 속마음은 잘 모르겠다."
     if _is_parent_reason_answer(request.currentTurn.userUtterance):
@@ -2047,6 +2056,16 @@ def _looks_like_direct_command(user_utterance: str, counterpart_role: str) -> bo
         any(marker in role for marker in ["professor", "teacher", "staff", "server", "barista", "stranger"])
         or " now" in normalized
     )
+
+
+def _looks_like_polite_service_request(normalized_utterance: str, counterpart_role: str) -> bool:
+    role = _normalize_visible_text(counterpart_role)
+    if not any(marker in role for marker in ["staff", "barista", "server"]):
+        return False
+    return any(
+        marker in normalized_utterance
+        for marker in ["can i get", "could i get", "may i have", "can i have"]
+    ) and "please" in normalized_utterance
 
 
 def _correction_expression_for_dont_care(user_utterance: str) -> str:
@@ -2491,6 +2510,17 @@ def _feedback_for_tone_issue(
         )
     if issue_kind == "hate":
         normalized = _normalize_visible_text(request.turn.userUtterance)
+        if "shut up" in normalized and "sleep" in normalized:
+            return TurnFeedbackData(
+                turnId=feedback.turnId,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="\"닥쳐, 나 자야 해\"라고 짜증을 바로 던지는 것처럼 들려요.",
+                feedbackDetail=None,
+                correctionExpression="Could you keep it down? I need to sleep.",
+                correctionReason="Shut up은 룸메이트에게 무례하고 공격적으로 들릴 수 있어요. Could you keep it down? I need to sleep.처럼 말하면 조용히 해달라는 뜻은 유지하면서 더 부드럽게 전달돼요.",
+                positiveFeedback="잠을 자야 한다는 필요는 분명히 말했어요.",
+                benchmarkMessage=None,
+            )
         if "fish" in normalized:
             return TurnFeedbackData(
                 turnId=feedback.turnId,

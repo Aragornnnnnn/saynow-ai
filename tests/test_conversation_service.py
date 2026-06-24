@@ -1240,6 +1240,94 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
         self.assertIn("시키", result.innerThought)
 
+    def test_next_question_marks_polite_staff_order_as_good_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Nice choice. Anything else?",
+            "translatedQuestion": "좋은 선택이에요. 더 필요한 게 있으세요?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1301,
+            "submittedTurnId": 5301,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 4,
+                "title": "카페에서 주문하기",
+                "briefing": "카페 직원에게 원하는 음료를 주문합니다.",
+                "conversationGoal": "원하는 음료를 자연스럽고 공손하게 주문한다.",
+                "counterpartRole": "cafe staff",
+            },
+            "currentTurn": {
+                "aiQuestion": "What can I get for you?",
+                "translatedQuestion": "무엇을 드릴까요?",
+                "userUtterance": "Can I get an iced Americano, please?",
+            },
+            "nextQuestion": {
+                "questionId": 5,
+                "sequence": 2,
+                "questionEn": "Anything else?",
+                "questionKo": "더 필요한 게 있으세요?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("응대", result.innerThought)
+
+    def test_next_question_replaces_generic_inner_thought_for_common_grammar_edges(self):
+        from app.models.conversation import NextQuestionRequest
+
+        cases = [
+            ("I like pizza because spicy.", "피자", "취향"),
+            ("Rice is my life food.", "밥", "중요"),
+            ("Canada, because nature.", "캐나다", "자연"),
+        ]
+
+        for index, (utterance, expected_a, expected_b) in enumerate(cases, start=1):
+            with self.subTest(utterance=utterance):
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "aiQuestion": "That sounds interesting. What would you say next?",
+                    "translatedQuestion": "그거 흥미롭다. 다음에는 뭐라고 말할 거야?",
+                    "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+                    "innerThoughtType": "NORMAL",
+                })
+                request = NextQuestionRequest.model_validate({
+                    "sessionId": 1400 + index,
+                    "submittedTurnId": 5400 + index,
+                    "submittedSequence": index,
+                    "scenario": {
+                        "scenarioId": 5,
+                        "title": "친구와 여행 취향 이야기하기",
+                        "briefing": "친구와 음식, 여행지, 취향을 이야기합니다.",
+                        "conversationGoal": "취향과 이유를 영어로 설명한다.",
+                        "counterpartRole": "friend",
+                    },
+                    "currentTurn": {
+                        "aiQuestion": "Tell me more about your choice.",
+                        "translatedQuestion": "네 선택에 대해 더 말해줘.",
+                        "userUtterance": utterance,
+                    },
+                    "nextQuestion": {
+                        "questionId": 50 + index,
+                        "sequence": index + 1,
+                        "questionEn": "What would you say next?",
+                        "questionKo": "다음에는 뭐라고 말할 거야?",
+                    },
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.innerThoughtType, "NORMAL")
+                self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+                self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
+                self.assertIn(expected_a, result.innerThought)
+                self.assertIn(expected_b, result.innerThought)
+
     def test_closing_message_returns_final_ai_message_and_inner_thought(self):
         from app.models.conversation import ClosingMessageRequest
 
@@ -2399,6 +2487,48 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("noisy", cached.correctionExpression)
         self.assertNotIn("noisy", cached.correctionReason)
 
+    def test_turn_feedback_contextualizes_rude_sleep_request_without_noise_fallback(self):
+        from app.models.conversation import TurnFeedbackRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"싫어, 짜증 나\"라고 감정을 바로 던지는 것처럼 들릴 수 있어요.",
+            "positiveFeedback": "불편한 상황을 설명하려는 의도는 분명했어요.",
+            "feedbackDetail": None,
+            "correctionExpression": "It is a little hard for me because it feels noisy.",
+            "correctionReason": "I hate처럼 강한 표현은 불만이 커 보일 수 있어요.",
+            "benchmarkMessage": None,
+        })
+        request = TurnFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "turnId": 5000,
+            "sequence": 5,
+            "scenario": {
+                "scenarioId": 3,
+                "title": "서로 더 알아가는 밤 - 룸메 토크",
+                "briefing": "룸메이트에게 밤에 조용히 해달라고 말합니다.",
+                "conversationGoal": "불편함을 너무 공격적이지 않게 전달한다.",
+                "counterpartRole": "roommate",
+            },
+            "turn": {
+                "aiQuestion": "I'm sorry, was I too loud?",
+                "translatedQuestion": "미안, 내가 너무 시끄러웠어?",
+                "userUtterance": "Shut up. I need sleep.",
+            },
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertIn("keep it down", cached.correctionExpression)
+        self.assertIn("sleep", cached.correctionExpression)
+        self.assertIn("Shut up", cached.correctionReason)
+        self.assertIn("무례", cached.correctionReason)
+        self.assertNotIn("noisy", cached.correctionExpression)
+        self.assertNotIn("It is a little hard", cached.correctionExpression)
+
     def test_turn_feedback_overrides_model_turn_id_with_request_turn_id(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -3097,6 +3227,51 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "부드러운 질문에 도전한 사람")
+
+    def test_session_feedback_prioritizes_rude_tone_over_good_numeric_highlight(self):
+        from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
+
+        self.service._store_turn_feedback(
+            1000,
+            TurnFeedbackData.model_validate({
+                "turnId": 5000,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "\"닥쳐, 나 자야 해\"라고 짜증을 바로 던지는 것처럼 들려요.",
+                "positiveFeedback": "잠을 자야 한다는 필요는 분명히 말했어요.",
+                "feedbackDetail": None,
+                "correctionExpression": "Could you keep it down? I need to sleep.",
+                "correctionReason": "Shut up은 룸메이트에게 무례하고 공격적으로 들릴 수 있어요. Could you keep it down? I need to sleep.처럼 말하면 조용히 해달라는 뜻은 유지하면서 더 부드럽게 전달돼요.",
+                "benchmarkMessage": None,
+            }),
+            user_utterance="Shut up. I need sleep.",
+        )
+        self.service._store_turn_feedback(
+            1000,
+            TurnFeedbackData.model_validate({
+                "turnId": 5001,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "\"오늘 밤만 좀 조용히 해줄래? 내일 수업이 있어서\"라고 이유를 자연스럽게 붙여 말하는 것과 같아요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "조용히 해 달라는 요청과 이유를 분명하게 전달했어요.",
+                "correctionExpression": None,
+                "correctionReason": None,
+                "benchmarkMessage": "한국인의 79%가 틀리는 a/an을 정확히 썼어요",
+            }),
+            user_utterance="Could you keep it down tonight? I have an early class tomorrow.",
+        )
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "sessionId": 1000,
+            "highlightMessage": "한국인의 79%가 틀리는 a/an을 정확히 쓴 사람",
+        })
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(),
+            "expectedTurnIds": [5000, 5001],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertEqual(result.highlightMessage, "부드러운 표현에 도전한 사람")
 
     def test_session_feedback_replaces_weak_highlight_with_non_quantitative_needs_hook_when_no_good_benchmark(self):
         from app.models.conversation import SessionFeedbackRequest

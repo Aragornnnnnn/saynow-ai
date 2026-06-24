@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-24 `define-goal` 기준으로 LAN-28 품질 재검증 목표를 새로 잡았다. 범위는 현재 repo와 최근 live 결과에서 확인 가능한 룸메이트 3개 시나리오, 역할별 tone edge case, 문법/표현 edge case, `next-question`, `closing-message`, `turn-feedback`, `session-feedback` 전체 흐름이다. 성공 기준은 HTTP/JSON 실패, 속마음 진행자식 문구, 역할 불일치, `NEEDS_IMPROVEMENT` 교정 누락, 명백히 틀린 benchmark/highlight를 0건으로 만드는 것이다.
+- 2026-06-24 현재 AI repo에는 BE의 전체 DB seed가 없으므로, “전체 시나리오”는 AI repo에서 직접 검증 가능한 시나리오 컨텍스트와 최근 LAN-28 live 테스트에 쓰인 시나리오를 기준으로 잡는다. 실제 BE DB 전체 시나리오를 완전 순회하려면 BE API나 DB seed가 필요하다.
+- 2026-06-24 전체 edge smoke matrix는 룸메이트 3개 시나리오 GOOD/EDGE 24발화와 교수, 카페 직원, 친구, 낯선 사람 역할 edge를 합쳐 44개 발화로 구성했다. 첫 live smoke에서 정중한 카페 주문이 NORMAL 속마음으로 떨어지고, 문법 edge 속마음이 generic 튜터 문구로 돌아가며, `Shut up. I need sleep.`의 교정이 소음 fallback으로 오염되는 문제가 확인됐다. 수정은 전체 문장 하드코딩이 아니라 역할 기반 polite service request, common grammar edge fallback, rude sleep tone issue를 좁게 감지하는 방식으로 처리했다. 로컬 검증은 전체 `unittest discover -s tests -p 'test*.py'` 166개, `compileall app tests scripts`, `git diff --check`로 통과했다.
+
 - 2026-06-23 LAN-28은 `origin/develop` 기반에서 진행한다. 목표는 `next-question`에 상대 역할 기반 속마음 응답을 추가하고, `turn-feedback`의 개선 표현과 개선 이유를 `correctionExpression`, `correctionReason`으로 다시 분리하는 것이다.
 - 2026-06-23 속마음은 피드백 설명문이 아니라 상대 역할이 사용자 발화를 듣고 느낀 1인칭 내적 반응이다. 같은 문장도 `scenario.counterpartRole`에 따라 달라져야 하므로 `counterpartRole`은 `next-question` 요청 필수 필드로 둔다.
 - 2026-06-23 `turn-feedback`에서 `NEEDS_IMPROVEMENT`는 `positiveFeedback`, `correctionExpression`, `correctionReason`을 요구하고 `feedbackDetail`과 `benchmarkMessage`는 null로 둔다. `GOOD`은 `feedbackDetail`과 `benchmarkMessage`를 사용하고 correction 필드는 null로 둔다.
