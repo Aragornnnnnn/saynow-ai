@@ -1007,6 +1007,18 @@ class ConversationServiceTest(unittest.TestCase):
                 "nextQuestionKo": "나 좋은 소식 있어.",
             },
             {
+                "userUtterance": "I usually like visiting cafes and walking around new neighborhoods. I also want to try a local festival while I’m here.",
+                "aiQuestion": "That sounds fun. I have some good news.",
+                "translatedQuestion": "재밌겠다. 나 좋은 소식 있어.",
+                "scriptedThought": "같이 살면서 이런 얘기 나누면 좀 더 친해질 수 있겠네.",
+                "forbidden": ["이런 얘기", "친해질 수"],
+                "expected": ["카페", "축제"],
+                "currentQuestion": "What do you usually do for fun?",
+                "currentQuestionKo": "보통 뭐 하면서 놀아?",
+                "nextQuestionEn": "I have some good news.",
+                "nextQuestionKo": "나 좋은 소식 있어.",
+            },
+            {
                 "userUtterance": "I can come with you. I don't need anything, but I can help carry things if you buy a lot.",
                 "aiQuestion": "Thanks, that helps. Where should we meet?",
                 "translatedQuestion": "고마워, 도움이 되겠다. 어디서 만날까?",

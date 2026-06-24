@@ -1014,6 +1014,7 @@ def _next_question_system_prompt() -> str:
             "Bad innerThought style: '잠들기 전에 한마디 놀려도 괜찮겠지?'\n"
             "Bad innerThought style: '이제 자연스럽게 마무리하면 되겠다.'\n"
             "Bad innerThought style: '거기다 축하할 소식도 빨리 알려주고 싶네.'\n"
+            "Bad innerThought style: '같이 살면서 이런 얘기 나누면 좀 더 친해질 수 있겠네.'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1767,6 +1768,7 @@ def _is_scripted_future_inner_thought(
         "마지막엔",
         "넘겨보자",
         "넘겨 보자",
+        "친해질 수 있",
     ]
     if any(marker in normalized for marker in future_markers):
         return True
