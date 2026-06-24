@@ -989,6 +989,8 @@ def _next_question_system_prompt() -> str:
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
+            "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
+            "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
             "If the user says their parents decided something for them, the private reaction should reflect that family-decision context instead of only saying the user has a weak opinion. "
             "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
             "Direct roommate commands such as 'Buy me X' can feel like being ordered around. "
@@ -1002,11 +1004,13 @@ def _next_question_system_prompt() -> str:
             "Good JSON for user 'I watched a movie yesterday, but the story was confusing.': "
             '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?","innerThought":"무슨 일을 겪었는지 조금 더 들어보고 싶네.","innerThoughtType":"NORMAL"}\n'
             "Good JSON when the next fixed question Korean is casual banmal: "
-            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"여행 이야기를 편하게 꺼내 줘서 나도 계속 묻기 좋네.","innerThoughtType":"GOOD"}\n'
+            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"여행 얘기를 편하게 꺼내 주네. 같이 이야기하기 한결 편하다.","innerThoughtType":"GOOD"}\n'
             "Good JSON for blunt user 'Anywhere is fine. I don't care.': "
             '{"aiQuestion":"Okay, anywhere works. Do you cook often?","translatedQuestion":"그래요, 어디든 괜찮군요. 요리는 자주 하나요?","innerThought":"어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아.","innerThoughtType":"BAD"}\n'
             "Bad aiQuestion style: 'I see. Do you cook often?'\n"
             "Bad translatedQuestion style when the fixed Korean question is casual banmal: '정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?'\n"
+            "Bad innerThought style: '취미 얘기도 자연스럽게 이어가면 더 친해질 수 있겠다.'\n"
+            "Bad innerThought style: '잠들기 전에 한마디 놀려도 괜찮겠지?'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1017,7 +1021,8 @@ def _next_question_system_prompt() -> str:
             "3. The Korean acknowledgement tone matches the next fixed question Korean tone. "
             "4. No generic standalone acknowledgement is used. "
             "5. innerThought sounds like the counterpart role's private reaction, not feedback. "
-            "6. Return one JSON object only."
+            "6. innerThought does not mention the next topic, next question, or a future scenario beat. "
+            "7. Return one JSON object only."
         ),
         (
             "Output Schema:\n"
@@ -1565,6 +1570,8 @@ def _repair_next_question_inner_thought(
         parent_reason_answer
         and "부모" not in response.innerThought
     ) or (
+        _is_scripted_future_inner_thought(request, response.innerThought)
+    ) or (
         _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
     updates: dict[str, Any] = {}
@@ -1717,6 +1724,88 @@ def _is_parent_reason_answer(user_utterance: str) -> bool:
     return any(marker in normalized for marker in decision_markers) or any(
         marker in normalized for marker in uncertainty_markers
     )
+
+
+def _is_scripted_future_inner_thought(
+    request: NextQuestionRequest,
+    inner_thought: str,
+) -> bool:
+    normalized = _normalize_visible_text(inner_thought)
+    future_markers = [
+        "다음 주제",
+        "다음 질문",
+        "다음 얘기",
+        "다음 이야기",
+        "넘어가면",
+        "이어가면",
+        "이어 가면",
+        "이어가야",
+        "이어 가야",
+        "마무리하면",
+        "마무리해도",
+        "잠들기 전에",
+        "잠들기 전",
+        "놀려도 괜찮",
+        "한마디 놀",
+    ]
+    if any(marker in normalized for marker in future_markers):
+        return True
+    return _leaks_next_question_topic(request, normalized)
+
+
+def _leaks_next_question_topic(request: NextQuestionRequest, normalized_inner_thought: str) -> bool:
+    if not any(marker in normalized_inner_thought for marker in ["궁금", "얘기", "이야기", "물어", "묻고"]):
+        return False
+    next_question_tokens = _korean_topic_tokens(request.nextQuestion.questionKo)
+    if not next_question_tokens:
+        return False
+    current_user_tokens = _korean_topic_tokens(request.currentTurn.userUtterance)
+    for token in next_question_tokens:
+        if token in current_user_tokens:
+            continue
+        if token in normalized_inner_thought:
+            return True
+    return False
+
+
+def _korean_topic_tokens(value: str) -> set[str]:
+    normalized = _normalize_visible_text(value)
+    stop_words = {
+        "거야",
+        "괜찮아",
+        "그거",
+        "나한테",
+        "너는",
+        "네가",
+        "뭐",
+        "뭐야",
+        "보통",
+        "어떻게",
+        "언제",
+        "왜",
+        "원하면",
+        "이제",
+        "정도",
+        "좋아",
+        "하고",
+        "하는",
+        "하면서",
+    }
+    tokens = set()
+    for raw_token in normalized.split():
+        token = _strip_korean_topic_particle(raw_token)
+        if token in stop_words or len(token) < 1:
+            continue
+        if len(raw_token) >= 2:
+            tokens.add(token)
+    return tokens
+
+
+def _strip_korean_topic_particle(token: str) -> str:
+    for suffix in ["이랑", "하고", "에서", "으로", "에게", "한테", "은", "는", "이", "가", "을", "를", "과", "와", "에"]:
+        if token.endswith(suffix) and len(token) > len(suffix):
+            return token[:-len(suffix)]
+    return token
 
 
 def _is_generic_normal_inner_thought(inner_thought: str) -> bool:

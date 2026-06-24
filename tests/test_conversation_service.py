@@ -908,6 +908,88 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("사적", result.innerThought)
         self.assertIn("불편", result.innerThought)
 
+    def test_next_question_replaces_scripted_future_inner_thought_with_current_reaction(self):
+        from app.models.conversation import NextQuestionRequest
+
+        cases = [
+            {
+                "userUtterance": "What has been your favorite memory since moving here?",
+                "aiQuestion": "That's a thoughtful question. What is your dream?",
+                "translatedQuestion": "생각 깊은 질문이네. 네 꿈은 뭐야?",
+                "scriptedThought": "이런 얘기까지 꺼내다니 분위기가 꽤 편안하네. 나도 이 사람 꿈이랑 전공 이야기가 궁금해.",
+                "forbidden": ["꿈이랑 전공 이야기가 궁금"],
+                "expected": ["먼저", "물어"],
+                "currentQuestion": "You can ask me something if you want.",
+                "currentQuestionKo": "원하면 나한테 뭐 물어봐도 돼.",
+                "nextQuestionEn": "What is your dream?",
+                "nextQuestionKo": "네 꿈은 뭐야?",
+            },
+            {
+                "userUtterance": "Thanks for checking on me. I've just been tired from classes lately, but I really appreciate you asking.",
+                "aiQuestion": "I'm glad you told me. Do I snore when I sleep?",
+                "translatedQuestion": "말해줘서 다행이야. 나 잘 때 코 골아?",
+                "scriptedThought": "요즘 많이 피곤했나 보네. 그래도 이렇게 솔직하게 말해줘서 좀 안심된다. 잠들기 전에 한마디 놀려도 괜찮겠지?",
+                "forbidden": ["잠들기 전에", "놀려도 괜찮겠지"],
+                "expected": ["고맙", "걱정"],
+                "currentQuestion": "Are you okay these days?",
+                "currentQuestionKo": "요즘 괜찮아?",
+                "nextQuestionEn": "Do I snore when I sleep?",
+                "nextQuestionKo": "나 잘 때 코 골아?",
+            },
+            {
+                "userUtterance": "Saturday works better for me, but Sunday afternoon also works if that is easier for you.",
+                "aiQuestion": "Saturday sounds good. What do you usually do for fun?",
+                "translatedQuestion": "토요일 좋다. 보통 뭐 하면서 놀아?",
+                "scriptedThought": "주말 약속이 잘 맞아서 다행이다. 취미 얘기도 자연스럽게 이어가면 더 친해질 수 있겠다.",
+                "forbidden": ["취미 얘기", "이어가면"],
+                "expected": ["가능한 날짜", "약속"],
+                "currentQuestion": "Are you free this weekend?",
+                "currentQuestionKo": "이번 주말에 시간 돼?",
+                "nextQuestionEn": "What do you usually do for fun?",
+                "nextQuestionKo": "보통 뭐 하면서 놀아?",
+            },
+        ]
+
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(case=index):
+                self.service.chat = lambda *args, case=case, **kwargs: json.dumps({
+                    "aiQuestion": case["aiQuestion"],
+                    "translatedQuestion": case["translatedQuestion"],
+                    "innerThought": case["scriptedThought"],
+                    "innerThoughtType": "GOOD",
+                })
+                request = NextQuestionRequest.model_validate({
+                    "sessionId": 1000 + index,
+                    "submittedTurnId": 5000 + index,
+                    "submittedSequence": index,
+                    "scenario": {
+                        "scenarioId": 3,
+                        "title": "서로 더 알아가는 밤 — 룸메 토크",
+                        "briefing": "룸메이트와 서로에 대해 더 알아갑니다.",
+                        "conversationGoal": "상대와 자연스럽게 친해진다.",
+                        "counterpartRole": "roommate",
+                    },
+                    "currentTurn": {
+                        "aiQuestion": case["currentQuestion"],
+                        "translatedQuestion": case["currentQuestionKo"],
+                        "userUtterance": case["userUtterance"],
+                    },
+                    "nextQuestion": {
+                        "questionId": 10 + index,
+                        "sequence": index + 1,
+                        "questionEn": case["nextQuestionEn"],
+                        "questionKo": case["nextQuestionKo"],
+                    },
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.innerThoughtType, "GOOD")
+                for forbidden in case["forbidden"]:
+                    self.assertNotIn(forbidden, result.innerThought)
+                for expected in case["expected"]:
+                    self.assertIn(expected, result.innerThought)
+
     def test_closing_message_returns_final_ai_message_and_inner_thought(self):
         from app.models.conversation import ClosingMessageRequest
 
