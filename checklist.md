@@ -873,4 +873,4 @@
 - [x] 큰 tone issue가 있는 혼합 세션에서 문법 수치 highlight가 과하게 우선되지 않도록 RED 테스트로 고정한다.
 - [x] 하드코딩 대신 role-aware 보정과 evidence 기반 highlight fallback으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
+- [x] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.

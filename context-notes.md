@@ -456,3 +456,4 @@
 - 2026-06-24 로컬 검증은 신규 RED 3개를 실패 확인 후 GREEN으로 전환했고, focused 8개, 전체 `unittest discover -s tests -p 'test*.py'` 155개, `compileall app tests`, `git diff --check`가 통과했다.
 - 2026-06-24 배포 후 첫 second-pass smoke는 23개 체크 중 22개가 통과했다. 실패 1건은 `Because my parents said so. I don't know.`의 속마음이 튜터식 generic은 아니지만 부모님 맥락을 놓친 것이다. 보정은 특정 문장 하드코딩이 아니라 `parents`와 결정/불확실성 marker가 함께 있는 답변이면 속마음이 가족 결정 맥락을 반영하도록 일반화했다.
 - 2026-06-24 추가 보정 후 로컬 검증은 parent content RED 1개를 실패 확인 후 GREEN으로 전환했고, focused 7개, 전체 `unittest discover -s tests -p 'test*.py'` 156개, `compileall app tests`, `git diff --check`가 통과했다. 재배포 후 동일 smoke를 다시 실행한다.
+- 2026-06-24 커밋 `a039d7b` 배포 run `28072599983` 성공 후 AI 서버 직접 smoke를 재실행했다. 결과는 23개 체크 모두 통과했고, 리포트는 `/tmp/saynow-lan28-roommate-second-pass-smoke-20260624T031627Z.md`, 원본 JSON은 `/tmp/saynow-lan28-roommate-second-pass-smoke-20260624T031627Z.json`에 저장했다. 확인한 축은 부모님 이유 답변 속마음, 룸메이트 직접 명령 교정, `Good.` 축하 반응 교정, 사적인 질문 highlight 우선순위, 직접 명령 속마음 BAD 유지다.
