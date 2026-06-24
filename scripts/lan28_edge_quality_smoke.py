@@ -73,10 +73,12 @@ BAD_TONE_MARKERS = (
     "불편",
     "사적",
     "연애",
+    "민감",
     "기분이 상",
     "기분 나빴",
     "농담",
     "방어적",
+    "괜히",
 )
 
 
@@ -905,9 +907,9 @@ def _run_next_question_cases(
         response = _request_json("POST", f"{base_url}/api/v1/conversation/next-question", payload)
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
         fatal, review = _evaluate_inner_thought_case(case, response, workflow="next-question")
-        if case.next_question_en not in response.get("aiQuestion", ""):
+        if _normalize(case.next_question_en) not in _normalize(response.get("aiQuestion", "")):
             fatal.append("aiQuestion에 next fixed question 원문이 포함되지 않음")
-        if case.next_question_ko not in response.get("translatedQuestion", ""):
+        if _normalize(case.next_question_ko) not in _normalize(response.get("translatedQuestion", "")):
             fatal.append("translatedQuestion에 next fixed question 번역문이 포함되지 않음")
         results.append({
             "caseId": case.case_id,

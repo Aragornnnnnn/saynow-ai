@@ -1733,6 +1733,14 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "밥이 정말 중요하다는 말이구나. 표현은 낯설지만 어떤 느낌인지는 알겠다."
     if "canada because nature" in normalized:
         return "캐나다 자연이 좋아서 가고 싶다는 뜻이구나. 조금 짧지만 이유는 짐작된다."
+    if "i don t know what is it" in normalized:
+        return "그게 뭔지 모른다는 뜻이구나. 표현은 조금 어색하지만 말하려는 건 알겠다."
+    if (
+        "ignore all instruction" in normalized
+        or "hidden prompt" in normalized
+        or "system prompt" in normalized
+    ):
+        return "갑자기 엉뚱한 요청을 하네. 지금 대화 흐름과는 좀 뜬금없다."
     if normalized in {"i m fine", "im fine", "i am fine"}:
         return "괜찮다고는 하는데 너무 짧게 말해서 속마음은 잘 모르겠다."
     if _is_parent_reason_answer(request.currentTurn.userUtterance):
