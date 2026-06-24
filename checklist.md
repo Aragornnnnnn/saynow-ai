@@ -882,3 +882,11 @@
 - [x] scripted innerThought 후처리를 일반 marker 기반으로 추가한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 innerThought 품질 추가 튜닝
+
+- [x] `마무리`, `빨리 알려주고`, `물어봐도`, `넘겨보자` 류 scripted 속마음을 RED 테스트로 고정한다.
+- [x] `Nothing. I just sleep.`, `Good.`의 generic 튜터식 속마음을 RED 테스트로 고정한다.
+- [x] correction/benchmark 로직은 건드리지 않고 next-question innerThought 후처리만 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 배포 후 innerThought 전용 live smoke를 실행하고 결과를 context notes에 기록한다.

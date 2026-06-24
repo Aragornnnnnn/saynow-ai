@@ -991,6 +991,7 @@ def _next_question_system_prompt() -> str:
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
             "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
             "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
+            "Do not mention wrapping up, revealing news later, asking more, joking later, or moving to the next scene unless the user explicitly said that. "
             "If the user says their parents decided something for them, the private reaction should reflect that family-decision context instead of only saying the user has a weak opinion. "
             "'I don't care' often feels cold or dismissive; for a friend or roommate, the private reaction should feel hurt or surprised. "
             "Direct roommate commands such as 'Buy me X' can feel like being ordered around. "
@@ -1011,6 +1012,8 @@ def _next_question_system_prompt() -> str:
             "Bad translatedQuestion style when the fixed Korean question is casual banmal: '정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?'\n"
             "Bad innerThought style: '취미 얘기도 자연스럽게 이어가면 더 친해질 수 있겠다.'\n"
             "Bad innerThought style: '잠들기 전에 한마디 놀려도 괜찮겠지?'\n"
+            "Bad innerThought style: '이제 자연스럽게 마무리하면 되겠다.'\n"
+            "Bad innerThought style: '거기다 축하할 소식도 빨리 알려주고 싶네.'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1650,13 +1653,13 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         if "saturday works" in normalized or "sunday afternoon" in normalized:
             return "가능한 날짜를 분명히 말해주네. 약속 잡기 편하겠다."
         if "visiting cafes" in normalized and "local festival" in normalized:
-            return "카페랑 동네 산책, 축제까지 말해주네. 주말 계획을 같이 세우기 좋겠다."
+            return "카페랑 동네 산책, 축제까지 좋아하는구나. 취향이 잘 맞아서 같이 다니기 편하겠다."
         if "trying cafes" in normalized and "local festival" in normalized:
-            return "하고 싶은 걸 구체적으로 말해주네. 같이 주말 계획 세우기 좋겠다."
+            return "하고 싶은 걸 구체적으로 말해주네. 취향이 잘 맞아서 같이 다니기 편하겠다."
         if "congratulations" in normalized and "celebrate" in normalized:
-            return "축하해주면서 같이 기뻐해주네. 주말에 만나도 분위기가 좋겠다."
+            return "진심으로 축하해주네. 기쁜 마음을 같이 나눠줘서 정말 고맙다."
         if "help carry" in normalized:
-            return "같이 가주고 짐도 도와주겠다니 고맙네. 부담 없이 부탁해도 되겠다."
+            return "같이 와주고 짐도 도와주겠다니 든든하네. 배려가 느껴져서 고맙다."
         if "favorite memory" in normalized and "moving here" in normalized:
             return "먼저 편하게 물어봐주네. 나도 자연스럽게 내 이야기를 꺼내기 좋겠다."
         if "my dream is" in normalized and "international company" in normalized:
@@ -1679,6 +1682,14 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
         return "이렇게 이유까지 말해주니까 대화하기 편하네."
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    if "business games that s all" in normalized or "business games thats all" in normalized:
+        return "자기소개를 아주 짧게 끝내네. 말은 알겠지만 아직 거리를 두는 느낌이야."
+    if "nothing i just sleep" in normalized:
+        return "쉬는 것 말고는 별 얘기가 없네. 요즘 꽤 지쳤나 보다."
+    if normalized == "good":
+        return "축하는 해준 것 같지만 한마디라 조금 건조하게 느껴져."
+    if normalized in {"i m fine", "im fine", "i am fine"}:
+        return "괜찮다고는 하는데 너무 짧게 말해서 속마음은 잘 모르겠다."
     if _is_parent_reason_answer(request.currentTurn.userUtterance):
         return "부모님 때문에 온 거라고 솔직히 말하네. 아직 자기 생각은 잘 모르지만 이유는 대충 알겠다."
     if "losted" in normalized or "hotel no answer" in normalized:
@@ -1743,10 +1754,19 @@ def _is_scripted_future_inner_thought(
         "이어 가야",
         "마무리하면",
         "마무리해도",
+        "마무리할",
+        "마무리해야",
         "잠들기 전에",
         "잠들기 전",
         "놀려도 괜찮",
         "한마디 놀",
+        "빨리 알려주",
+        "알려주고 싶",
+        "물어봐도 되겠",
+        "좀 더 물어",
+        "마지막엔",
+        "넘겨보자",
+        "넘겨 보자",
     ]
     if any(marker in normalized for marker in future_markers):
         return True
