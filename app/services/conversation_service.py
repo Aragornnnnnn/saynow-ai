@@ -1708,6 +1708,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
     if _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole) == "defensive_joke_rejection":
         return "장난으로 넘긴 말이 아니라 기분이 상했구나. 조금 미안하다."
+    if "no plan" in normalized and "just go" in normalized:
+        return "계획 없이 바로 움직이는 타입이구나. 꽤 즉흥적이라 조금 당황스럽다."
     if "business games that s all" in normalized or "business games thats all" in normalized:
         return "자기소개를 아주 짧게 끝내네. 말은 알겠지만 아직 거리를 두는 느낌이야."
     if "nothing i just sleep" in normalized:
@@ -2016,7 +2018,7 @@ def _looks_like_direct_command(user_utterance: str, counterpart_role: str) -> bo
     normalized = _normalize_visible_text(user_utterance)
     if any(marker in normalized for marker in ["could you", "would you", "can you", "please"]):
         return False
-    command_verbs = "send|give|tell|show|bring|buy|get|make|do|call|email|reply|open|close"
+    command_verbs = "send|give|tell|show|bring|buy|get|make|do|call|email|reply|open|close|clean"
     starts_like_command = re.search(
         rf"^(?:{command_verbs})\b",
         normalized,
@@ -2030,6 +2032,8 @@ def _looks_like_direct_command(user_utterance: str, counterpart_role: str) -> bo
     if not starts_like_command:
         return False
     role = _normalize_visible_text(counterpart_role)
+    if "roommate" in role and re.search(r"\byou\s+do\b", normalized):
+        return True
     if "roommate" in role and re.search(r"\b(?:buy|get|bring|give)\s+me\b", normalized):
         return True
     return (

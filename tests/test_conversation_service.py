@@ -1124,7 +1124,17 @@ class ConversationServiceTest(unittest.TestCase):
 
         cases = [
             {
+                "userUtterance": "No plan. Just go.",
+                "expectedType": "NORMAL",
+                "expected": ["계획", "즉흥"],
+                "currentQuestion": "Are you free this weekend?",
+                "currentQuestionKo": "이번 주말에 시간 돼?",
+                "nextQuestionEn": "What do you like doing on weekends?",
+                "nextQuestionKo": "주말에는 뭐 하는 걸 좋아해?",
+            },
+            {
                 "userUtterance": "Business. Games. That's all.",
+                "expectedType": "NORMAL",
                 "expected": ["짧", "거리"],
                 "currentQuestion": "Tell me about yourself.",
                 "currentQuestionKo": "너에 대해 말해줘.",
@@ -1133,6 +1143,7 @@ class ConversationServiceTest(unittest.TestCase):
             },
             {
                 "userUtterance": "Nothing. I just sleep.",
+                "expectedType": "NORMAL",
                 "expected": ["지쳤", "쉬"],
                 "currentQuestion": "What do you usually do for fun?",
                 "currentQuestionKo": "보통 뭐 하면서 놀아?",
@@ -1141,6 +1152,7 @@ class ConversationServiceTest(unittest.TestCase):
             },
             {
                 "userUtterance": "Good.",
+                "expectedType": "NORMAL",
                 "expected": ["축하", "건조"],
                 "currentQuestion": "I got accepted to the program!",
                 "currentQuestionKo": "나 프로그램에 합격했어!",
@@ -1183,11 +1195,50 @@ class ConversationServiceTest(unittest.TestCase):
 
                 result = self.service.generate_next_question(request)
 
-                self.assertEqual(result.innerThoughtType, "NORMAL")
+                self.assertEqual(result.innerThoughtType, case["expectedType"])
                 self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
                 self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
                 for expected in case["expected"]:
                     self.assertIn(expected, result.innerThought)
+
+    def test_next_question_marks_roommate_cleaning_command_as_bad_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Okay. Would you like to share dinner tonight?",
+            "translatedQuestion": "알겠어. 오늘 저녁 같이 먹을래?",
+            "innerThought": "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1300,
+            "submittedTurnId": 5300,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "입주 첫날 룸메이트 charlie와 공동생활 방식을 이야기합니다.",
+                "conversationGoal": "룸메이트와 청소와 식사 방식을 자연스럽게 조율한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "How should we split the cleaning and stuff?",
+                "translatedQuestion": "청소 같은 거 어떻게 나눌까?",
+                "userUtterance": "Clean every week. You do bathroom.",
+            },
+            "nextQuestion": {
+                "questionId": 4,
+                "sequence": 4,
+                "questionEn": "Would you like to share dinner tonight?",
+                "questionKo": "오늘 저녁 같이 먹을래?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
+        self.assertIn("시키", result.innerThought)
 
     def test_closing_message_returns_final_ai_message_and_inner_thought(self):
         from app.models.conversation import ClosingMessageRequest
