@@ -7,8 +7,8 @@
 - [x] 룸메이트 3개 시나리오 GOOD/EDGE 24개 발화와 역할별 추가 edge case를 실행한다.
 - [x] 속마음, 피드백 타입, 교정 표현, benchmark, highlight의 치명 품질 오류를 분류한다.
 - [x] 문제가 있으면 RED 테스트로 재현한 뒤 프롬프트나 후처리를 최소 범위로 수정한다.
-- [ ] 전체 unittest, compileall, diff check, 최종 live smoke를 실행한다.
-- [ ] 결과 리포트와 원본 JSON 경로를 남기고 필요한 커밋과 배포를 완료한다.
+- [x] 전체 unittest, compileall, diff check, 최종 live smoke를 실행한다.
+- [x] 결과 리포트와 원본 JSON 경로를 남기고 필요한 커밋과 배포를 완료한다.
 
 ## LAN-28 속마음과 개선 표현 계약
 
