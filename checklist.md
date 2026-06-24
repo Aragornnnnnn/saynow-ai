@@ -881,4 +881,4 @@
 - [x] 속마음 프롬프트가 현재 발화 반응에만 머무르도록 보강한다.
 - [x] scripted innerThought 후처리를 일반 marker 기반으로 추가한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
+- [x] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
