@@ -1852,6 +1852,8 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "해야겠다",
         "해줘야겠다",
         "해줘야겠",
+        "해줘야지",
+        "해줘야",
         "낫겠다",
         "묻지 않는 게",
         "건드리지",

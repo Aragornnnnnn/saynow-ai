@@ -1760,6 +1760,13 @@ class ConversationServiceTest(unittest.TestCase):
                 "forbidden": "해줘야겠다",
             },
             {
+                "userUtterance": "Could you keep it down tonight? I have an early class tomorrow.",
+                "innerThought": "아, 내가 좀 신경 쓰이게 했나 보네. 내일 일찍 수업이면 조용히 해줘야지.",
+                "expectedType": "GOOD",
+                "expected": "시끄러",
+                "forbidden": "해줘야지",
+            },
+            {
                 "userUtterance": "I don't care.",
                 "innerThought": "지금은 더 말해도 소용없겠네. 좀 차갑게 들리지만 더 묻지 않는 게 낫겠다.",
                 "expectedType": "BAD",
