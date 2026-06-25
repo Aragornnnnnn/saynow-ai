@@ -1671,6 +1671,41 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("준비하기 편하다", result.innerThought)
         self.assertIn("차갑", result.innerThought)
 
+    def test_closing_message_replaces_bad_type_inner_thought_when_hate_food_reaction_is_positive(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "Got it, no fish. I’ll keep that in mind.",
+            "translatedMessage": "알겠어, 생선은 빼자. 그건 기억해둘게.",
+            "innerThought": "생선은 안 된다고 딱 잘라 말하네. 취향은 확실해서 오히려 편하겠다.",
+            "innerThoughtType": "BAD",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "입주 첫날 룸메이트 charlie와 식사 취향을 이야기합니다.",
+                "conversationGoal": "못 먹는 음식을 너무 공격적이지 않게 말한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "Is there anything you really can't eat?",
+                "translatedQuestion": "진짜 못 먹는 거 있어?",
+                "userUtterance": "I hate fish. Don't make that.",
+            },
+            "closingReason": "MAX_TURNS_REACHED",
+            "goalCompletionStatus": "PARTIAL",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self.assertNotIn("오히려 편하겠다", result.innerThought)
+        self.assertIn("차갑", result.innerThought)
+
     def test_closing_message_replaces_scripted_snore_inner_thought_with_private_reaction(self):
         from app.models.conversation import ClosingMessageRequest
 

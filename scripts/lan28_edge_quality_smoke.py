@@ -945,8 +945,8 @@ def _run_turn_feedback_groups(
         session_id = session_base + group_index
         turns = []
         expected_turn_ids = []
-        for case in cases:
-            turn_id = session_id * 1000 + case.sequence
+        for turn_index, case in enumerate(cases, start=1):
+            turn_id = session_id * 1000 + turn_index
             expected_turn_ids.append(turn_id)
             payload = {
                 "sessionId": session_id,

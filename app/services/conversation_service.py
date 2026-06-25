@@ -1505,10 +1505,14 @@ def _repair_closing_message(
         updates["translatedMessage"] = _fallback_closing_message_ko(request)
 
     expected_type = _fallback_inner_thought_type_for_closing(request)
+    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if expected_type == "BAD":
         if response.innerThoughtType != expected_type:
             updates["innerThoughtType"] = expected_type
-        if not _looks_like_bad_inner_thought(response.innerThought):
+        if not _looks_like_bad_inner_thought(response.innerThought) or (
+            issue_kind is not None
+            and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
+        ):
             updates["innerThought"] = _fallback_inner_thought_for_closing(request)
     elif expected_type == "NORMAL" and response.innerThoughtType != expected_type:
         updates["innerThoughtType"] = expected_type
@@ -1949,6 +1953,8 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
         return any(marker in normalized for marker in ["시키", "명령", "부탁"])
     if issue_kind == "defensive_joke_rejection":
         return any(marker in normalized for marker in ["기분", "농담", "상했", "미안"])
+    if issue_kind == "hate":
+        return any(marker in normalized for marker in ["차갑", "강하", "무례", "공격", "명령", "불편", "날카"])
     return True
 
 
