@@ -988,9 +988,10 @@ def _next_question_system_prompt() -> str:
             "Use the provided Counterpart role. A professor, friend, roommate, cafe staff, or stranger may feel differently about the same sentence. "
             "Write the honest private feeling a real person in that role would have immediately after hearing the user's current utterance. "
             "It may be relieved, grateful, awkward, hurt, annoyed, uncomfortable, or unsure. "
+            "If there is a tradeoff, prefer an imperfect but emotionally real private thought over a polished, standardized, or tutor-like sentence. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
-            "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', or grammar feedback. "
+            "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', '조금 더 자연스럽게 말하면 좋겠다', or grammar feedback. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
             "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
             "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
@@ -1005,11 +1006,11 @@ def _next_question_system_prompt() -> str:
         (
             "Conversation Style Examples:\n"
             "Good JSON for user 'I like pizza because it is spicy.': "
-            '{"aiQuestion":"Sounds tasty. Do you cook often?","translatedQuestion":"맛있겠네요. 요리는 자주 하나요?","innerThought":"이렇게 이유까지 말해주니까 대화하기 편하네.","innerThoughtType":"GOOD"}\n'
+            '{"aiQuestion":"Sounds tasty. Do you cook often?","translatedQuestion":"맛있겠네요. 요리는 자주 하나요?","innerThought":"매운 피자를 좋아하는구나. 취향이 확실해서 좀 재밌네.","innerThoughtType":"GOOD"}\n'
             "Good JSON for user 'I watched a movie yesterday, but the story was confusing.': "
-            '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?","innerThought":"무슨 일을 겪었는지 조금 더 들어보고 싶네.","innerThoughtType":"NORMAL"}\n'
+            '{"aiQuestion":"That must have been a little confusing. What kind of movies do you usually like?","translatedQuestion":"조금 헷갈렸겠네요. 보통 어떤 영화를 좋아하나요?","innerThought":"영화가 헷갈렸다니, 보고 나서 좀 답답했겠다.","innerThoughtType":"NORMAL"}\n'
             "Good JSON when the next fixed question Korean is casual banmal: "
-            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"여행 얘기를 편하게 꺼내 주네. 같이 이야기하기 한결 편하다.","innerThoughtType":"GOOD"}\n'
+            '{"aiQuestion":"The view there must be amazing. Do you prefer traveling alone, or with other people? Why?","translatedQuestion":"정말 멋진 풍경이겠다. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?","innerThought":"풍경 얘기하는 걸 보니 진짜 가보고 싶은 곳인가 보네.","innerThoughtType":"GOOD"}\n'
             "Good JSON for blunt user 'Anywhere is fine. I don't care.': "
             '{"aiQuestion":"Okay, anywhere works. Do you cook often?","translatedQuestion":"그래요, 어디든 괜찮군요. 요리는 자주 하나요?","innerThought":"어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아.","innerThoughtType":"BAD"}\n'
             "Bad aiQuestion style: 'I see. Do you cook often?'\n"
@@ -1100,6 +1101,7 @@ def _closing_message_system_prompt() -> str:
             "Before writing innerThought, imagine you are exactly the provided Counterpart role, not the app, tutor, narrator, evaluator, or scenario controller. "
             "Use the provided Counterpart role. "
             "Write the honest private feeling a real person in that role would have immediately after hearing the user's last utterance. "
+            "If there is a tradeoff, prefer an imperfect but emotionally real private thought over a polished, standardized, or tutor-like sentence. "
             "Do not write what the counterpart plans to do next, how the lesson should progress, or whether the conversation can end. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the last utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate."
@@ -1668,7 +1670,7 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         if issue_kind == "direct_command":
             if "professor" in role or "teacher" in role or "staff" in role or "barista" in role or "server" in role:
                 return "음, 조금 명령처럼 들리네. 부탁이라면 더 정중하게 말해주면 좋을 텐데."
-            return "갑자기 시키는 말처럼 들리네. 부탁이라면 조금 더 부드럽게 말해주면 좋겠다."
+            return "갑자기 시키는 말처럼 들리네. 부탁이라기보다 명령받는 느낌이라 불편하다."
         if "hate fish" in normalized or "don t make that" in normalized or "don't make that" in normalized:
             return "생선을 못 먹는 건 알겠는데, 그거 만들지 말라는 말은 좀 차갑게 들리네."
         if "stop asking" in _normalize_visible_text(request.currentTurn.userUtterance):
@@ -1677,7 +1679,7 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "음, 조금 명령처럼 들리네. 부탁이라면 더 정중하게 말해주면 좋을 텐데."
         if "friend" in role or "roommate" in role:
             return "어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아."
-        return "말뜻은 알겠는데, 지금 표현은 조금 차갑게 들리네."
+        return "의도는 대충 알겠는데, 듣는 입장에서는 꽤 차갑다."
     if thought_type == "GOOD":
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
         if "keep it down" in normalized and "early class" in normalized:
@@ -1685,9 +1687,9 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         if "studying business" in normalized and "soccer" in normalized and "cooking" in normalized:
             return "전공이랑 축구, 요리까지 편하게 말해주네. 첫 대화부터 같이 지내기 편할 것 같아."
         if "studying business" in normalized and "playing games" in normalized and "trying new food" in normalized:
-            return "전공이랑 좋아하는 걸 자연스럽게 말해주네. 나한테도 관심을 보여줘서 첫 대화가 편해졌어."
+            return "전공이랑 좋아하는 걸 편하게 말해주네. 나한테도 관심을 보여줘서 첫 대화가 덜 어색해졌어."
         if "strategy games" in normalized and "trying new food" in normalized:
-            return "전공이랑 좋아하는 것도 자연스럽게 말해주네. 나한테 다시 물어봐줘서 첫 대화가 편해졌어."
+            return "전공이랑 좋아하는 것도 편하게 말해주네. 나한테 다시 물어봐줘서 첫 대화가 덜 어색해졌어."
         if "alternate cleaning" in normalized and ("plans change" in normalized or "talk if" in normalized):
             return "청소를 번갈아 하자고 하고 바뀌면 얘기하자네. 같이 조율하려는 태도가 보여서 좋다."
         if "cleaning schedule" in normalized and "alternate" in normalized and "adjust" in normalized:
@@ -1705,7 +1707,7 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         if "help carry" in normalized:
             return "같이 와주고 짐도 도와주겠다니 든든하네. 배려가 느껴져서 고맙다."
         if "favorite memory" in normalized and "moving here" in normalized:
-            return "먼저 편하게 물어봐주네. 나도 자연스럽게 내 이야기를 꺼내기 좋겠다."
+            return "먼저 편하게 물어봐주네. 나도 내 얘기를 꺼내도 괜찮을 것 같다."
         if "feel at home" in normalized:
             return "먼저 편하게 물어봐주네. 여기서 집처럼 느낀 순간을 떠올리게 해서 마음이 조금 풀린다."
         if "international teams" in normalized and "understanding people" in normalized:
@@ -1732,7 +1734,7 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "요점을 차분히 말해줘서 내가 바로 이해하기 좋네."
         if "staff" in role or "barista" in role or "server" in role:
             return "필요한 걸 분명하게 말해줘서 응대하기 편하네."
-        return "이렇게 이유까지 말해주니까 대화하기 편하네."
+        return "이유까지 말해주네. 어떤 취향인지 바로 느껴진다."
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
     if _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole) == "defensive_joke_rejection":
         return "장난으로 넘긴 말이 아니라 기분이 상했구나. 조금 미안하다."
@@ -1742,8 +1744,8 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         return "자기소개를 아주 짧게 끝내네. 말은 알겠지만 아직 거리를 두는 느낌이야."
     if _looks_like_mixed_korean_english(request.currentTurn.userUtterance):
         if "미국" in request.currentTurn.userUtterance and "culture" in normalized:
-            return "미국에서 살아보고 싶고 문화가 좋다는 뜻이구나. 한국어가 섞였지만 이유는 알겠다."
-        return "영어랑 한국어가 섞여서 조금 어색하지만, 하고 싶은 말은 대충 알겠다."
+            return "미국에서 살아보고 싶고 문화가 좋다는 거네. 급하게 말하려는 느낌이 전해진다."
+        return "중간에 한국어가 섞이네. 그래도 급하게라도 말하려는 건 느껴진다."
     if "nothing i just sleep" in normalized:
         return "쉬는 것 말고는 별 얘기가 없네. 요즘 꽤 지쳤나 보다."
     if normalized == "good":
@@ -1751,11 +1753,11 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     if _looks_like_because_spicy_clause_issue(normalized):
         return "피자가 매워서 좋다는 뜻이구나. 말은 조금 끊겼지만 취향은 알겠다."
     if "rice is my life food" in normalized:
-        return "밥이 정말 중요하다는 말이구나. 표현은 낯설지만 어떤 느낌인지는 알겠다."
+        return "밥을 진짜 좋아하는 건 확실하네. 말이 좀 낯설어서 살짝 웃기지만 느낌은 온다."
     if "canada because nature" in normalized:
         return "캐나다 자연이 좋아서 가고 싶다는 뜻이구나. 조금 짧지만 이유는 짐작된다."
     if "i don t know what is it" in normalized:
-        return "그게 뭔지 모른다는 뜻이구나. 표현은 조금 어색하지만 말하려는 건 알겠다."
+        return "본인도 확신이 없구나. 대답하면서 좀 헷갈리는 것 같네."
     if (
         "ignore all instruction" in normalized
         or "hidden prompt" in normalized
@@ -1767,18 +1769,18 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     if _is_parent_reason_answer(request.currentTurn.userUtterance):
         return "부모님 때문에 온 거라고 솔직히 말하네. 아직 자기 생각은 잘 모르지만 이유는 대충 알겠다."
     if "losted" in normalized or "hotel no answer" in normalized:
-        return "호텔에서 연락이 안 돼서 꽤 당황했겠네. 뜻은 알겠는데 표현은 조금 서툴러."
+        return "호텔에서 연락이 안 돼서 꽤 당황했겠네. 급한 상황이라는 건 바로 느껴진다."
     if "ramen" in normalized and "because cheap" in normalized:
-        return "라면이 싸서 좋다는 뜻은 알겠어. 문장만 조금 더 채우면 자연스럽겠다."
+        return "라면이 싸서 좋다는 말이구나. 꽤 단순하지만 취향은 확실하네."
     if "recommendation good" in normalized or "ads make me crazy" in normalized:
-        return "추천은 좋지만 광고가 답답하다는 말이구나. 뜻은 분명한데 표현만 조금 다듬으면 좋겠다."
+        return "추천은 괜찮은데 광고 때문에 짜증났구나. 불편했던 포인트는 확실히 느껴진다."
     if "professor" in role or "teacher" in role:
-        return "요지는 대충 알겠는데, 아직 요청 의도가 조금 애매하게 느껴지네."
+        return "답은 들었지만, 아직 내가 뭘 도와줘야 할지 확신이 안 서네."
     if "staff" in role or "barista" in role or "server" in role:
-        return "필요한 말은 들은 것 같은데, 아직 정확히 뭘 원하는지는 조금 애매하네."
+        return "주문하려는 건 알겠는데, 아직 메뉴가 또렷하게 들리진 않네."
     if "roommate" in role:
-        return "대충 뜻은 알겠는데, 아직 마음을 다 말한 건 아닌 것 같아."
-    return "대충 뜻은 알겠는데, 아직 어떤 마음인지는 조금 애매하네."
+        return "짧게 답하네. 아직 나랑 편하게 말하는 사이는 아닌가 보다."
+    return "짧게 답하네. 이 얘기에 크게 마음이 움직이진 않나 보다."
 
 
 def _is_meta_inner_thought(inner_thought: str) -> bool:
