@@ -9,6 +9,7 @@
 - [x] focused unittest, 전체 unittest, compileall, diff check를 실행한다.
 - [x] live smoke를 재실행하고 결과 리포트를 남긴다.
 - [x] 변경 사항을 커밋하고 origin에 반영한다.
+- [x] fallback 경로에서도 `무슨 말인지는 알겠어...` 계열 튜터식 속마음이 노출되지 않도록 검증한다.
 
 ## LAN-28 전체 엣지케이스 품질 재검증
 

@@ -399,6 +399,17 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("조금만 더 자연스럽게", result.innerThought)
         self.assertIn("대화하기 편", result.innerThought)
 
+    def test_next_question_fallback_never_uses_generic_tutor_inner_thought(self):
+        request = self._next_question_request(user_utterance="Maybe yes.")
+        self.service.chat = lambda *args, **kwargs: "not json"
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("무슨 말인지는 알겠", result.innerThought)
+        self.assertNotIn("자연스럽게", result.innerThought)
+        self.assertNotIn("이어가야", result.innerThought)
+
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1603,6 +1614,37 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Counterpart role: roommate", captured["user"])
         self.assertIn("Do not ask a new follow-up question", captured["system"])
         self.assertNotIn("\\u0027", captured["system"])
+
+    def test_closing_message_fallback_never_uses_generic_tutor_inner_thought(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: "not json"
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 12,
+                "title": "음악 취향 이야기하기",
+                "briefing": "좋아하는 음악과 앱 사용 이유를 이야기합니다.",
+                "conversationGoal": "음악 취향과 이유를 영어로 자연스럽게 설명할 수 있다.",
+                "counterpartRole": "friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "Do you like live concerts?",
+                "translatedQuestion": "라이브 콘서트를 좋아해?",
+                "userUtterance": "Maybe yes.",
+            },
+            "closingReason": "MAX_TURNS_REACHED",
+            "goalCompletionStatus": "PARTIAL",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("무슨 말인지는 알겠", result.innerThought)
+        self.assertNotIn("자연스럽게", result.innerThought)
+        self.assertNotIn("이어가야", result.innerThought)
 
     def test_closing_message_fallback_keeps_ai_as_final_speaker_for_bad_tone(self):
         from app.models.conversation import ClosingMessageRequest

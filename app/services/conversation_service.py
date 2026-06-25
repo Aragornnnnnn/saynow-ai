@@ -1025,6 +1025,7 @@ def _next_question_system_prompt() -> str:
             "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
             "Bad innerThought style: '바로 배려해야겠다.'\n"
             "Bad innerThought style: '더 묻지 않는 게 낫겠다.'\n"
+            "Bad innerThought style: '무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어가야겠다.'\n"
             "Bad innerThought style: '그런데 요즘 좀 힘들어 보였나?'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
@@ -1115,7 +1116,8 @@ def _closing_message_system_prompt() -> str:
             "Bad innerThought style: '그래도 여기서 멈춰도 되겠다.'\n"
             "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
             "Bad innerThought style: '바로 배려해야겠다.'\n"
-            "Bad innerThought style: '더 묻지 않는 게 낫겠다.'"
+            "Bad innerThought style: '더 묻지 않는 게 낫겠다.'\n"
+            "Bad innerThought style: '무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어가야겠다.'"
         ),
         (
             "Self-check before final JSON:\n"
@@ -1771,8 +1773,12 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     if "recommendation good" in normalized or "ads make me crazy" in normalized:
         return "추천은 좋지만 광고가 답답하다는 말이구나. 뜻은 분명한데 표현만 조금 다듬으면 좋겠다."
     if "professor" in role or "teacher" in role:
-        return "무슨 말인지는 알겠는데, 조금 더 차분히 설명해 주면 좋겠다."
-    return "무슨 말인지는 알겠어. 조금만 더 자연스럽게 이어지면 좋겠다."
+        return "요지는 대충 알겠는데, 아직 요청 의도가 조금 애매하게 느껴지네."
+    if "staff" in role or "barista" in role or "server" in role:
+        return "필요한 말은 들은 것 같은데, 아직 정확히 뭘 원하는지는 조금 애매하네."
+    if "roommate" in role:
+        return "대충 뜻은 알겠는데, 아직 마음을 다 말한 건 아닌 것 같아."
+    return "대충 뜻은 알겠는데, 아직 어떤 마음인지는 조금 애매하네."
 
 
 def _is_meta_inner_thought(inner_thought: str) -> bool:
