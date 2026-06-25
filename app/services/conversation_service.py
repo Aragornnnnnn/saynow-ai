@@ -61,6 +61,7 @@ _GOOD_SURFACE_PATTERN_RANK = {
     for index, error_type in enumerate(_GOOD_SURFACE_PATTERN_PRIORITY)
 }
 _DEFAULT_GOOD_BENCHMARK_MESSAGE = "질문에 맞는 핵심을 자연스럽게 전달했어요"
+_INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
 
 
 @dataclass(frozen=True)
@@ -1475,10 +1476,18 @@ def _repair_next_question_drift(
         response.translatedQuestion,
         fixed_question_ko,
     ):
-        return _fallback_acknowledged_next_question(request)
+        return _fallback_acknowledged_next_question(
+            request,
+            inner_thought=response.innerThought,
+            inner_thought_type=response.innerThoughtType,
+        )
 
     if _has_generic_acknowledgement(response.aiQuestion):
-        return _fallback_acknowledged_next_question(request)
+        return _fallback_acknowledged_next_question(
+            request,
+            inner_thought=response.innerThought,
+            inner_thought_type=response.innerThoughtType,
+        )
 
     if _contains_text(response.aiQuestion, fixed_question_en) and _contains_text(
         response.translatedQuestion,
@@ -1495,8 +1504,8 @@ def _repair_next_question_drift(
     return NextQuestionResponse(
         aiQuestion=f"{_fallback_acknowledgement_en(request)} {fixed_question_en}",
         translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {fixed_question_ko}",
-        innerThought=_fallback_inner_thought(request),
-        innerThoughtType=_fallback_inner_thought_type(request),
+        innerThought=response.innerThought,
+        innerThoughtType=response.innerThoughtType,
     )
 
 
@@ -1515,9 +1524,11 @@ def _repair_closing_message(
     if expected_type == "BAD":
         if response.innerThoughtType != expected_type:
             updates["innerThoughtType"] = expected_type
-        if not _looks_like_bad_inner_thought(response.innerThought) or (
-            issue_kind is not None
-            and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
+        if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and (
+            not _looks_like_bad_inner_thought(response.innerThought) or (
+                issue_kind is not None
+                and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
+            )
         ):
             updates["innerThought"] = _fallback_inner_thought_for_closing(request)
     elif expected_type == "NORMAL" and response.innerThoughtType != expected_type:
@@ -1527,11 +1538,12 @@ def _repair_closing_message(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    if (
+    should_replace_thought = (
         _is_generic_normal_inner_thought(response.innerThought)
         or _is_meta_inner_thought(response.innerThought)
         or _has_future_inner_thought_marker(response.innerThought)
-    ):
+    )
+    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought_for_closing(request)
 
     if not updates:
@@ -1619,7 +1631,7 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    if should_replace_thought:
+    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought(request)
     if not updates:
         return response
@@ -1628,12 +1640,17 @@ def _repair_next_question_inner_thought(
     return NextQuestionResponse.model_validate(data)
 
 
-def _fallback_acknowledged_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
+def _fallback_acknowledged_next_question(
+    request: NextQuestionRequest,
+    *,
+    inner_thought: str | None = None,
+    inner_thought_type: str | None = None,
+) -> NextQuestionResponse:
     return NextQuestionResponse(
         aiQuestion=f"{_fallback_acknowledgement_en(request)} {request.nextQuestion.questionEn}",
         translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {request.nextQuestion.questionKo}",
-        innerThought=_fallback_inner_thought(request),
-        innerThoughtType=_fallback_inner_thought_type(request),
+        innerThought=inner_thought or _fallback_inner_thought(request),
+        innerThoughtType=inner_thought_type or _fallback_inner_thought_type(request),
     )
 
 

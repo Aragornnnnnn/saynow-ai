@@ -15,11 +15,18 @@ class ConversationServiceTest(unittest.TestCase):
         self.service = conversation_service
         self.original_chat = conversation_service.chat
         self.original_fallback_model_for_workflow = conversation_service.fallback_model_for_workflow
+        self.original_inner_thought_repair_fallback_enabled = (
+            conversation_service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED
+        )
+        conversation_service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = True
         conversation_service.clear_turn_feedback_cache()
 
     def tearDown(self):
         self.service.chat = self.original_chat
         self.service.fallback_model_for_workflow = self.original_fallback_model_for_workflow
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = (
+            self.original_inner_thought_repair_fallback_enabled
+        )
         self.service.clear_turn_feedback_cache()
 
     def _scenario(self):
@@ -461,6 +468,25 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("어색", result.innerThought)
         self.assertIn("밥", result.innerThought)
         self.assertIn("웃기", result.innerThought)
+
+    def test_inner_thought_repair_fallback_is_temporarily_disabled_by_default(self):
+        self.assertFalse(self.original_inner_thought_repair_fallback_enabled)
+
+    def test_next_question_preserves_llm_inner_thought_when_repair_fallback_is_disabled(self):
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        raw_inner_thought = "밥을 그렇게 좋아한다니 귀엽다. 근데 표현이 조금 어색해서 무슨 뜻인지 바로는 알겠어도 살짝 웃기네."
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Haha, that’s a strong favorite. Do you cook often?",
+            "translatedQuestion": "하하, 그거 정말 좋아하는 음식인가 봐. 요리는 자주 하나요?",
+            "innerThought": raw_inner_thought,
+            "innerThoughtType": "NORMAL",
+        })
+        request = self._next_question_request(user_utterance="Rice is my life food.")
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThought, raw_inner_thought)
+        self.assertEqual(result.innerThoughtType, "NORMAL")
 
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
         from app.models.conversation import NextQuestionRequest
