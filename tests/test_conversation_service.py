@@ -445,6 +445,23 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertNotIn("조금만 더 자연스럽게 이어지면 좋겠다", line)
         self.assertIn("emotionally real private thought", system_prompt)
 
+    def test_next_question_repairs_expression_feedback_inner_thought(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Haha, that’s a strong favorite. Do you cook often?",
+            "translatedQuestion": "하하, 그거 정말 좋아하는 음식인가 봐. 요리는 자주 하나요?",
+            "innerThought": "밥을 그렇게 좋아한다니 귀엽다. 근데 표현이 조금 어색해서 무슨 뜻인지 바로는 알겠어도 살짝 웃기네.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = self._next_question_request(user_utterance="Rice is my life food.")
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+        self.assertNotIn("표현", result.innerThought)
+        self.assertNotIn("어색", result.innerThought)
+        self.assertIn("밥", result.innerThought)
+        self.assertIn("웃기", result.innerThought)
+
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
         from app.models.conversation import NextQuestionRequest
 

@@ -992,6 +992,7 @@ def _next_question_system_prompt() -> str:
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', '조금 더 자연스럽게 말하면 좋겠다', or grammar feedback. "
+            "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
             "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
             "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
@@ -1102,6 +1103,7 @@ def _closing_message_system_prompt() -> str:
             "Use the provided Counterpart role. "
             "Write the honest private feeling a real person in that role would have immediately after hearing the user's last utterance. "
             "If there is a tradeoff, prefer an imperfect but emotionally real private thought over a polished, standardized, or tutor-like sentence. "
+            "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to do next, how the lesson should progress, or whether the conversation can end. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the last utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate."
@@ -1792,8 +1794,12 @@ def _is_meta_inner_thought(inner_thought: str) -> bool:
         "넘어가",
         "좋은 답변",
         "피드백",
+        "표현",
+        "문장",
         "문법",
         "교정",
+        "자연스럽",
+        "다듬",
         "학습자",
         "사용자",
         "learner",
