@@ -1850,6 +1850,8 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "이런 얘기 나누",
         "분위기를 풀어주",
         "해야겠다",
+        "해줘야겠다",
+        "해줘야겠",
         "낫겠다",
         "묻지 않는 게",
         "건드리지",
