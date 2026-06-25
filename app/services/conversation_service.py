@@ -226,6 +226,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         )
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
+    feedback = _postprocess_turn_correction_reason(feedback)
     detected_patterns = _infer_missing_detected_patterns(request, feedback, detected_patterns)
     detected_patterns = _filter_detected_patterns_by_evidence(request, detected_patterns)
     feedback = _postprocess_turn_benchmark_message(request, feedback, detected_patterns)
@@ -982,6 +983,15 @@ def _next_question_system_prompt() -> str:
             "Prefer a human conversational reaction over keyword restatement."
         ),
         (
+            "Short Answer Calibration:\n"
+            "Do not over-praise or over-punish short, vague, or uncertain answers. "
+            "A short answer can feel uncertain, guarded, low-effort, or simply casual depending on context. "
+            "Do not infer positive traits such as flexible, thoughtful, interesting, or easygoing from a vague answer like 'Maybe yes.' "
+            "For vague short answers, use a small grounded acknowledgement such as 'Maybe, yeah.' or 'Sounds like you are not totally sure.' "
+            "The matching Korean acknowledgement can be '아직 확실하진 않은가 보네.' "
+            "Do not turn every short answer into praise, but do not scold it either."
+        ),
+        (
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in Korean. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
@@ -1016,6 +1026,9 @@ def _next_question_system_prompt() -> str:
             "Good JSON for blunt user 'Anywhere is fine. I don't care.': "
             '{"aiQuestion":"Okay, anywhere works. Do you cook often?","translatedQuestion":"그래요, 어디든 괜찮군요. 요리는 자주 하나요?","innerThought":"어, 왜 이렇게 차갑게 말하지? 나한테 조금 날이 서 있는 것 같아.","innerThoughtType":"BAD"}\n'
             "Bad aiQuestion style: 'I see. Do you cook often?'\n"
+            "Bad aiQuestion style for user 'Maybe yes.': 'That’s pretty flexible. Do you like quiet evenings or hanging out with friends?'\n"
+            "Good JSON for user 'Maybe yes.': "
+            '{"aiQuestion":"Maybe, yeah. Do you like quiet evenings or hanging out with friends?","translatedQuestion":"아직 확실하진 않은가 보네. 조용한 저녁이 좋아, 아니면 친구들이랑 노는 게 좋아?","innerThought":"아직 확실히 말하고 싶지는 않은가 보네.","innerThoughtType":"NORMAL"}\n'
             "Bad translatedQuestion style when the fixed Korean question is casual banmal: '정말 멋진 풍경이겠네요. 혼자 여행이 더 좋아, 같이 가는 게 더 좋아? 왜?'\n"
             "Bad innerThought style: '취미 얘기도 자연스럽게 이어가면 더 친해질 수 있겠다.'\n"
             "Bad innerThought style: '잠들기 전에 한마디 놀려도 괜찮겠지?'\n"
@@ -1224,10 +1237,13 @@ def _turn_feedback_system_prompt() -> str:
             "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
             "For NEEDS_IMPROVEMENT, correctionExpression is required and must be the improved English expression only. "
             "For NEEDS_IMPROVEMENT, correctionReason is required and must explain why correctionExpression is better in Korean. "
-            "correctionReason should mention the shortest meaningful before→after expression when helpful. "
-            "Use the smallest phrase or clause that preserves context. Do not repeat the entire user utterance when only a small phrase needs correction. "
+            "correctionReason must explain the original problem and the type of change made, not restate the improved expression. "
+            "Do not use arrow notation such as A → B or A -> B inside correctionReason. "
+            "Do not repeat correctionExpression inside correctionReason because correctionExpression is already a separate field. "
+            "Use the smallest problem phrase or clause when helpful, but explain the issue in Korean. "
+            "Do not repeat the entire user utterance when only a small phrase needs correction. "
             "Example correctionExpression: I do not know what it is. "
-            "Example correctionReason: what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. "
+            "Example correctionReason: what is it 부분은 간접의문문 안에서 의문문 어순으로 남아 있어요. 의문사 뒤를 평서문 어순으로 바꿔야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
@@ -1249,7 +1265,7 @@ def _turn_feedback_system_prompt() -> str:
             "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and a benchmarkMessage string. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
-            "6. NEEDS_IMPROVEMENT correctionReason uses a short before→after expression plus a Korean reason. "
+            "6. NEEDS_IMPROVEMENT correctionReason explains the issue and correction direction without arrow notation or repeating correctionExpression. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
             "8. GOOD numeric benchmarkMessage is preferred when a supported correct detectedPattern exists; otherwise use the default non-quantitative benchmarkMessage. "
             "9. No legacy fields are present."
@@ -1261,14 +1277,14 @@ def _turn_feedback_system_prompt() -> str:
             "GOOD JSON example for user utterance 'I ate an apple because I was hungry.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"\\"사과 하나를 먹었어요. 배고파서요\\"라고 이유를 바로 붙여 말하는 것과 같아요.","positiveFeedback":null,"feedbackDetail":"먹은 것과 이유를 because로 자연스럽게 연결해서 상대가 답변의 핵심을 바로 이해할 수 있어요.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":"한국인의 79%가 틀리는 a/an을 정확히 썼어요","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}\n'
             "NEEDS_IMPROVEMENT JSON example for a friend or casual partner: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"\\"그걸 왜 알고 싶은데?\\"라고 살짝 방어적으로 되묻는 것과 같아요.","positiveFeedback":"상대의 질문 의도를 확인하려고 한 시도는 좋아요.","feedbackDetail":null,"correctionExpression":"I was just curious why you asked.","correctionReason":"Why do you wanna know that?은 친구 사이에서도 따지는 느낌으로 들릴 수 있어요. I was just curious why you asked.라고 하면 궁금해서 묻는다는 의도가 더 부드럽게 전달돼요.","benchmarkMessage":null,"detectedPatterns":[]}'
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"\\"그걸 왜 알고 싶은데?\\"라고 살짝 방어적으로 되묻는 것과 같아요.","positiveFeedback":"상대의 질문 의도를 확인하려고 한 시도는 좋아요.","feedbackDetail":null,"correctionExpression":"I was just curious why you asked.","correctionReason":"Why do you wanna know that?은 친구 사이에서도 따지는 느낌으로 들릴 수 있어요. 궁금해서 묻는다는 의도를 먼저 밝히면 더 부드럽게 전달돼요.","benchmarkMessage":null,"detectedPatterns":[]}'
         ),
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             "GOOD example: User utterance 'I came here because I wanted to learn how people live in a different culture.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'a different culture'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             f"No-pattern GOOD example should use benchmarkMessage='{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' only when no catalog pattern is visible in the utterance. "
-            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason='what is it → what it is...', feedbackDetail=null, and benchmarkMessage=null."
+            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason explaining that the indirect question still uses question word order, feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
@@ -1483,6 +1499,13 @@ def _repair_next_question_drift(
         )
 
     if _has_generic_acknowledgement(response.aiQuestion):
+        return _fallback_acknowledged_next_question(
+            request,
+            inner_thought=response.innerThought,
+            inner_thought_type=response.innerThoughtType,
+        )
+
+    if _has_overinterpreted_acknowledgement_for_vague_answer(request, response.aiQuestion):
         return _fallback_acknowledged_next_question(
             request,
             inner_thought=response.innerThought,
@@ -2273,7 +2296,7 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
     if "pizza" in normalized:
         return "Sounds tasty."
     if "not sure" in normalized or "maybe" in normalized:
-        return "That uncertainty makes sense."
+        return "Maybe, yeah."
     return "Let's keep going."
 
 
@@ -2322,7 +2345,7 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
     if "pizza" in normalized:
         return tone("맛있었겠네요.")
     if "not sure" in normalized or "maybe" in normalized:
-        return tone("확신이 없어도 괜찮아요.")
+        return tone("아직 확실하진 않은가 보네요.")
     return tone("계속 이어가 볼게요.")
 
 
@@ -2408,6 +2431,27 @@ def _has_generic_acknowledgement(ai_question: str) -> bool:
     return any(normalized.startswith(start) for start in generic_starts)
 
 
+def _has_overinterpreted_acknowledgement_for_vague_answer(
+    request: NextQuestionRequest,
+    ai_question: str,
+) -> bool:
+    normalized_utterance = _normalize_visible_text(request.currentTurn.userUtterance)
+    if not ("maybe" in normalized_utterance or "not sure" in normalized_utterance):
+        return False
+    normalized_ai_question = _normalize_visible_text(ai_question)
+    overinterpreted_starts = [
+        "that s pretty flexible",
+        "that is pretty flexible",
+        "that s flexible",
+        "that is flexible",
+        "that sounds interesting",
+        "that s interesting",
+        "that is interesting",
+        "sounds interesting",
+    ]
+    return any(normalized_ai_question.startswith(start) for start in overinterpreted_starts)
+
+
 def _clean_acknowledgement_fragment(value: str) -> str:
     cleaned = re.sub(r"\b(a|an|the)\b", " ", value.lower())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -2476,6 +2520,110 @@ def _postprocess_turn_feedback(
     if not updates:
         return feedback
     return _validated_turn_feedback_copy(feedback, updates)
+
+
+def _postprocess_turn_correction_reason(feedback: TurnFeedbackData) -> TurnFeedbackData:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return feedback
+    if not feedback.correctionReason:
+        return feedback
+
+    correction_reason = _remove_correction_reason_arrow_notation(feedback.correctionReason)
+    if feedback.correctionExpression:
+        correction_reason = _remove_repeated_correction_expression(
+            correction_reason,
+            feedback.correctionExpression,
+        )
+    correction_reason = _normalize_correction_reason_text(correction_reason)
+    if not correction_reason or not _is_korean_text(correction_reason):
+        correction_reason = feedback.correctionReason
+
+    if correction_reason == feedback.correctionReason:
+        return feedback
+    return _validated_turn_feedback_copy(feedback, {"correctionReason": correction_reason})
+
+
+def _remove_correction_reason_arrow_notation(correction_reason: str) -> str:
+    def replace_arrow(match: re.Match[str]) -> str:
+        source_phrase = match.group("source").strip(" \t\n\"'`“”‘’")
+        if not source_phrase:
+            return ""
+        return f"{source_phrase} 부분은 "
+
+    return re.sub(
+        r"(?P<source>[^.!?\n。]{1,120}?)\s*(?:→|->)\s*[^.!?\n。]{1,180}[.!?。]?\s*",
+        replace_arrow,
+        correction_reason,
+    )
+
+
+def _remove_repeated_correction_expression(
+    correction_reason: str,
+    correction_expression: str,
+) -> str:
+    cleaned_reason = correction_reason
+    for expression_part in _correction_expression_parts(correction_expression):
+        escaped_expression = re.escape(expression_part)
+        cleaned_reason = re.sub(
+            rf"{escaped_expression}\s*(?:처럼|라고)\s*(?:말하면|하면)",
+            "이렇게 말하면",
+            cleaned_reason,
+            flags=re.IGNORECASE,
+        )
+        cleaned_reason = re.sub(
+            rf"{escaped_expression}\s*라고\s*말하면",
+            "이렇게 말하면",
+            cleaned_reason,
+            flags=re.IGNORECASE,
+        )
+        cleaned_reason = re.sub(
+            escaped_expression,
+            "",
+            cleaned_reason,
+            flags=re.IGNORECASE,
+        )
+    return cleaned_reason
+
+
+def _correction_expression_parts(correction_expression: str) -> list[str]:
+    raw_parts = [correction_expression.strip()]
+    raw_parts.extend(
+        part.strip()
+        for part in re.split(r"\s*/\s*|\n+", correction_expression)
+        if part.strip()
+    )
+
+    parts: list[str] = []
+    seen: set[str] = set()
+    for raw_part in raw_parts:
+        part = raw_part.strip()
+        if len(part) < 6:
+            continue
+        normalized = _normalize_visible_text(part)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        parts.append(part)
+    return sorted(parts, key=len, reverse=True)
+
+
+def _normalize_correction_reason_text(correction_reason: str) -> str:
+    cleaned = re.sub(r"\s+", " ", correction_reason).strip()
+    replacements = {
+        " .": ".",
+        " ,": ",",
+        " !": "!",
+        " ?": "?",
+        "..": ".",
+        "  ": " ",
+        "이렇게 말하면처럼": "이렇게 말하면",
+        "이렇게 말하면라고": "이렇게 말하면",
+    }
+    for source, target in replacements.items():
+        cleaned = cleaned.replace(source, target)
+    cleaned = re.sub(r"\s+([.,!?])", r"\1", cleaned)
+    cleaned = re.sub(r"부분은\s+부분은", "부분은", cleaned)
+    return cleaned.strip()
 
 
 def _feedback_for_prompt_injection_utterance(

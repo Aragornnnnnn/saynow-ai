@@ -452,6 +452,55 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertNotIn("조금만 더 자연스럽게 이어지면 좋겠다", line)
         self.assertIn("emotionally real private thought", system_prompt)
 
+    def test_next_question_prompt_calibrates_short_answer_naturally(self):
+        system_prompt = self.service._next_question_system_prompt()
+
+        self.assertIn("Do not over-praise or over-punish short, vague, or uncertain answers", system_prompt)
+        self.assertIn("Maybe, yeah.", system_prompt)
+        self.assertIn("아직 확실하진 않은가 보네", system_prompt)
+        self.assertIn("Bad aiQuestion style for user 'Maybe yes.': 'That’s pretty flexible.", system_prompt)
+
+    def test_next_question_replaces_overinterpreted_acknowledgement_for_vague_answer(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That’s pretty flexible. Do you like quiet evenings or hanging out with friends?",
+            "translatedQuestion": "그건 꽤 유연하네. 조용한 저녁이 좋아, 아니면 친구들이랑 노는 게 좋아?",
+            "innerThought": "아직 확실히 말하고 싶지는 않은가 보네.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                "scenarioId": 3,
+                "title": "룸메이트 대화",
+                "briefing": "룸메이트와 생활과 주말 계획에 대해 이야기합니다.",
+                "conversationGoal": "룸메이트와 생활 이야기를 나눈다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "What do you usually do after class?",
+                "translatedQuestion": "수업 끝나고 보통 뭐 해?",
+                "userUtterance": "Maybe yes.",
+            },
+            "nextQuestion": {
+                "questionId": 31,
+                "sequence": 2,
+                "questionEn": "Do you like quiet evenings or hanging out with friends?",
+                "questionKo": "조용한 저녁이 좋아, 아니면 친구들이랑 노는 게 좋아?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertTrue(result.aiQuestion.startswith("Maybe, yeah."))
+        self.assertNotIn("pretty flexible", result.aiQuestion.lower())
+        self.assertIn("아직 확실하진 않", result.translatedQuestion)
+        self.assertNotIn("꽤 유연", result.translatedQuestion)
+        self.assertEqual(result.innerThought, "아직 확실히 말하고 싶지는 않은가 보네.")
+
     def test_next_question_repairs_expression_feedback_inner_thought(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Haha, that’s a strong favorite. Do you cook often?",
@@ -2429,17 +2478,45 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("clearly inferable correct catalog pattern", system_prompt)
         self.assertIn("Return one JSON object, not an array", system_prompt)
 
-    def test_turn_feedback_prompt_requires_short_before_after_detail_format(self):
+    def test_turn_feedback_prompt_keeps_correction_reason_separate_from_expression(self):
         system_prompt = self.service._turn_feedback_system_prompt()
 
-        self.assertIn("shortest meaningful before→after expression", system_prompt)
-        self.assertIn("Do not repeat the entire user utterance", system_prompt)
-        self.assertIn("what is it → what it is", system_prompt)
+        self.assertIn("Do not use arrow notation such as A → B", system_prompt)
+        self.assertIn("Do not repeat correctionExpression inside correctionReason", system_prompt)
+        self.assertIn("explain the original problem and the type of change", system_prompt)
+        self.assertNotIn("shortest meaningful before→after expression", system_prompt)
+        self.assertNotIn("what is it → what it is", system_prompt)
         self.assertIn("Do not include legacy fields", system_prompt)
         self.assertIn("betterExpression", system_prompt)
         self.assertIn("correctionPoint", system_prompt)
         self.assertIn("correctionExpression", system_prompt)
         self.assertIn("correctionReason", system_prompt)
+
+    def test_turn_feedback_removes_arrow_and_repeated_expression_from_correction_reason(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"그게 무엇인지 모르겠어요\"라고 묻는 말의 어순이 섞인 것처럼 들려요.",
+            "positiveFeedback": "간접의문문을 써 보려는 시도는 좋아요.",
+            "feedbackDetail": None,
+            "correctionExpression": "I don't know what it is.",
+            "correctionReason": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요. I don't know what it is.처럼 말하면 정확해요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [{"errorType": "indirect_question_word_order", "status": "incorrect", "evidence": "what is it"}],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached.correctionExpression, "I don't know what it is.")
+        self.assertNotIn("→", cached.correctionReason)
+        self.assertNotIn("->", cached.correctionReason)
+        self.assertNotIn("I don't know what it is", cached.correctionReason)
+        self.assertIn("간접의문문", cached.correctionReason)
+        self.assertIn("평서문 어순", cached.correctionReason)
 
     def test_turn_feedback_prompt_requires_quoted_korean_analogy_sentence_format(self):
         system_prompt = self.service._turn_feedback_system_prompt()
@@ -3197,14 +3274,16 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertIn("more freedom", cached.correctionReason)
+        self.assertNotIn("more freedom", cached.correctionReason)
+        self.assertIn("more free", cached.correctionReason)
+        self.assertIn("완전한 절", cached.correctionReason)
         self.assertNotIn("피자", cached.koreanAnalogy)
 
     def test_turn_feedback_repairs_good_misclassification_for_bare_noun_because_answers(self):
-        for utterance, expected_fix in [
-            ("Canada, because nature.", "because I love nature"),
-            ("Alone, because freedom.", "because I like the freedom"),
-            ("Rice, because many dishes.", "because I can eat it with many dishes"),
+        for utterance, expected_problem, expected_direction in [
+            ("Canada, because nature.", "because nature", "완성된 문장"),
+            ("Alone, because freedom.", "because freedom", "문장으로 풀어"),
+            ("Rice, because many dishes.", "because many dishes", "주어와 동사"),
         ]:
             with self.subTest(utterance=utterance):
                 self.service.clear_turn_feedback_cache()
@@ -3223,7 +3302,9 @@ class ConversationServiceTest(unittest.TestCase):
                 cached = self.service.get_cached_turn_feedback(1000, 5000)
 
                 self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-                self.assertIn(expected_fix, cached.correctionReason)
+                self.assertIn(expected_problem, cached.correctionReason)
+                self.assertIn(expected_direction, cached.correctionReason)
+                self.assertNotIn(cached.correctionExpression, cached.correctionReason)
                 self.assertIsNotNone(cached.positiveFeedback)
                 self.assertIsNone(cached.benchmarkMessage)
 

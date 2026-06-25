@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## LAN-28 자연스러운 속마음과 교정 설명 후속 튜닝
+
+- [x] 짧고 애매한 사용자 발화를 과하게 칭찬하거나 꾸짖지 않는 RED 테스트를 추가한다.
+- [x] `Maybe yes.` 같은 발화에 `That’s pretty flexible`처럼 근거 없는 맞장구가 붙으면 보정하는 테스트를 추가한다.
+- [x] `correctionReason`이 `A → B` 표기나 `correctionExpression` 반복 없이 문제와 수정 방향만 설명하도록 RED 테스트를 추가한다.
+- [x] next-question 프롬프트에 짧은 답변 캘리브레이션과 자연스러운 맞장구 예시를 추가한다.
+- [x] turn-feedback 프롬프트와 후처리에서 교정 표현과 교정 이유 분리 계약을 강화한다.
+- [x] 기존 테스트의 교정 이유 기대값을 새 계약 기준으로 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
 ## LAN-28 2026-06-25 live smoke 후속 보정
 
 - [x] 5개 live smoke 결과에서 속마음과 턴 피드백 품질 문제를 분류한다.
