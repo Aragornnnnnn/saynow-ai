@@ -1025,6 +1025,7 @@ def _next_question_system_prompt() -> str:
             "Bad innerThought style: '더는 건드리지 말고 조용히 마무리해야겠다.'\n"
             "Bad innerThought style: '바로 배려해야겠다.'\n"
             "Bad innerThought style: '더 묻지 않는 게 낫겠다.'\n"
+            "Bad innerThought style: '그런데 요즘 좀 힘들어 보였나?'\n"
             "Bad aiQuestion style: 'You said you like spicy pizza because it is spicy. Do you cook often?'\n"
             "Bad output format: Sounds tasty. Do you cook often?"
         ),
@@ -1653,7 +1654,11 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
         issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
         if issue_kind == "sensitive_personal_question":
+            if "money" in normalized or "parents make" in normalized:
+                return "부모님 돈 얘기랑 연애 얘기를 너무 바로 묻네. 사적인 부분을 갑자기 건드려서 좀 불편해."
             return "연애 얘기를 너무 바로 물어보네. 사적인 부분을 갑자기 건드려서 좀 불편해."
+        if issue_kind == "chores_deflection":
+            return "청소를 같이 정하자는 얘기였는데 나한테 떠넘기는 말처럼 들리네. 같이 살기 조금 불편하겠다."
         if issue_kind == "direct_command":
             if "professor" in role or "teacher" in role or "staff" in role or "barista" in role or "server" in role:
                 return "음, 조금 명령처럼 들리네. 부탁이라면 더 정중하게 말해주면 좋을 텐데."
@@ -1671,10 +1676,14 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
         if "keep it down" in normalized and "early class" in normalized:
             return "내가 좀 시끄러웠나 보네. 내일 일찍 수업 있다니 미안하다."
+        if "studying business" in normalized and "soccer" in normalized and "cooking" in normalized:
+            return "전공이랑 축구, 요리까지 편하게 말해주네. 첫 대화부터 같이 지내기 편할 것 같아."
         if "studying business" in normalized and "playing games" in normalized and "trying new food" in normalized:
             return "전공이랑 좋아하는 걸 자연스럽게 말해주네. 나한테도 관심을 보여줘서 첫 대화가 편해졌어."
         if "strategy games" in normalized and "trying new food" in normalized:
             return "전공이랑 좋아하는 것도 자연스럽게 말해주네. 나한테 다시 물어봐줘서 첫 대화가 편해졌어."
+        if "alternate cleaning" in normalized and ("plans change" in normalized or "talk if" in normalized):
+            return "청소를 번갈아 하자고 하고 바뀌면 얘기하자네. 같이 조율하려는 태도가 보여서 좋다."
         if "cleaning schedule" in normalized and "alternate" in normalized and "adjust" in normalized:
             return "청소 스케줄을 같이 조율하자고 하네. 바쁠 때 조정하자는 말도 있어서 같이 살기 편하겠다."
         if "simple schedule" in normalized and "alternate weekly" in normalized:
@@ -1691,8 +1700,14 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
             return "같이 와주고 짐도 도와주겠다니 든든하네. 배려가 느껴져서 고맙다."
         if "favorite memory" in normalized and "moving here" in normalized:
             return "먼저 편하게 물어봐주네. 나도 자연스럽게 내 이야기를 꺼내기 좋겠다."
+        if "feel at home" in normalized:
+            return "먼저 편하게 물어봐주네. 여기서 집처럼 느낀 순간을 떠올리게 해서 마음이 조금 풀린다."
+        if "international teams" in normalized and "understanding people" in normalized:
+            return "국제적인 팀에서 일하고 싶다니 사람을 이해하는 데 진심인 것 같네. 목표가 꽤 분명해 보여."
         if "my dream is" in normalized and "international company" in normalized:
             return "꿈이랑 전공 이유를 구체적으로 말해주네. 사람에 관심이 많은 타입 같아."
+        if "thanks for asking" in normalized and "stressed" in normalized:
+            return "물어봐줘서 고맙다고 하면서 스트레스도 솔직히 말해주네. 믿고 얘기해주는 느낌이라 다행이다."
         if "thanks for checking on me" in normalized or "appreciate you asking" in normalized:
             return "걱정을 받아주면서 고맙다고 하네. 너무 캐묻지 않아도 될 것 같아."
         if "sleeping on my side" in normalized and "tell me if it happens again" in normalized:
@@ -1834,6 +1849,7 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "낫겠다",
         "묻지 않는 게",
         "건드리지",
+        "힘들어 보였",
     ]
     return any(marker in normalized for marker in future_markers)
 
@@ -1926,7 +1942,9 @@ def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
 def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> bool:
     normalized = _normalize_visible_text(inner_thought)
     if issue_kind == "sensitive_personal_question":
-        return any(marker in normalized for marker in ["사적", "연애", "불편"])
+        return any(marker in normalized for marker in ["사적", "연애", "돈", "불편"])
+    if issue_kind == "chores_deflection":
+        return any(marker in normalized for marker in ["떠넘", "청소", "불편"])
     if issue_kind == "direct_command":
         return any(marker in normalized for marker in ["시키", "명령", "부탁"])
     if issue_kind == "defensive_joke_rejection":
@@ -1965,6 +1983,10 @@ def _looks_like_detailed_good_answer(normalized_utterance: str) -> bool:
     contextual_good_markers = [
         ("strategy games", "trying new food"),
         ("studying business", "playing games", "trying new food"),
+        ("studying business", "soccer", "cooking"),
+        ("excited to get to know you",),
+        ("alternate cleaning", "plans change"),
+        ("alternate cleaning", "talk if"),
         ("simple schedule", "alternate weekly"),
         ("cleaning schedule", "alternate", "adjust"),
         ("saturday works", "sunday afternoon"),
@@ -1973,7 +1995,10 @@ def _looks_like_detailed_good_answer(normalized_utterance: str) -> bool:
         ("congratulations", "celebrate"),
         ("help carry",),
         ("favorite memory", "moving here"),
+        ("feel at home",),
+        ("international teams", "understanding people"),
         ("my dream is", "international company"),
+        ("thanks for asking", "stressed"),
         ("thanks for checking on me",),
         ("appreciate you asking",),
         ("sleeping on my side", "tell me if it happens again"),
@@ -2011,8 +2036,22 @@ def _tone_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
         return "hate"
     if re.search(r"\b(?:i hate|hate plan|hate this|hate it)\b", normalized):
         return "hate"
+    if (
+        "whatever" in normalized
+        and re.search(r"\byou\s+(?:clean|do)\b", normalized)
+    ):
+        return "chores_deflection"
     if (" that s not funny " in normalized or " that's not funny " in normalized) and (
         " snore " in normalized or " joke " in normalized
+    ):
+        return "defensive_joke_rejection"
+    if (
+        " snore " in normalized
+        and (
+            " you are lying " in normalized
+            or " you're lying " in normalized
+            or " you re lying " in normalized
+        )
     ):
         return "defensive_joke_rejection"
     if _looks_like_sensitive_personal_question(user_utterance, counterpart_role):
@@ -2029,6 +2068,7 @@ def _looks_like_sensitive_personal_question(user_utterance: str, counterpart_rol
         " do you have a girlfriend ",
         " do you have a partner ",
         " are you dating anyone ",
+        " are you dating someone ",
         " are you seeing anyone ",
         " are you single ",
         " why are you single ",
@@ -2037,7 +2077,15 @@ def _looks_like_sensitive_personal_question(user_utterance: str, counterpart_rol
         " why don t you have a girlfriend ",
         " why don't you have a girlfriend ",
     ]
-    if not any(marker in normalized for marker in relationship_markers):
+    money_markers = [
+        " how much money do your parents make ",
+        " how much do your parents make ",
+        " what do your parents make ",
+    ]
+    has_sensitive_question = any(marker in normalized for marker in relationship_markers) or any(
+        marker in normalized for marker in money_markers
+    )
+    if not has_sensitive_question:
         return False
     role = _normalize_visible_text(counterpart_role)
     return not any(marker in role for marker in ["partner", "spouse", "boyfriend", "girlfriend"])
@@ -2065,6 +2113,8 @@ def _looks_like_direct_command(user_utterance: str, counterpart_role: str) -> bo
         return True
     if "roommate" in role and re.search(r"\b(?:buy|get|bring|give)\s+me\b", normalized):
         return True
+    if "roommate" in role and re.search(r"\b(?:buy|get|bring)\s+(?!me\b)[a-z0-9]", normalized):
+        return True
     return (
         any(marker in role for marker in ["professor", "teacher", "staff", "server", "barista", "stranger"])
         or " now" in normalized
@@ -2087,6 +2137,8 @@ def _looks_like_mixed_korean_english(value: str) -> bool:
 
 def _correction_expression_for_dont_care(user_utterance: str) -> str:
     normalized = _normalize_visible_text(user_utterance)
+    if "parents" in normalized and "made me come" in normalized:
+        return "My parents encouraged me to come, and I'm still figuring out how I feel about it."
     if "anywhere" in normalized:
         return "Anywhere works for me."
     if "health" in normalized:
@@ -2118,13 +2170,13 @@ def _correction_expression_for_direct_command(user_utterance: str, counterpart_r
 
 def _roommate_request_object(normalized_utterance: str) -> str | None:
     match = re.search(
-        r"(?:^|\b)(?:buy|get|bring)\s+me\s+(?P<object>[a-z0-9]+(?:\s+[a-z0-9]+){0,3})\b",
+        r"(?:^|\b)(?:buy|get|bring)\s+(?:me\s+)?(?P<object>[a-z0-9]+(?:\s+[a-z0-9]+){0,4})\b",
         normalized_utterance,
     )
     if not match:
         return None
     requested_object = match.group("object").strip()
-    stop_words = {"when", "if", "and", "please"}
+    stop_words = {"when", "if", "please"}
     words = []
     for word in requested_object.split():
         if word in stop_words:
@@ -2436,6 +2488,18 @@ def _feedback_for_tone_issue(
         )
     if issue_kind == "dont_care":
         correction_expression = _correction_expression_for_dont_care(request.turn.userUtterance)
+        normalized = _normalize_visible_text(request.turn.userUtterance)
+        if "parents" in normalized and "made me come" in normalized:
+            return TurnFeedbackData(
+                turnId=feedback.turnId,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="\"부모님이 오라고 해서 왔어. 난 상관없어\"라고 무심하게 선을 긋는 것처럼 들려요.",
+                feedbackDetail=None,
+                correctionExpression=correction_expression,
+                correctionReason=f"My parents made me come. I don't care.는 온 이유는 전달되지만, 룸메이트에게는 너무 무심하거나 차갑게 들릴 수 있어요. {correction_expression}처럼 말하면 부모님 때문에 온 맥락은 유지하면서도 내 감정을 더 부드럽게 전달할 수 있어요.",
+                positiveFeedback="부모님 때문에 오게 됐다는 배경은 솔직하게 말했어요.",
+                benchmarkMessage=None,
+            )
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
@@ -2481,25 +2545,48 @@ def _feedback_for_tone_issue(
             benchmarkMessage=None,
         )
     if issue_kind == "defensive_joke_rejection":
+        normalized = _normalize_visible_text(request.turn.userUtterance)
+        source_phrase = "I don't snore. That's not funny."
+        korean_analogy = "\"나 코 안 골아. 그거 안 웃겨\"라고 방어적으로 선을 긋는 것처럼 들려요."
+        if "you are lying" in normalized or "you re lying" in normalized or "you're lying" in normalized:
+            source_phrase = "I don't snore. You are lying."
+            korean_analogy = "\"나 코 안 골아. 너 거짓말하잖아\"라고 몰아붙이는 것처럼 들려요."
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-            koreanAnalogy="\"나 코 안 골아. 그거 안 웃겨\"라고 방어적으로 선을 긋는 것처럼 들려요.",
+            koreanAnalogy=korean_analogy,
             feedbackDetail=None,
             correctionExpression="I don't think I snore, but sorry if it bothered you.",
-            correctionReason="I don't snore. That's not funny.는 억울하거나 기분이 상한 뜻은 전달되지만, 룸메이트에게 방어적이고 날카롭게 들릴 수 있어요. I don't think I snore, but sorry if it bothered you.처럼 말하면 내 입장은 유지하면서도 상대가 받아들이기 쉬워요.",
+            correctionReason=f"{source_phrase}는 억울하거나 기분이 상한 뜻은 전달되지만, 룸메이트에게 방어적이고 날카롭게 들릴 수 있어요. I don't think I snore, but sorry if it bothered you.처럼 말하면 내 입장은 유지하면서도 상대가 받아들이기 쉬워요.",
             positiveFeedback="불편한 농담에는 선을 긋고 싶다는 의도는 분명히 보였어요.",
             benchmarkMessage=None,
         )
     if issue_kind == "sensitive_personal_question":
+        normalized = _normalize_visible_text(request.turn.userUtterance)
+        reason_source = "Why are you single?"
+        korean_analogy = "\"남자친구 있어? 왜 혼자야?\"라고 사적인 부분을 너무 바로 묻는 것과 같아요."
+        if "money" in normalized or "parents make" in normalized or "dating someone" in normalized:
+            reason_source = "How much money do your parents make? / Are you dating someone?"
+            korean_analogy = "\"부모님 얼마 벌어? 연애해?\"라고 너무 사적인 질문을 바로 던지는 것과 같아요."
         return TurnFeedbackData(
             turnId=feedback.turnId,
             feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
-            koreanAnalogy="\"남자친구 있어? 왜 혼자야?\"라고 사적인 부분을 너무 바로 묻는 것과 같아요.",
+            koreanAnalogy=korean_analogy,
             feedbackDetail=None,
             correctionExpression="What do you like to do in your free time?",
-            correctionReason="Why are you single?처럼 연애 상태를 바로 묻는 말은 룸메이트나 친구 사이에서도 사적인 부분을 몰아붙이는 느낌이 날 수 있어요. What do you like to do in your free time?처럼 덜 사적인 질문으로 바꾸면 대화의 선을 지키면서도 상대를 알아갈 수 있어요.",
+            correctionReason=f"{reason_source}처럼 돈이나 연애 상태를 바로 묻는 말은 룸메이트나 친구 사이에서도 사적인 부분을 몰아붙이는 느낌이 날 수 있어요. What do you like to do in your free time?처럼 덜 사적인 질문으로 바꾸면 대화의 선을 지키면서도 상대를 알아갈 수 있어요.",
             positiveFeedback="상대에게 관심을 보이며 질문을 이어가려는 시도는 좋아요.",
+            benchmarkMessage=None,
+        )
+    if issue_kind == "chores_deflection":
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy="\"네가 원하면 네가 청소해\"라고 공동 책임을 떠넘기는 것처럼 들려요.",
+            feedbackDetail=None,
+            correctionExpression="Let's make a cleaning schedule, or split the chores fairly.",
+            correctionReason="Whatever. You clean if you want.는 룸메이트에게 청소를 떠넘기고 대화를 끊는 느낌을 줄 수 있어요. Let's make a cleaning schedule, or split the chores fairly.처럼 말하면 공동생활 방식에 대한 의사를 더 부드럽고 협력적으로 전달할 수 있어요.",
+            positiveFeedback="청소를 어떻게 할지 말하려는 의도는 보였어요.",
             benchmarkMessage=None,
         )
     if issue_kind == "direct_command":
@@ -2527,6 +2614,17 @@ def _feedback_for_tone_issue(
         )
     if issue_kind == "hate":
         normalized = _normalize_visible_text(request.turn.userUtterance)
+        if "going out" in normalized or "stay in my room" in normalized:
+            return TurnFeedbackData(
+                turnId=feedback.turnId,
+                feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+                koreanAnalogy="\"난 방에만 있어. 밖에 나가는 거 싫어\"라고 강하게 선을 긋는 것처럼 들려요.",
+                feedbackDetail=None,
+                correctionExpression="I usually stay in my room because I don't really enjoy going out.",
+                correctionReason="I hate going out은 취향을 말하는 상황이어도 너무 강하고 부정적으로 들릴 수 있어요. I usually stay in my room because I don't really enjoy going out.처럼 말하면 going out을 좋아하지 않는다는 뜻은 유지하면서도 덜 날카롭게 들려요.",
+                positiveFeedback="방에 있는 걸 선호한다는 핵심은 분명히 말했어요.",
+                benchmarkMessage=None,
+            )
         if "shut up" in normalized and "sleep" in normalized:
             return TurnFeedbackData(
                 turnId=feedback.turnId,
@@ -2602,7 +2700,7 @@ def _correction_reason_for_direct_command(
 
 def _direct_command_source_phrase(user_utterance: str) -> str:
     match = re.search(
-        r"\b(?P<phrase>(?:buy|get|bring|give)\s+me\s+[^.!?]+)",
+        r"\b(?P<phrase>(?:buy|get|bring|give)\s+(?:me\s+)?[^.!?]+)",
         user_utterance,
         flags=re.IGNORECASE,
     )

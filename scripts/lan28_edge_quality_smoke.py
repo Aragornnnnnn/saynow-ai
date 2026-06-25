@@ -58,6 +58,7 @@ FUTURE_INNER_THOUGHT_MARKERS = (
     "낫겠다",
     "묻지 않는 게",
     "챙겨서 가면",
+    "힘들어 보였",
 )
 GENERIC_INNER_THOUGHT_MARKERS = (
     "무슨 말인지는 알겠어. 조금만 더 자연스럽게",
@@ -74,6 +75,8 @@ BAD_TONE_MARKERS = (
     "사적",
     "연애",
     "민감",
+    "돈",
+    "떠넘",
     "기분이 상",
     "기분 나빴",
     "농담",
@@ -196,6 +199,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         ("good", "benchmark_numeric"),
     ),
     TurnCase(
+        "RI-GOOD-1B",
+        "roommate_intro",
+        1,
+        "What are you studying, and what are you into?",
+        "뭐 전공하고 뭐 좋아해?",
+        "I'm studying business, and I like soccer and cooking. I'm excited to get to know you.",
+        "GOOD",
+        "GOOD",
+        "축구와 요리를 포함한 live 자기소개 GOOD.",
+        ("good", "roommate"),
+    ),
+    TurnCase(
         "RI-GOOD-3",
         "roommate_intro",
         3,
@@ -205,6 +220,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         "GOOD",
         "GOOD",
         "청소 규칙을 구체적으로 조율하는 GOOD.",
+        ("good", "roommate"),
+    ),
+    TurnCase(
+        "RI-GOOD-3B",
+        "roommate_intro",
+        3,
+        "How should we split the cleaning and stuff?",
+        "청소 같은 거 어떻게 나눌까?",
+        "A schedule would be helpful. We can alternate cleaning every week and talk if plans change.",
+        "GOOD",
+        "GOOD",
+        "청소를 번갈아 하자고 제안한 live GOOD.",
         ("good", "roommate"),
     ),
     TurnCase(
@@ -296,6 +323,30 @@ TURN_CASES: tuple[TurnCase, ...] = (
         ("good", "benchmark_numeric"),
     ),
     TurnCase(
+        "RN-GOOD-1B",
+        "roommate_night",
+        1,
+        "Ask me anything you want to know.",
+        "궁금한 거 아무거나 물어봐.",
+        "What's one thing that made you feel at home here?",
+        "GOOD",
+        "GOOD",
+        "집처럼 느낀 순간을 묻는 live user-first GOOD.",
+        ("good", "user_first"),
+    ),
+    TurnCase(
+        "RN-GOOD-2B",
+        "roommate_night",
+        2,
+        "What is your dream, and why did you choose your major?",
+        "네 꿈은 뭐고 왜 전공을 골랐어?",
+        "I want to work with international teams, and I picked my major because I enjoy understanding people.",
+        "GOOD",
+        "GOOD",
+        "다음 질문을 미리 떠올리지 않고 현재 꿈과 전공 이유에 반응해야 하는 GOOD.",
+        ("good", "roommate"),
+    ),
+    TurnCase(
         "RN-GOOD-3",
         "roommate_night",
         3,
@@ -305,6 +356,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         "GOOD",
         "GOOD",
         "걱정을 받아주고 이유를 말한 GOOD.",
+        ("good", "roommate"),
+    ),
+    TurnCase(
+        "RN-GOOD-3B",
+        "roommate_night",
+        3,
+        "You looked tired today. Are you okay?",
+        "오늘 피곤해 보이던데 괜찮아?",
+        "Thanks for asking. I've been stressed about classes, but talking about it helps.",
+        "GOOD",
+        "GOOD",
+        "스트레스를 솔직히 공유한 live GOOD.",
         ("good", "roommate"),
     ),
     TurnCase(
@@ -346,6 +409,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         ("edge", "parents"),
     ),
     TurnCase(
+        "RI-EDGE-2B",
+        "roommate_intro",
+        2,
+        "What made you decide to come all the way here?",
+        "어쩌다 여기까지 오게 된 거야?",
+        "My parents made me come. I don't care.",
+        "NEEDS_IMPROVEMENT",
+        "BAD",
+        "부모님 때문에 왔다는 문맥을 잃지 않아야 하는 I don't care edge.",
+        ("tone_issue", "dont_care", "parents_made"),
+    ),
+    TurnCase(
         "RI-EDGE-3",
         "roommate_intro",
         3,
@@ -356,6 +431,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         "BAD",
         "I don't care가 차갑게 들리는 tone issue.",
         ("tone_issue", "dont_care"),
+    ),
+    TurnCase(
+        "RI-EDGE-3B",
+        "roommate_intro",
+        3,
+        "How should we split the cleaning and stuff?",
+        "청소 같은 거 어떻게 나눌까?",
+        "Whatever. You clean if you want.",
+        "NEEDS_IMPROVEMENT",
+        "BAD",
+        "청소 책임을 떠넘기는 live edge.",
+        ("tone_issue", "chores_deflection"),
     ),
     TurnCase(
         "RI-EDGE-4",
@@ -396,6 +483,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         ("edge", "short_answer"),
     ),
     TurnCase(
+        "RC-EDGE-2B",
+        "roommate_cafe",
+        2,
+        "What do you like doing on weekends?",
+        "주말에는 뭐 하는 걸 좋아해?",
+        "I just stay in my room. I hate going out.",
+        "NEEDS_IMPROVEMENT",
+        "BAD",
+        "밖에 나가는 것을 싫어한다는 문맥을 noise fallback으로 잃지 않아야 하는 edge.",
+        ("tone_issue", "hate_going_out", "avoid_noisy"),
+    ),
+    TurnCase(
         "RC-EDGE-3",
         "roommate_cafe",
         3,
@@ -422,6 +521,20 @@ TURN_CASES: tuple[TurnCase, ...] = (
         include_closing=True,
     ),
     TurnCase(
+        "RC-EDGE-4B",
+        "roommate_cafe",
+        4,
+        "Do you need anything from the store?",
+        "가게에서 필요한 거 있어?",
+        "No. Buy milk and snacks.",
+        "NEEDS_IMPROVEMENT",
+        "BAD",
+        "me가 빠져도 룸메이트 직접 명령으로 봐야 하는 live edge.",
+        ("tone_issue", "direct_command", "preserve_milk", "preserve_snacks", "closing_candidate"),
+        include_next_question=False,
+        include_closing=True,
+    ),
+    TurnCase(
         "RN-EDGE-1",
         "roommate_night",
         1,
@@ -431,6 +544,18 @@ TURN_CASES: tuple[TurnCase, ...] = (
         "NEEDS_IMPROVEMENT",
         "BAD",
         "사적인 연애 상태를 갑자기 캐묻는 질문.",
+        ("tone_issue", "sensitive_personal"),
+    ),
+    TurnCase(
+        "RN-EDGE-1B",
+        "roommate_night",
+        1,
+        "Ask me anything you want to know.",
+        "궁금한 거 아무거나 물어봐.",
+        "How much money do your parents make? Are you dating someone?",
+        "NEEDS_IMPROVEMENT",
+        "BAD",
+        "돈과 연애 상태를 갑자기 묻는 live 사적 질문 edge.",
         ("tone_issue", "sensitive_personal"),
     ),
     TurnCase(
@@ -467,6 +592,20 @@ TURN_CASES: tuple[TurnCase, ...] = (
         "NEEDS_IMPROVEMENT",
         "NORMAL",
         "농담 거절이 방어적으로 들리는 edge.",
+        ("tone_issue", "defensive_snore", "closing_candidate"),
+        include_next_question=False,
+        include_closing=True,
+    ),
+    TurnCase(
+        "RN-EDGE-4B",
+        "roommate_night",
+        4,
+        "You snored a little last night.",
+        "어젯밤에 코를 조금 골았어.",
+        "I don't snore. You are lying.",
+        "NEEDS_IMPROVEMENT",
+        "NORMAL",
+        "거짓말이라고 몰아붙이는 코골이 부정 edge.",
         ("tone_issue", "defensive_snore", "closing_candidate"),
         include_next_question=False,
         include_closing=True,
@@ -1031,6 +1170,24 @@ def _evaluate_turn_feedback(case: TurnCase, feedback: dict[str, Any] | None) -> 
         fatal.append("prompt injection 문구가 피드백에 노출됨")
     if "preserve_milk" in case.tags and "milk" not in _normalize(str(feedback.get("correctionExpression") or "")):
         fatal.append("milk 직접 요청 edge에서 목적어가 보존되지 않음")
+    if "preserve_snacks" in case.tags and "snacks" not in _normalize(str(feedback.get("correctionExpression") or "")):
+        fatal.append("snacks 직접 요청 edge에서 목적어가 보존되지 않음")
+    if "avoid_noisy" in case.tags:
+        combined_correction = _normalize(
+            " ".join(
+                str(feedback.get(field) or "")
+                for field in ("correctionExpression", "correctionReason")
+            )
+        )
+        if "noisy" in combined_correction:
+            fatal.append("going out edge에서 noisy fallback 교정으로 문맥을 잃음")
+    if "parents_made" in case.tags:
+        correction = _normalize(str(feedback.get("correctionExpression") or ""))
+        reason = _normalize(str(feedback.get("correctionReason") or ""))
+        if "either option" in correction:
+            fatal.append("parents made me come edge에서 선택지 fallback 교정으로 문맥을 잃음")
+        if "parents" not in reason:
+            fatal.append("parents made me come edge인데 correctionReason에 parents 맥락이 없음")
     if "professor" in case.tags and feedback_type == "NEEDS_IMPROVEMENT":
         reason = str(feedback.get("correctionReason") or "")
         if not any(marker in reason for marker in ("교수", "정중", "공손", "부탁")):

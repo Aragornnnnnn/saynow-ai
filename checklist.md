@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## LAN-28 2026-06-25 live smoke 후속 보정
+
+- [x] 5개 live smoke 결과에서 속마음과 턴 피드백 품질 문제를 분류한다.
+- [x] GOOD 발화의 generic NORMAL 속마음과 다음 질문 예고형 속마음을 RED 테스트로 고정한다.
+- [x] EDGE 발화의 문맥 손실 교정과 역할 불일치 속마음을 RED 테스트로 고정한다.
+- [x] 특정 문장 하드코딩이 아니라 역할, 의미, 말투 패턴 기준으로 보정한다.
+- [x] focused unittest, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] live smoke를 재실행하고 결과 리포트를 남긴다.
+- [ ] 변경 사항을 커밋하고 origin에 반영한다.
+
 ## LAN-28 전체 엣지케이스 품질 재검증
 
 - [x] 현재 repo, 최근 live 결과, 테스트 자산에서 검증 가능한 시나리오와 edge case 범위를 정리한다.
