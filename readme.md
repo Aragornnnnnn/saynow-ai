@@ -19,7 +19,7 @@
 BE-AI 요청은 `serviceAudience`로 학습 대상을 구분합니다. 필드를 생략하면 기존 한국인 대상 영어 회화 모드인 `KOREAN_LEARNER`로 처리합니다.
 
 - `KOREAN_LEARNER`는 한국인 사용자가 영어 회화를 연습하는 기본 모드입니다. `aiQuestion`, `aiMessage`, `correctionExpression`은 영어이고, 설명과 `translatedQuestion`, `translatedMessage`는 한국어입니다.
-- `AMERICAN_LEARNER`는 미국인 사용자가 한국어 회화를 연습하는 모드입니다. `aiQuestion`, `aiMessage`, `correctionExpression`은 한국어이고, 설명과 `translatedQuestion`, `translatedMessage`는 영어입니다.
+- `AMERICAN_LEARNER`는 미국인 사용자가 한국어 회화를 연습하는 모드입니다. `aiQuestion`, `aiMessage`, `correctionExpression`은 한국어이고, `innerThought`, 설명, `translatedQuestion`, `translatedMessage`는 영어입니다.
 
 `next-question`, `closing-message`, `turn-feedback`, `session-feedback`은 `scenario.serviceAudience`를 사용합니다. `guide`는 `scenario` 객체가 없어서 요청 최상위의 `serviceAudience`를 사용합니다.
 미국인 대상 한국어 회화 모드에서는 GOOD 턴이어도 `benchmarkMessage`를 항상 `null`로 내려줍니다.
@@ -155,7 +155,7 @@ BE 연동 기준.
 
 `koreanAnalogy`는 문법 설명이 아니라 원래 영어가 한국어 감각으로 어떻게 들리는지 보여주는 필드입니다. `한국어로 비유하자면`, `한국어로 치면` 같은 접두어 없이 `"..."라고 ...하는 것과 같아요.`처럼 바로 본론으로 시작합니다. raw JSON에서는 문자열 안 큰따옴표가 `\"`로 escape되지만, 클라이언트에서 JSON을 파싱해 렌더링하면 역슬래시는 보이지 않습니다.
 
-`innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다.
+`innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다. `KOREAN_LEARNER`의 `innerThought`는 한국어이고, `AMERICAN_LEARNER`의 `innerThought`는 영어입니다.
 
 `NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `KOREAN_LEARNER`에서 `correctionExpression`은 개선된 영어 표현만 담고, `correctionReason`은 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after와 한국어 이유를 담습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `KOREAN_LEARNER`의 `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요` 기본 문구를 씁니다. 턴별 정량 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `AMERICAN_LEARNER`에서는 `correctionExpression`이 개선된 한국어 표현이고, GOOD 턴의 `benchmarkMessage`도 `null`입니다.
 

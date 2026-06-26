@@ -953,3 +953,12 @@
 - [x] `AMERICAN_LEARNER` payload, `benchmarkMessage=null` 기대값, Markdown/JSON 리포트를 구현한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.
+
+## American learner innerThought English contract
+
+- [x] `AMERICAN_LEARNER`의 `next-question` 프롬프트가 `innerThought` 영어 계약을 요구하는 RED 테스트를 추가한다.
+- [x] `AMERICAN_LEARNER`의 `closing-message` 프롬프트가 `innerThought` 영어 계약을 요구하는 RED 테스트를 추가한다.
+- [x] `AMERICAN_LEARNER` fallback/repair 경로가 영어 `innerThought`를 반환하는 RED 테스트를 추가한다.
+- [x] 프롬프트와 fallback을 영어 `innerThought` 기준으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.

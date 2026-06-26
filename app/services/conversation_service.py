@@ -69,6 +69,17 @@ def _is_american_learner(service_audience: ServiceAudience) -> bool:
     return service_audience == ServiceAudience.AMERICAN_LEARNER
 
 
+def _contains_hangul(value: str) -> bool:
+    return any("\uac00" <= character <= "\ud7a3" for character in value)
+
+
+def _inner_thought_uses_wrong_language(
+    service_audience: ServiceAudience,
+    inner_thought: str,
+) -> bool:
+    return _is_american_learner(service_audience) and _contains_hangul(inner_thought)
+
+
 def _learning_language(service_audience: ServiceAudience) -> str:
     return "Korean" if _is_american_learner(service_audience) else "English"
 
@@ -1133,7 +1144,7 @@ def _american_learner_next_question_system_prompt() -> str:
         ),
         (
             "Inner Thought Policy:\n"
-            "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in Korean. "
+            "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought."
@@ -1144,7 +1155,7 @@ def _american_learner_next_question_system_prompt() -> str:
             '{"aiQuestion":"...","translatedQuestion":"...","innerThought":"...","innerThoughtType":"GOOD"}. '
             "aiQuestion must be Korean. "
             "translatedQuestion must be English. "
-            "innerThought must be Korean. "
+            "innerThought must be English. "
             "innerThoughtType must be GOOD, NORMAL, or BAD. "
             "Never return plain text outside the JSON object."
         ),
@@ -1264,7 +1275,7 @@ def _american_learner_closing_message_system_prompt() -> str:
         ),
         (
             "Inner Thought Policy:\n"
-            "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in Korean. "
+            "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD."
         ),
@@ -1274,7 +1285,7 @@ def _american_learner_closing_message_system_prompt() -> str:
             '{"aiMessage":"...","translatedMessage":"...","innerThought":"...","innerThoughtType":"GOOD"}. '
             "aiMessage is Korean. "
             "translatedMessage is English. "
-            "innerThought must be Korean. "
+            "innerThought must be English. "
             "innerThoughtType must be GOOD, NORMAL, or BAD. "
             "Never return plain text outside the JSON object."
         ),
@@ -1858,6 +1869,10 @@ def _repair_closing_message(
         _is_generic_normal_inner_thought(response.innerThought)
         or _is_meta_inner_thought(response.innerThought)
         or _has_future_inner_thought_marker(response.innerThought)
+        or _inner_thought_uses_wrong_language(
+            request.scenario.serviceAudience,
+            response.innerThought,
+        )
     )
     if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought_for_closing(request)
@@ -1950,7 +1965,10 @@ def _repair_next_question_inner_thought(
         _is_scripted_future_inner_thought(request, response.innerThought)
     ) or (
         _is_generic_normal_inner_thought(response.innerThought)
-    ) or _is_meta_inner_thought(response.innerThought)
+    ) or _is_meta_inner_thought(response.innerThought) or _inner_thought_uses_wrong_language(
+        request.scenario.serviceAudience,
+        response.innerThought,
+    )
     updates: dict[str, Any] = {}
     if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
         updates["innerThoughtType"] = expected_type
@@ -1995,6 +2013,10 @@ def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
         return "NORMAL"
     if issue_kind:
         return "BAD"
+    if _is_american_learner(request.scenario.serviceAudience) and _looks_like_korean_clear_reason_answer(
+        request.currentTurn.userUtterance
+    ):
+        return "GOOD"
     if _looks_like_short_broken_or_flat_answer(normalized):
         return "NORMAL"
     if (
@@ -2009,6 +2031,71 @@ def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
 
 
 def _fallback_inner_thought(request: NextQuestionRequest) -> str:
+    if _is_american_learner(request.scenario.serviceAudience):
+        return _fallback_inner_thought_en(request)
+    return _fallback_inner_thought_ko(request)
+
+
+def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
+    thought_type = _fallback_inner_thought_type(request)
+    role = _normalize_visible_text(request.scenario.counterpartRole)
+    normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+
+    if thought_type == "BAD":
+        if issue_kind == "sensitive_personal_question":
+            return "That jumps into private topics too directly, so it feels uncomfortable."
+        if issue_kind == "chores_deflection":
+            return "That sounds like they are pushing the cleaning responsibility onto me, which feels uncomfortable."
+        if issue_kind == "direct_command":
+            if "professor" in role or "teacher" in role or "staff" in role or "barista" in role or "server" in role:
+                return "That sounds more like a command than a request, so it feels uncomfortable."
+            return "That suddenly sounds like an order, so it feels uncomfortable."
+        if "hate fish" in normalized or "don t make that" in normalized or "don't make that" in normalized:
+            return "I understand they cannot eat fish, but that sounded a bit cold."
+        if "stop asking" in normalized:
+            return "They are telling me to stop asking, so it feels like they do not want to keep talking."
+        if "friend" in role or "roommate" in role:
+            return "That feels a little cold, like they are irritated with me."
+        return "I can roughly understand the intention, but it feels pretty blunt."
+
+    if thought_type == "GOOD":
+        if "keep it down" in normalized and "early class" in normalized:
+            return "I may have been too loud, and their early class makes the request easy to understand."
+        if _looks_like_polite_service_request(normalized, request.scenario.counterpartRole):
+            return "They asked politely and clearly, so it is easy to help them."
+        if "professor" in role or "teacher" in role:
+            return "They explained the point calmly, so it is easy for me to understand."
+        if "staff" in role or "barista" in role or "server" in role:
+            return "They made the request clearly, so it is easy to respond."
+        return "They gave enough of a reason, so I can understand what they mean."
+
+    if issue_kind == "defensive_joke_rejection":
+        return "That was not just a joke to them, so I feel a little sorry."
+    if "no plan" in normalized and "just go" in normalized:
+        return "They move without much of a plan, which feels a little sudden."
+    if normalized == "good":
+        return "They did respond, but the one-word answer feels a little dry."
+    if "rice is my life food" in normalized:
+        return "They really seem to love rice, even if the wording feels unusual."
+    if "i don t know what is it" in normalized:
+        return "They seem unsure while answering, so the meaning is only partly clear."
+    if "losted" in normalized or "hotel no answer" in normalized:
+        return "They sound frustrated because the hotel is not responding."
+    if "ramen" in normalized and "because cheap" in normalized:
+        return "They mean ramen is cheap, so the preference is simple but clear."
+    if "recommendation good" in normalized or "ads make me crazy" in normalized:
+        return "They liked the recommendation but were clearly annoyed by the ads."
+    if "professor" in role or "teacher" in role:
+        return "I heard the answer, but I am still not sure what help they need."
+    if "staff" in role or "barista" in role or "server" in role:
+        return "I can tell they want to order, but the exact request is still not clear."
+    if "roommate" in role:
+        return "They answered briefly, so it still feels a bit distant."
+    return "I can understand the basic meaning, but their feeling is still a little unclear."
+
+
+def _fallback_inner_thought_ko(request: NextQuestionRequest) -> str:
     thought_type = _fallback_inner_thought_type(request)
     role = _normalize_visible_text(request.scenario.counterpartRole)
     if thought_type == "BAD":
@@ -3548,6 +3635,17 @@ def _looks_like_clear_reason_answer(user_utterance: str) -> bool:
         and not _looks_like_because_spicy_clause_issue(normalized)
         and not _looks_like_incomplete_because_reason(normalized)
         and _has_clear_reason_clause(normalized)
+    )
+
+
+def _looks_like_korean_clear_reason_answer(user_utterance: str) -> bool:
+    if not _contains_hangul(user_utterance):
+        return False
+    normalized = _normalize_visible_text(user_utterance)
+    reason_markers = ["어서", "아서", "워서", "해서", "라서", "니까", "때문", "왜냐하면"]
+    content_markers = ["좋", "싫", "원", "필요", "먹", "마시", "가고", "하고", "싶", "괜찮"]
+    return any(marker in normalized for marker in reason_markers) and any(
+        marker in normalized for marker in content_markers
     )
 
 

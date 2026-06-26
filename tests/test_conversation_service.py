@@ -92,6 +92,12 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertFalse(lowered_acknowledgement.startswith(generic_start))
         self.assertNotIn(user_utterance.rstrip(".").lower(), response.aiQuestion.lower())
 
+    def _assert_no_hangul(self, value):
+        self.assertFalse(
+            any("\uac00" <= character <= "\ud7a3" for character in value),
+            f"expected no Hangul in {value!r}",
+        )
+
     def _turn_feedback_request(
         self,
         *,
@@ -160,7 +166,7 @@ class ConversationServiceTest(unittest.TestCase):
             return json.dumps({
                 "aiQuestion": "맛있겠네요. 요리는 자주 하나요?",
                 "translatedQuestion": "Sounds tasty. Do you cook often?",
-                "innerThought": "매운 피자를 좋아하는구나. 취향이 확실해서 좀 재밌네.",
+                "innerThought": "They clearly like spicy pizza, so the answer feels easy to follow.",
                 "innerThoughtType": "GOOD",
             })
 
@@ -176,9 +182,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("American learner's Korean free talk", captured["system"])
         self.assertIn("aiQuestion must be Korean", captured["system"])
         self.assertIn("translatedQuestion must be English", captured["system"])
+        self.assertIn("innerThought must be English", captured["system"])
+        self.assertNotIn("innerThought must be Korean", captured["system"])
         self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
         self.assertIn("요리는 자주 하나요?", result.aiQuestion)
         self.assertIn("Do you cook often?", result.translatedQuestion)
+        self.assertEqual(result.innerThought, "They clearly like spicy pizza, so the answer feels easy to follow.")
+        self._assert_no_hangul(result.innerThought)
 
     def test_american_learner_closing_message_prompt_targets_korean_conversation(self):
         from app.models.conversation import ClosingMessageRequest
@@ -191,7 +201,7 @@ class ConversationServiceTest(unittest.TestCase):
             return json.dumps({
                 "aiMessage": "좋아요. 이 상황은 여기서 마무리할게요.",
                 "translatedMessage": "Good. Let's wrap up this situation here.",
-                "innerThought": "의미는 잘 전달됐네.",
+                "innerThought": "The meaning came through clearly enough to wrap up.",
                 "innerThoughtType": "GOOD",
             })
 
@@ -215,9 +225,66 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("American learner's Korean conversation scenario", captured["system"])
         self.assertIn("aiMessage is Korean", captured["system"])
         self.assertIn("translatedMessage is English", captured["system"])
+        self.assertIn("innerThought must be English", captured["system"])
+        self.assertNotIn("innerThought must be Korean", captured["system"])
         self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
         self.assertEqual(result.aiMessage, "좋아요. 이 상황은 여기서 마무리할게요.")
         self.assertEqual(result.translatedMessage, "Good. Let's wrap up this situation here.")
+        self.assertEqual(result.innerThought, "The meaning came through clearly enough to wrap up.")
+        self._assert_no_hangul(result.innerThought)
+
+    def test_american_learner_next_question_replaces_korean_inner_thought_with_english(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "맛있겠네요. 요리는 자주 하나요?",
+            "translatedQuestion": "Sounds tasty. Do you cook often?",
+            "innerThought": "매운 피자를 좋아하는구나. 취향이 확실해서 좀 재밌네.",
+            "innerThoughtType": "GOOD",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="피자가 매워서 좋아요.",
+            )
+        )
+
+        self._assert_no_hangul(result.innerThought)
+
+    def test_american_learner_next_question_fallback_inner_thought_is_english(self):
+        self.service.chat = lambda *args, **kwargs: "not json"
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="피자가 매워서 좋아요.",
+            )
+        )
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertIn(result.innerThoughtType, {"GOOD", "NORMAL", "BAD"})
+
+    def test_american_learner_closing_message_fallback_inner_thought_is_english(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: "not json"
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+            "currentTurn": {
+                "aiQuestion": "가장 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "What is your favorite food?",
+                "userUtterance": "피자가 매워서 좋아요.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertIn(result.innerThoughtType, {"GOOD", "NORMAL", "BAD"})
 
     def test_american_learner_good_turn_feedback_forces_benchmark_message_null(self):
         captured = {}
