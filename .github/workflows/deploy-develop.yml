@@ -8,6 +8,7 @@ on:
 jobs:
     deploy:
         runs-on: ubuntu-latest
+        # develop AI는 develop GitHub Environment의 EC2 접속 정보와 /saynow/develop SSM 경로를 사용한다.
         environment: develop
         timeout-minutes: 20
         permissions:

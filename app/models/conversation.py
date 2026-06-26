@@ -1,4 +1,4 @@
-# 2차 MVP 대화 API 요청과 응답 데이터 구조를 정의한다.
+# 3차 MVP 프리톡 대화 API 요청과 응답 데이터 구조를 정의한다.
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,180 +10,255 @@ def _validate_not_blank(value: str) -> str:
     return value
 
 
-class EvidencePolicyMode(StrEnum):
-    SEMANTIC_EVIDENCE = "semantic_evidence"
-    EXPLICIT_PATTERN = "explicit_pattern"
-    EXPLICIT_KEYWORD = "explicit_keyword"
+def _optional_not_blank(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _validate_not_blank(value)
 
 
-class EvidenceGrounding(StrEnum):
-    LATEST_USER_UTTERANCE = "latest_user_utterance"
+def _strip_korean_analogy_framing(value: str) -> str:
+    stripped = value.strip()
+    framing_prefixes = (
+        "한국어로 비유하자면",
+        "한국어로 비유하면",
+        "한국어로 치면",
+    )
+    for prefix in framing_prefixes:
+        if stripped.startswith(prefix):
+            return stripped[len(prefix):].lstrip(" ,，:：")
+    return stripped
 
 
-class EvidencePolicy(BaseModel):
-    mode: EvidencePolicyMode
-    hints: list[str] = Field(default_factory=list)
-    requiresEvidenceText: bool = True
-    mustBeGroundedIn: EvidenceGrounding = EvidenceGrounding.LATEST_USER_UTTERANCE
+class ScenarioContext(BaseModel):
+    scenarioId: int = Field(gt=0)
+    title: str
+    briefing: str
+    conversationGoal: str
+    counterpartRole: str
 
-    @field_validator("hints")
-    @classmethod
-    def hints_must_not_include_blank_values(cls, value: list[str]) -> list[str]:
-        return [_validate_not_blank(hint) for hint in value]
-
-
-class SlotStatusRequest(BaseModel):
-    slotName: str
-    description: str
-    filled: bool
-    evidencePolicy: EvidencePolicy | None = None
-
-    @field_validator("slotName", "description")
+    @field_validator("title", "briefing", "conversationGoal", "counterpartRole")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class FilledSlotResponse(BaseModel):
-    slotName: str
+class CurrentTurnForNextQuestion(BaseModel):
+    aiQuestion: str
+    translatedQuestion: str
+    userUtterance: str
 
-    @field_validator("slotName")
+    @field_validator("aiQuestion", "translatedQuestion", "userUtterance")
     @classmethod
-    def slot_name_must_not_be_blank(cls, value: str) -> str:
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class NextQuestionTurnClassification(StrEnum):
-    ANSWER = "ANSWER"
-    ASSISTANCE_REQUEST = "ASSISTANCE_REQUEST"
-    REPEAT_REQUEST = "REPEAT_REQUEST"
-    INVALID_RESPONSE = "INVALID_RESPONSE"
+class NextFixedQuestion(BaseModel):
+    questionId: int = Field(gt=0)
+    sequence: int = Field(gt=0)
+    questionEn: str
+    questionKo: str
 
-
-class SessionResult(StrEnum):
-    SUCCESS = "SUCCESS"
-    FAILURE = "FAILURE"
+    @field_validator("questionEn", "questionKo")
+    @classmethod
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
 
 
 class NextQuestionRequest(BaseModel):
-    originalQuestion: str
-    originalTranslatedQuestion: str | None = None
-    originalQuestionTargetSlotName: str | None = None
-    userUtterance: str
-    scenarioTitle: str
-    scenarioSituation: str
-    aiRole: str
-    scenarioGoal: str
-    slots: list[SlotStatusRequest]
+    sessionId: int = Field(gt=0)
+    submittedTurnId: int = Field(gt=0)
+    submittedSequence: int = Field(gt=0)
+    scenario: ScenarioContext
+    currentTurn: CurrentTurnForNextQuestion
+    nextQuestion: NextFixedQuestion
 
-    @field_validator("originalQuestion", "userUtterance", "scenarioTitle", "scenarioSituation", "aiRole", "scenarioGoal")
-    @classmethod
-    def text_fields_must_not_be_blank(cls, value: str) -> str:
-        return _validate_not_blank(value)
 
-    @field_validator("originalQuestionTargetSlotName")
-    @classmethod
-    def optional_target_slot_name_must_not_be_blank(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
-        return _validate_not_blank(value)
-
-    @field_validator("originalTranslatedQuestion")
-    @classmethod
-    def optional_translated_question_must_not_be_blank(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
-        return _validate_not_blank(value)
+class InnerThoughtType(StrEnum):
+    GOOD = "GOOD"
+    NORMAL = "NORMAL"
+    BAD = "BAD"
 
 
 class NextQuestionResponse(BaseModel):
-    nextQuestion: str | None
-    translatedQuestion: str | None
-    nextQuestionTargetSlotName: str | None = None
-    filledSlots: list[FilledSlotResponse]
-    turnClassification: NextQuestionTurnClassification
+    aiQuestion: str
+    translatedQuestion: str
+    innerThought: str
+    innerThoughtType: InnerThoughtType
 
-    @field_validator("nextQuestionTargetSlotName")
+    @field_validator("aiQuestion", "translatedQuestion", "innerThought", "innerThoughtType")
     @classmethod
-    def optional_target_slot_name_must_not_be_blank(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class FeedbackTurnRequest(BaseModel):
-    turnId: int
-    originalQuestion: str
+class ClosingReason(StrEnum):
+    GOAL_COMPLETED = "GOAL_COMPLETED"
+    MAX_TURNS_REACHED = "MAX_TURNS_REACHED"
+    USER_ENDED = "USER_ENDED"
+    TIME_LIMIT_REACHED = "TIME_LIMIT_REACHED"
+
+
+class GoalCompletionStatus(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    PARTIAL = "PARTIAL"
+    COMPLETED = "COMPLETED"
+
+
+class ClosingMessageRequest(BaseModel):
+    sessionId: int = Field(gt=0)
+    submittedTurnId: int = Field(gt=0)
+    submittedSequence: int = Field(gt=0)
+    scenario: ScenarioContext
+    currentTurn: CurrentTurnForNextQuestion
+    closingReason: ClosingReason
+    goalCompletionStatus: GoalCompletionStatus
+
+
+class ClosingMessageResponse(BaseModel):
+    aiMessage: str
+    translatedMessage: str
+    innerThought: str
+    innerThoughtType: InnerThoughtType
+
+    @field_validator("aiMessage", "translatedMessage", "innerThought", "innerThoughtType")
+    @classmethod
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
+        return _validate_not_blank(value)
+
+
+class TurnForFeedback(BaseModel):
+    aiQuestion: str
+    translatedQuestion: str
     userUtterance: str
 
-    @field_validator("originalQuestion", "userUtterance")
+    @field_validator("aiQuestion", "translatedQuestion", "userUtterance")
     @classmethod
     def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class ConversationFeedbackRequest(BaseModel):
-    scenarioTitle: str
-    scenarioSituation: str
-    aiRole: str
-    scenarioGoal: str
-    sessionResult: SessionResult
-    slots: list[SlotStatusRequest]
-    turns: list[FeedbackTurnRequest]
-
-    @field_validator("scenarioTitle", "scenarioSituation", "aiRole", "scenarioGoal")
-    @classmethod
-    def text_fields_must_not_be_blank(cls, value: str) -> str:
-        return _validate_not_blank(value)
-
-    @field_validator("turns")
-    @classmethod
-    def turns_must_not_be_empty(cls, value: list[FeedbackTurnRequest]) -> list[FeedbackTurnRequest]:
-        if not value:
-            raise ValueError("turns must not be empty")
-        return value
+class TurnFeedbackRequest(BaseModel):
+    sessionId: int = Field(gt=0)
+    turnId: int = Field(gt=0)
+    sequence: int = Field(gt=0)
+    scenario: ScenarioContext
+    turn: TurnForFeedback
 
 
-class TurnFeedbackResponse(BaseModel):
+class TurnFeedbackStatus(StrEnum):
+    PREPARING = "PREPARING"
+    READY = "READY"
+    FAILED = "FAILED"
+
+
+class TurnFeedbackCreationResponse(BaseModel):
+    sessionId: int
     turnId: int
-    feedbackRequired: bool
-    nativeUnderstanding: str | None = None
-    nativeLanguageInterpretation: str | None = None
-    betterExpression: str | None = None
+    feedbackStatus: TurnFeedbackStatus
+
+
+class FeedbackType(StrEnum):
+    NEEDS_IMPROVEMENT = "NEEDS_IMPROVEMENT"
+    GOOD = "GOOD"
+
+
+class TurnFeedbackData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    turnId: int = Field(gt=0)
+    feedbackType: FeedbackType
+    koreanAnalogy: str
+    positiveFeedback: str | None = None
+    feedbackDetail: str | None = None
+    correctionExpression: str | None = None
+    correctionReason: str | None = None
+    benchmarkMessage: str | None = None
+
+    @field_validator("koreanAnalogy")
+    @classmethod
+    def korean_analogy_must_not_be_blank_or_framed(cls, value: str) -> str:
+        return _validate_not_blank(_strip_korean_analogy_framing(value))
+
+    @field_validator(
+        "positiveFeedback",
+        "feedbackDetail",
+        "correctionExpression",
+        "correctionReason",
+        "benchmarkMessage",
+    )
+    @classmethod
+    def optional_text_fields_must_not_be_blank(cls, value: str | None) -> str | None:
+        return _optional_not_blank(value)
 
     @model_validator(mode="after")
-    def required_feedback_fields_must_exist_when_feedback_required(self):
-        if not self.feedbackRequired:
+    def feedback_fields_must_match_type(self):
+        if self.feedbackType == FeedbackType.NEEDS_IMPROVEMENT:
+            if self.positiveFeedback is None or not self.positiveFeedback.strip():
+                raise ValueError("positiveFeedback is required for NEEDS_IMPROVEMENT feedback")
+            if self.feedbackDetail is not None:
+                raise ValueError("feedbackDetail must be null for NEEDS_IMPROVEMENT feedback")
+            if self.correctionExpression is None or not self.correctionExpression.strip():
+                raise ValueError("correctionExpression is required for NEEDS_IMPROVEMENT feedback")
+            if self.correctionReason is None or not self.correctionReason.strip():
+                raise ValueError("correctionReason is required for NEEDS_IMPROVEMENT feedback")
+            if self.benchmarkMessage is not None:
+                raise ValueError("benchmarkMessage must be null for NEEDS_IMPROVEMENT feedback")
             return self
 
-        required_values = [
-            self.nativeUnderstanding,
-            self.nativeLanguageInterpretation,
-            self.betterExpression,
-        ]
-        if any(value is None or not value.strip() for value in required_values):
-            raise ValueError("feedback fields must exist when feedbackRequired is true")
+        if self.positiveFeedback is not None:
+            raise ValueError("positiveFeedback must be null for GOOD feedback")
+        if self.feedbackDetail is None or not self.feedbackDetail.strip():
+            raise ValueError("feedbackDetail is required for GOOD feedback")
+        if self.correctionExpression is not None:
+            raise ValueError("correctionExpression must be null for GOOD feedback")
+        if self.correctionReason is not None:
+            raise ValueError("correctionReason must be null for GOOD feedback")
         return self
 
 
-class ConversationFeedbackSummaryResponse(BaseModel):
-    comprehensionScore: int = Field(ge=0, le=100)
-    feedbackSummary: str
+class SessionFeedbackRequest(BaseModel):
+    sessionId: int = Field(gt=0)
+    scenario: ScenarioContext
+    expectedTurnIds: list[int]
 
-    @field_validator("feedbackSummary")
+    @field_validator("expectedTurnIds")
     @classmethod
-    def feedback_summary_must_not_be_blank(cls, value: str) -> str:
+    def expected_turn_ids_must_not_be_empty(cls, value: list[int]) -> list[int]:
+        if not value:
+            raise ValueError("expectedTurnIds must not be empty")
+        if any(turn_id <= 0 for turn_id in value):
+            raise ValueError("expectedTurnIds must contain positive ids")
+        if len(value) != len(set(value)):
+            raise ValueError("expectedTurnIds must not contain duplicates")
+        return value
+
+
+class SessionFeedbackHighlightResponse(BaseModel):
+    sessionId: int = Field(gt=0)
+    highlightMessage: str
+
+    @field_validator("highlightMessage")
+    @classmethod
+    def text_fields_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 
-class ConversationFeedbackResponse(BaseModel):
-    comprehensionScore: int = Field(ge=0, le=100)
-    feedbackSummary: str
-    turnFeedbacks: list[TurnFeedbackResponse]
+class NativeScoreBreakdown(BaseModel):
+    attemptedWordScore: int = Field(ge=0, le=100)
+    sentenceComplexityScore: int = Field(ge=0, le=100)
+    comprehensibilityScore: int = Field(ge=0, le=100)
 
-    @field_validator("feedbackSummary")
+
+class SessionFeedbackResponse(BaseModel):
+    sessionId: int = Field(gt=0)
+    nativeScore: int = Field(ge=0, le=100)
+    highlightMessage: str
+    turnFeedbacks: list[TurnFeedbackData]
+
+    @field_validator("highlightMessage")
     @classmethod
-    def feedback_summary_must_not_be_blank(cls, value: str) -> str:
+    def highlight_message_must_not_be_blank(cls, value: str) -> str:
         return _validate_not_blank(value)
 
 

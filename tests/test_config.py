@@ -33,6 +33,31 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.upstage_base_url, "https://api.upstage.ai/v1")
         self.assertEqual(settings.upstage_model, "solar-pro3")
 
+    def test_settings_support_openrouter_provider_values(self):
+        from app.config import Settings
+
+        settings = Settings(
+            llm_provider="openrouter",
+            openrouter_api_key="test-openrouter-key",
+        )
+
+        self.assertEqual(settings.llm_provider, "openrouter")
+        self.assertEqual(settings.openrouter_api_key, "test-openrouter-key")
+        self.assertEqual(settings.openrouter_base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(settings.openrouter_model, "openai/gpt-5.4-mini")
+
+    def test_settings_support_workflow_openai_models_and_fallback(self):
+        from app.config import Settings
+
+        settings = Settings(openai_api_key="test-key")
+
+        self.assertEqual(settings.openai_next_question_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_closing_message_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_turn_feedback_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_session_feedback_model, "gpt-5.4-mini")
+        self.assertEqual(settings.openai_fallback_model, "gpt-4o-mini")
+        self.assertEqual(settings.llm_request_timeout_seconds, 60.0)
+
     def test_settings_support_sentry_observability_values(self):
         from app.config import Settings
 
@@ -47,13 +72,6 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(settings.sentry_environment, "develop")
         self.assertEqual(settings.sentry_traces_sample_rate, 0.25)
         self.assertEqual(settings.sentry_max_breadcrumbs, 150)
-
-    def test_assistance_rag_is_disabled_by_default(self):
-        from app.config import Settings
-
-        settings = Settings(openai_api_key="test-key")
-
-        self.assertFalse(settings.assistance_rag_enabled)
 
 if __name__ == "__main__":
     unittest.main()

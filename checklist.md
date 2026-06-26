@@ -1,5 +1,347 @@
 # 작업 체크리스트
 
+## LAN-28 자연스러운 속마음과 교정 설명 후속 튜닝
+
+- [x] 짧고 애매한 사용자 발화를 과하게 칭찬하거나 꾸짖지 않는 RED 테스트를 추가한다.
+- [x] `Maybe yes.` 같은 발화에 `That’s pretty flexible`처럼 근거 없는 맞장구가 붙으면 보정하는 테스트를 추가한다.
+- [x] `correctionReason`이 `A → B` 표기나 `correctionExpression` 반복 없이 문제와 수정 방향만 설명하도록 RED 테스트를 추가한다.
+- [x] next-question 프롬프트에 짧은 답변 캘리브레이션과 자연스러운 맞장구 예시를 추가한다.
+- [x] turn-feedback 프롬프트와 후처리에서 교정 표현과 교정 이유 분리 계약을 강화한다.
+- [x] 기존 테스트의 교정 이유 기대값을 새 계약 기준으로 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## LAN-28 2026-06-25 live smoke 후속 보정
+
+- [x] 5개 live smoke 결과에서 속마음과 턴 피드백 품질 문제를 분류한다.
+- [x] GOOD 발화의 generic NORMAL 속마음과 다음 질문 예고형 속마음을 RED 테스트로 고정한다.
+- [x] EDGE 발화의 문맥 손실 교정과 역할 불일치 속마음을 RED 테스트로 고정한다.
+- [x] 특정 문장 하드코딩이 아니라 역할, 의미, 말투 패턴 기준으로 보정한다.
+- [x] focused unittest, 전체 unittest, compileall, diff check를 실행한다.
+- [x] live smoke를 재실행하고 결과 리포트를 남긴다.
+- [x] 변경 사항을 커밋하고 origin에 반영한다.
+- [x] fallback 경로에서도 `무슨 말인지는 알겠어...` 계열 튜터식 속마음이 노출되지 않도록 검증한다.
+- [x] 좋은 few-shot 예시도 `대화하기 편하네` 같은 정형 답변이 아니라 실제 상대의 즉시 감정 반응으로 교체한다.
+- [x] live에서 확인된 `표현이 조금 어색해서` 계열 평가형 속마음을 후처리에서 차단한다.
+- [x] 반복 문구 확인을 위해 유효한 LLM 속마음을 fallback으로 교체하는 후처리를 임시 비활성화한다.
+
+## LAN-28 전체 엣지케이스 품질 재검증
+
+- [x] 현재 repo, 최근 live 결과, 테스트 자산에서 검증 가능한 시나리오와 edge case 범위를 정리한다.
+- [x] `next-question`, `closing-message`, `turn-feedback`, `session-feedback`를 함께 검증하는 live smoke matrix를 만든다.
+- [x] 룸메이트 3개 시나리오 GOOD/EDGE 24개 발화와 역할별 추가 edge case를 실행한다.
+- [x] 속마음, 피드백 타입, 교정 표현, benchmark, highlight의 치명 품질 오류를 분류한다.
+- [x] 문제가 있으면 RED 테스트로 재현한 뒤 프롬프트나 후처리를 최소 범위로 수정한다.
+- [x] 전체 unittest, compileall, diff check, 최종 live smoke를 실행한다.
+- [x] 결과 리포트와 원본 JSON 경로를 남기고 필요한 커밋과 배포를 완료한다.
+
+## LAN-28 속마음과 개선 표현 계약
+
+- [x] `next-question`이 `scenario.counterpartRole`, `innerThought`, `innerThoughtType` 계약을 요구하는 RED 테스트를 추가한다.
+- [x] `turn-feedback`가 `correctionExpression`과 `correctionReason`을 분리해 내려주는 RED 테스트를 추가한다.
+- [x] Pydantic DTO와 route/service 테스트를 새 계약에 맞춘다.
+- [x] next-question 프롬프트, fallback, drift repair가 항상 속마음을 반환하도록 수정한다.
+- [x] turn-feedback 프롬프트, 검증, 후처리, 캐시가 분리된 개선 표현 계약을 사용하도록 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## LAN-28 koreanAnalogy 접두어 제거
+
+- [x] `koreanAnalogy`가 `한국어로 비유하자면` 접두어 없이 바로 본론으로 시작하는 RED 테스트를 추가한다.
+- [x] 턴 피드백 프롬프트에서 접두어 요구를 제거한다.
+- [x] 후처리와 deterministic fallback 문구에서 접두어를 제거한다.
+- [x] README 계약 예시를 새 형식으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## LAN-28 프롬프트 품질 보강
+
+- [x] `turn-feedback`이 `scenario.counterpartRole`을 모델 입력에 포함하는 RED 테스트를 추가한다.
+- [x] `turn-feedback` 프롬프트에 역할 기반 말투와 뉘앙스 판단 기준을 추가한다.
+- [x] 접두어 없는 `koreanAnalogy` few-shot 예시를 GOOD과 NEEDS_IMPROVEMENT에 추가한다.
+- [x] README와 작업 맥락 기록에 역할 기반 턴 피드백 정책을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## LAN-28 OpenRouter provider 추가
+
+- [x] `LLM_PROVIDER=openrouter` 설정과 라우팅 RED 테스트를 추가한다.
+- [x] OpenRouter API key, base URL, 모델 설정을 `Settings`에 추가한다.
+- [x] OpenRouter provider가 OpenAI 호환 chat client를 사용하도록 LLM 라우터를 수정한다.
+- [x] README에 로컬 env와 AWS SSM 적용 방법을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 턴별 benchmarkMessage 문장형 전환
+
+- [x] 턴별 `benchmarkMessage`는 `...한 사람`이 아니라 `...했어요` 문장으로 내려가는 RED 테스트를 추가한다.
+- [x] 세션 `highlightMessage`는 기존처럼 칭호형 `...한 사람`을 유지하는 회귀 테스트를 둔다.
+- [x] catalog 기반 benchmark 생성과 highlight 후보 생성을 분리한다.
+- [x] 턴 피드백 프롬프트와 README의 benchmark 문체 설명을 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 기존 수치 catalog 기반 GOOD benchmark
+
+- [x] GOOD surface usage 기반 수치형 `benchmarkMessage` RED 테스트를 추가한다.
+- [x] LLM이 비수치 또는 무관한 GOOD `benchmarkMessage`를 내려도 서버가 catalog 수치 hook으로 덮어쓰는지 검증한다.
+- [x] `NEEDS_IMPROVEMENT`는 계속 `benchmarkMessage=null`인 회귀 테스트를 유지한다.
+- [x] 세션 `highlightMessage`가 GOOD 수치형 `benchmarkMessage`를 우선 사용하도록 검증한다.
+- [x] 턴 피드백과 세션 피드백 프롬프트에서 비수치 GOOD benchmark 지시를 제거한다.
+- [x] README와 작업 맥락 기록에 재미용 surface usage 정책을 반영한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check, 실제 LLM smoke를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## GOOD benchmarkMessage 기본 생성
+
+- [x] GOOD 턴에서 검증된 정량 `detectedPatterns`가 없어도 비수치 `benchmarkMessage`를 채우는 RED 테스트를 추가한다.
+- [x] 검증된 정량 catalog copy가 있으면 기존 수치형 `benchmarkMessage`를 그대로 우선하는 테스트를 유지한다.
+- [x] `NEEDS_IMPROVEMENT`는 현재 API 계약대로 `benchmarkMessage=null`을 유지하는 회귀 테스트를 확인한다.
+- [x] 턴 피드백 프롬프트와 세션 피드백 프롬프트의 benchmark 정책을 새 기준에 맞게 갱신한다.
+- [x] README와 작업 맥락 기록에 GOOD 기본 benchmark 정책을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 피드백 LLM smoke 후속 보정
+
+- [x] LLM이 실제 발화와 무관한 `benchmarkMessage`를 만들면 서버가 폐기하도록 RED 테스트를 추가한다.
+- [x] `detectedPatterns[].evidence`가 사용자 발화에 없는 경우 benchmark와 highlight 후보에서 제외한다.
+- [x] 검증된 정량 근거가 없으면 세션 `highlightMessage`의 `%` hook을 fallback으로 되돌린다.
+- [x] 실제 LLM이 JSON 객체 뒤에 닫는 괄호를 덧붙이는 경우를 제한적으로 보정한다.
+- [x] 여행, 음식, 음악 3개 세션 12발화 실제 LLM smoke에서 근거 없는 `간접의문문` hook이 사라졌는지 확인한다.
+- [x] GOOD 턴에서 정답 `detectedPatterns`가 있는데 `benchmarkMessage`가 null이면 seed copy로 턴별 `benchmarkMessage`를 채운다.
+- [x] `highlightMessage`는 GOOD 정량 칭찬 hook을 최우선으로 쓰고, GOOD hook이 없을 때만 NEEDS 도전 hook을 쓰는 기준을 RED 테스트로 고정한다.
+- [x] NEEDS fallback 문구를 `바로잡을 사람`이 아니라 `도전한 사람` 계열로 보정한다.
+- [x] 실제 LLM smoke에서 약한 `highlightMessage`와 메타 설명형 `koreanAnalogy`가 나온 문제를 RED 테스트로 고정한다.
+- [x] `highlightMessage`가 가능한 경우 정량 수치 기반 칭호형 hook으로 보정되도록 seed와 후처리를 보강한다.
+- [x] `koreanAnalogy`가 `"..."라고 ...하는 것과 같아요.` 형식의 한국어 인용 비유를 따르도록 프롬프트와 후처리를 보강한다.
+- [x] README와 작업 맥락 기록에 JSON escape와 필드 목적을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 실제 OpenAI LLM smoke를 다시 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 프롬프트 품질 개선
+
+- [x] `prompt-engineering-patterns` 기준으로 턴 피드백과 세션 highlight 프롬프트 개선점을 점검한다.
+- [x] `feedbackDetail`이 짧은 before→after와 한국어 이유를 요구하는 RED 테스트를 추가한다.
+- [x] 세션 `highlightMessage`가 근거 우선순위를 따르도록 RED 테스트를 추가한다.
+- [x] 턴 피드백 프롬프트에 구계약 필드 금지와 최소 의미 단위 교정 형식을 추가한다.
+- [x] 세션 피드백 프롬프트에 `benchmarkMessage`, gamifiable `detectedPatterns`, 반복 주제 우선순위를 추가한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## nativeScoreBreakdown 응답 제거
+
+- [x] 공개 `session-feedback` 응답에서 `nativeScoreBreakdown`이 없어야 하는 RED 테스트를 확인한다.
+- [x] 내부 점수 계산 로직은 유지하고 `SessionFeedbackResponse` 모델과 반환 생성부에서만 필드를 제거한다.
+- [x] README와 작업 맥락 기록에서 `nativeScoreBreakdown`을 내부 계산값으로 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 한국인 오류 패턴 seed 기반 피드백 활용
+
+- [x] AI 서버 seed JSON을 source of truth로 두는 결정을 `context-notes.md`에 기록한다.
+- [x] 오류 패턴 catalog 로더가 a/an, 의미 파괴 여부, 게임화 문구를 읽는 RED 테스트를 추가한다.
+- [x] 턴 피드백 LLM 응답의 `detectedPatterns`를 외부 응답에서 분리해 내부 캐시에 저장하는 RED 테스트를 추가한다.
+- [x] `breaks_meaning`, `gamifiable`, `korean_pct`가 프롬프트와 점수 계산에 반영되도록 구현한다.
+- [x] README에 seed catalog와 내부 `detectedPatterns` 활용 방식을 기록한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 세션 피드백 응답 계약 개편
+
+- [x] `highlightMessage`가 칭호형 후킹 문구라는 기준을 `context-notes.md`에 기록한다.
+- [x] `nativeLevelLabel`, `summary`, `betterExpression` 제거와 새 필드 계약을 검증하는 RED 테스트를 추가한다.
+- [x] 턴 피드백 캐시에 시도 단어수, 문장 복잡도, 이해 가능성 점수 구성요소를 저장하는 RED 테스트를 추가한다.
+- [x] `session-feedback` 응답 모델과 라우트 계약을 새 명세에 맞게 변경한다.
+- [x] `nativeScore`를 시도 단어수 20%, 문장 복잡도 30%, 이해 가능성 50% 기준으로 계산한다.
+- [x] `NEEDS_IMPROVEMENT`에는 `positiveFeedback`과 통합 `feedbackDetail`을 제공하고, `GOOD`에는 `benchmarkMessage`를 nullable로 제공한다.
+- [x] README 피드백 명세를 새 응답 계약으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## AI 턴 피드백 캐시 TTL 정리
+
+- [x] 캐시 TTL을 3시간으로 두는 기준을 `context-notes.md`에 기록한다.
+- [x] 3시간이 지난 턴 피드백이 조회와 최종 피드백 생성에서 제외되는 RED 테스트를 추가한다.
+- [x] `session-feedback` 성공 후 해당 세션 캐시가 삭제되는 RED 테스트를 추가한다.
+- [x] 실패한 `session-feedback` 요청은 재시도를 위해 캐시를 보존하도록 구현한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 3차 MVP Obsidian 문서 정리
+
+- [x] 상위 문서와 하위 문서의 전체 구조를 확인한다.
+- [x] 상위 문서에서 오래된 AI 피드백 필드와 중복된 테스트 기록을 정리한다.
+- [x] 하위 문서에서 반복 원본 JSON을 줄이고 최신 검증 결과 중심으로 다시 구성한다.
+- [x] humanizer 기준으로 문장 리듬, 번역투, 쉼표 과다를 점검한다.
+- [x] 필요하면 mermaid 시각화를 유지하거나 보강한다.
+- [x] 문서 저장 후 핵심 경로, 커밋, 테스트 결과가 보존됐는지 확인한다.
+- [x] GitHub 이슈 #44 체크리스트를 갱신하고 완료 처리한다.
+- [x] 본 repo 작업 기록을 커밋한다.
+
+## 3차 MVP 작업 사항 문서 최신화
+
+- [x] Obsidian 3차 MVP 하위 문서에 최신 작업 사항을 추가한다.
+- [x] GitHub Wiki의 3차 MVP 품질 검증 문서를 갱신한다.
+- [x] GitHub Wiki Release Notes에 이번 변경을 기록한다.
+- [x] humanizer 기준으로 한국어 문장을 점검한다.
+- [x] Wiki 변경분을 커밋하고 push한다.
+- [x] GitHub 이슈 #43 체크리스트를 갱신하고 완료 처리한다.
+- [x] 본 repo 작업 기록을 커밋한다.
+
+## 한국어 비유 품질 개선
+
+- [x] 어색한 sushi/free-time 한국어 비유를 재현하는 RED 테스트를 추가한다.
+- [x] `koreanAnalogy` 프롬프트 기준을 “어색한 한국어 예시 + 짧은 느낌 설명”으로 보강한다.
+- [x] sushi와 free-time 후처리를 새 기준에 맞게 개선한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] GitHub 이슈 체크리스트를 갱신한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## GitHub Wiki 3차 MVP 최신화
+
+- [x] GitHub Wiki repo를 별도 clone한다.
+- [x] 기존 Wiki 문서와 현재 3차 MVP 코드 계약 차이를 확인한다.
+- [x] API Reference, Home, Release Notes, Sidebar를 최신 계약에 맞게 갱신한다.
+- [x] humanizer 기준으로 한국어 문장을 점검한다.
+- [x] Wiki 변경분을 커밋하고 push한다.
+- [x] 본 repo 작업 기록을 커밋한다.
+
+## 최신 커밋 배포 후 현재 시나리오 재검증
+
+- [x] 최신 커밋을 `origin/develop`에 push한다.
+- [x] develop AI 배포 GitHub Actions run 성공을 확인한다.
+- [x] 배포 후 `/health`와 `/openapi.json`에서 최신 필드 계약을 확인한다.
+- [x] 현재 시나리오 3개, 12턴 live smoke를 다시 실행한다.
+- [x] 배포 후 결과를 Obsidian 문서에 추가한다.
+- [x] 테스트와 diff check를 확인한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 최신 현재 시나리오 데이터 재검증과 문서화
+
+- [x] 첨부 시나리오 데이터와 기존 결과 JSON을 다시 확인한다.
+- [x] 최신 기준으로 현재 시나리오 3개, 12턴 smoke를 실행한다.
+- [x] 이전 전체 smoke와 최신 smoke의 차이를 비교한다.
+- [x] `humanizer` 기준으로 Obsidian 문서에 결과를 정리한다.
+- [x] 검증 명령과 작업 결과를 확인한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## GOOD/NEEDS 분류 기준 정립
+
+- [x] `GOOD`과 `NEEDS_IMPROVEMENT`의 판단 기준을 `context-notes.md`에 기록한다.
+- [x] 짧지만 명확한 답변이 세부 정보 부족만으로 NEEDS가 되지 않는 기준을 테스트로 고정한다.
+- [x] 명백한 문법 문제를 모델이 GOOD으로 내려도 NEEDS로 보정하는 RED 테스트를 추가한다.
+- [x] 무례하거나 방어적으로 들리는 표현을 모델이 GOOD으로 내려도 NEEDS로 보정하는 RED 테스트를 추가한다.
+- [x] `prompt-engineering-patterns` 기준으로 턴 피드백 프롬프트의 역할, 판단 기준, self-check, 구조화 출력을 점검한다.
+- [x] 턴 피드백 프롬프트와 고신뢰 후처리를 기준에 맞게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 질문 수 변동 대응 세션 점수/라벨 기준
+
+- [x] `GOOD` 비율 기반 점수/라벨 기준을 `context-notes.md`에 기록한다.
+- [x] 3문항, 4문항, 5문항 세션 점수/라벨 RED 테스트를 추가한다.
+- [x] LLM 점수 clamp와 서버 라벨 덮어쓰기 RED 테스트를 추가한다.
+- [x] 세션 피드백 프롬프트에서 LLM과 서버의 역할 분리를 명확히 한다.
+- [x] 서버 후처리를 질문 수 고정이 아닌 `GOOD` 비율 기반으로 바꾼다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 현재 시나리오 smoke를 실행한다.
+- [x] Obsidian 문서에 결과를 정리한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 현재 시나리오 품질 개선 후보 보정
+
+- [x] sleeping habit GOOD 피드백이 발화 내용에 맞게 grounding되는 RED 테스트를 추가한다.
+- [x] tteokbokki GOOD 피드백이 사용자가 말하지 않은 감정을 보태지 않는 RED 테스트를 추가한다.
+- [x] session-feedback 총평의 문서체와 번역투를 줄이는 RED 테스트를 추가한다.
+- [x] travel next-question의 반복적인 `fun trip` 맞장구를 사용자 발화 기반 표현으로 바꾸는 RED 테스트를 추가한다.
+- [x] 최소 후처리와 프롬프트 보강으로 테스트를 GREEN으로 만든다.
+- [x] focused 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [x] 실제 모델 품질 스모크를 재실행해 개선 결과를 확인한다.
+
+## 현재 시나리오 데이터 품질 테스트와 문서화
+
+- [x] 첨부된 현재 시나리오 데이터의 파싱 조건을 확인한다.
+- [x] 기존 `turn-feedback` 필드 단순화 변경을 의미 있는 단위로 커밋했는지 확인한다.
+- [x] 실제 develop 설정으로 3개 시나리오 12개 턴 품질 스모크를 실행한다.
+- [x] 각 턴의 `turn-feedback`, 고정 질문 연결 `next-question`, 캐시 기반 `session-feedback` 결과를 수집한다.
+- [x] 품질 이슈와 개선 후보를 사용자 검토용 표로 정리한다.
+- [x] `humanizer` 기준으로 설명 문장을 점검해 Obsidian 3차 MVP 하위 문서에 기록한다.
+- [x] 새 계약과 충돌하는 기존 live smoke 문서를 삭제하고 링크를 정리한다.
+
+## turn-feedback 필드 단순화
+
+- [x] `feedbackDetail` 중심 계약을 검증하는 RED 테스트를 추가한다.
+- [x] `TurnFeedbackData` 모델을 `feedbackType`, `koreanAnalogy`, `feedbackDetail`, `betterExpression` 구조로 단순화한다.
+- [x] `turn-feedback` 프롬프트와 self-check를 새 필드 계약에 맞춘다.
+- [x] 기존 후처리와 세션 총평 보정이 새 필드를 사용하도록 바꾼다.
+- [x] route/service focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 3차 MVP AI 계약 구현
+
+- [x] 3차 MVP 기준 문서에서 AI 서버가 맡는 범위를 확정한다.
+- [x] 기존 2차 MVP 슬롯 기반 `next-question` 계약과 통합 `feedback` 계약을 제거 대상으로 분류한다.
+- [x] `/api/v1/conversation/next-question` 문서 계약 테스트를 RED로 추가한다.
+- [x] `/api/v1/conversation/turn-feedback` 문서 계약 테스트를 RED로 추가한다.
+- [x] `/api/v1/conversation/session-feedback` 문서 계약 테스트를 RED로 추가한다.
+- [x] 다음 질문 생성 프롬프트를 “맞장구 + BE 고정 질문 연결” 기준으로 단순화한다.
+- [x] 턴별 피드백 생성 프롬프트를 `GOOD` / `NEEDS_IMPROVEMENT` 품질 기준으로 구현한다.
+- [x] 세션 최종 피드백 프롬프트를 캐시된 턴별 피드백 종합 기준으로 구현한다.
+- [x] AI 쪽 턴 피드백 캐시를 추가하고 최종 피드백에서 `expectedTurnIds` 누락을 409로 처리한다.
+- [x] 더 이상 쓰지 않는 슬롯 모델, 슬롯 판정 로직, RAG 보조 로직, 통합 피드백 SSE 경로를 제거한다.
+- [x] README와 파일 헤더를 3차 MVP 기준으로 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [x] 의미 있는 단위로 커밋한다.
+
+## 3차 MVP 실제 모델 품질 스모크 보정
+
+- [x] 실제 `gpt-4o-mini` develop 설정으로 3차 MVP 품질 스모크를 실행한다.
+- [x] 다음 질문이 고정 질문만 반환될 때 짧은 맞장구를 보강하는 RED 테스트를 추가한다.
+- [x] 명확한 `because` 답변을 세부 정보 부족만으로 과교정하지 않는 RED 테스트를 추가한다.
+- [x] `plusOneExpression`이 사용자 의도와 다른 새 문장을 만들 때 같은 발화의 교정문으로 보정하는 RED 테스트를 추가한다.
+- [x] 세션 총평이 영어로 내려올 때 한국어 fallback을 적용하는 RED 테스트를 추가한다.
+- [x] 프롬프트와 후처리 품질 가드를 최소 범위로 보강한다.
+- [x] focused 테스트, 대화 서비스 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 실제 모델 품질 스모크를 재실행한다.
+- [x] `GOOD`과 `NEEDS_IMPROVEMENT` 타입별 필드가 섞이지 않도록 검증을 강화한다.
+- [x] 일반 맞장구(`I see.`, `That's great to hear!`)를 사용자 발화 기반 맞장구로 보정한다.
+- [x] GOOD 피드백의 칭찬 설명이 영어로 오면 한국어 설명으로 보정한다.
+- [x] 실제 모델 10개 대표 케이스 평가를 실행한다.
+- [x] `prompt-engineering-patterns` 기준으로 next-question 프롬프트를 재점검한다.
+- [x] 맞장구 기준을 발화 인용이 아니라 실제 대화감으로 재정의한다.
+- [x] 테스트가 실제 피드백 출력 내용을 함께 검증하고 보고하도록 갱신한다.
+- [x] 실제 모델 10개 대표 케이스 평가를 새 기준으로 재실행한다.
+
+## develop/main EC2 배포 대상 매핑 복구
+
+- [x] workflow 매핑 회귀 테스트를 현재 운영 IP 기준으로 수정한다.
+- [x] `develop` 브랜치는 develop GitHub environment와 `/saynow/develop` SSM 경로를 사용한다.
+- [x] `main` 브랜치는 prod GitHub environment와 `/saynow/prod` SSM 경로를 사용한다.
+- [x] SSH key raw/base64 처리 차이로 main 배포가 깨지지 않게 prod workflow 키 처리를 보강한다.
+- [x] workflow 테스트, YAML 파싱, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+- [x] 변경 사항을 커밋한다.
+
+## turn-feedback turnId 불일치 보정
+
+- [x] 요청 `turnId=3`인데 모델이 `turnId=5000`을 반환하는 RED 테스트를 추가한다.
+- [x] LLM 응답의 `turnId`를 서버 요청값으로 덮어써 캐시와 응답 식별자를 고정한다.
+- [x] turn-feedback 프롬프트 schema에서 고정 `turnId=5000` 예시를 제거한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 이유와 검증 결과를 `context-notes.md`에 기록한다.
+
+## 3차 MVP BE live smoke 품질 보정
+
+- [x] BE live smoke 결과에서 세션 점수, GOOD 칭찬, NEEDS 비유, 교정 표현의 품질 실패를 회귀 테스트로 고정한다.
+- [x] `prompt-engineering-patterns` 기준으로 턴 피드백과 세션 피드백 프롬프트의 역할 분리, grounding, self-check를 보강한다.
+- [x] 모델 응답이 품질 기준을 벗어나도 서버 후처리에서 좁게 보정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 실제 AI 서버 또는 실제 모델 경로로 대표 케이스를 직접 평가한다.
+- [x] 개선 과정과 테스트 결과를 `context-notes.md`와 사용자 보고용 표로 정리한다.
+
 ## REPEAT_REQUEST 오분류 방어
 
 - [x] `ABC`, `haha`가 모델 raw `REPEAT_REQUEST`여도 최종 `INVALID_RESPONSE`가 되는 RED 테스트를 추가한다.
@@ -371,3 +713,224 @@
 - [x] API 문서와 관련 테스트 payload를 새 슬롯 계약에 맞게 갱신.
 - [x] 관련 단위 테스트와 전체 검증 실행.
 - [x] 커밋 후 `develop`으로 push한다.
+
+## 모델 후보 평가 실행
+
+- [x] 현재 origin/develop의 `next-question`, `turn-feedback`, `session-feedback` 계약을 기준으로 평가 케이스를 고정한다.
+- [x] API key를 결과에 노출하지 않는 provider adapter를 평가 runner 안에 둔다.
+- [x] runner scoring 로직을 RED 테스트로 먼저 고정한다.
+- [x] OpenAI, Upstage, Gemini, NAVER CLOVA 후보를 소량 smoke로 검증한다.
+- [x] 1회 full pass 결과를 `/private/tmp`와 Obsidian 평가 로그에 기록한다.
+- [x] full pass에서 드러난 `because` 이유절 후처리 오분류를 RED 테스트로 고정하고 수정한다.
+- [x] 수정 후 `gpt-5.4-mini`와 Upstage의 문제 케이스를 실제 provider 호출로 재검증한다.
+- [ ] 30회 반복 전 Gemini endpoint 오류를 어떻게 분리 집계할지 확정한다.
+- [x] focused 테스트, compileall, diff check를 실행한다.
+
+## session-feedback 수치 highlight 재평가
+
+- [x] `prompt-engineering-patterns` 기준으로 session-feedback 프롬프트의 수치 hook 후보 전달 방식을 보강한다.
+- [x] 허용된 수치 highlight 후보가 프롬프트에 들어가는 회귀 테스트를 추가한다.
+- [x] focused 테스트, compileall, diff check를 실행한다.
+- [x] `gpt-4o-mini`, `gpt-5.4-mini` session-feedback 실제 호출을 재측정한다.
+- [x] Obsidian 모델 평가 로그에 응답 시간과 highlight 품질 결과를 기록한다.
+
+## workflow별 OpenAI 모델 라우팅
+
+- [x] `next-question`과 `session-feedback`은 `gpt-4o-mini`, `turn-feedback`은 `gpt-5.4-mini`를 기본 primary로 쓰는 설정 테스트를 추가한다.
+- [x] `turn-feedback` primary 모델 호출 실패 시 `gpt-4o-mini` fallback으로 재시도하는 회귀 테스트를 추가한다.
+- [x] `turn-feedback` primary 모델이 non-JSON을 반환해도 fallback으로 복구하는 회귀 테스트를 추가한다.
+- [x] `session-feedback`은 primary와 fallback이 모두 `gpt-4o-mini`라 별도 fallback 재시도 없이 한 번만 호출하는 회귀 테스트를 추가한다.
+- [x] OpenAI workflow별 모델 설정과 fallback 호출을 구현한다.
+- [x] README와 context note에 운영 설정 기준을 기록한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## 모델 후보 반복 테스트 보강
+
+- [x] `/private/tmp` 일회성 runner로 운영 후보 중심 반복 테스트를 실행한다.
+- [x] `next-question`은 `gpt-4o-mini`, `gpt-5.4-mini`를 각각 30샘플 이상 측정한다.
+- [x] `turn-feedback`은 `gpt-4o-mini`, `gpt-5.4-mini`, `solar-pro3`를 각각 30샘플 이상 측정한다.
+- [x] `session-feedback`은 `gpt-4o-mini`, `gpt-5.4-mini`를 각각 30샘플 이상 측정한다.
+- [x] 반복 테스트 결과 JSON을 `/private/tmp`에 저장한다.
+- [x] Obsidian 모델 후보 평가 문서에 반복 테스트 결과와 남은 리스크를 갱신한다.
+- [x] 문서에서 API key 원문이 노출되지 않는지 확인한다.
+
+## workflow 품질 테스트 P0 재실행
+
+- [x] `gpt-5.4-mini`가 `max_completion_tokens`를 쓰도록 회귀 테스트를 추가한다.
+- [x] `app/core/llm.py`의 OpenAI Chat Completions 토큰 파라미터를 모델별로 분기한다.
+- [x] focused 단위 테스트와 compile 검증을 실행한다.
+- [x] 새 OpenAI key로 `turn-feedback` primary smoke를 fallback 없이 확인한다.
+- [x] 운영 라우팅 기준 workflow 품질 테스트를 다시 실행한다.
+- [x] raw 결과 JSON과 Obsidian 품질 테스트 문서에서 API key 노출이 없는지 확인한다.
+
+## workflow 응답 품질 개선
+
+- [x] 품질 우선 라우팅 기준을 RED 테스트로 고정한다.
+- [x] `turn-feedback` bare noun because, Konglish, prompt injection 품질 회귀 테스트를 추가한다.
+- [x] `session-feedback` 수치 highlight 후보 선택과 수치 발명 방지 회귀 테스트를 추가한다.
+- [x] `next-question` generic acknowledgement 보정 회귀 테스트를 추가한다.
+- [x] 라우팅, 프롬프트, 후처리를 최소 변경으로 구현한다.
+- [x] 품질 runner를 revised rubric과 서버 후보 계산 기준에 맞게 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 품질 runner를 재실행하고 raw JSON과 Obsidian 문서를 갱신한다.
+- [x] 결과 파일과 문서에서 API key 노출이 없는지 확인한다.
+
+## next-question 한국어 톤 정합성과 프롬프트 점검
+
+- [x] 반말 `questionKo`에 존댓말 맞장구가 붙는 문제를 RED 테스트로 고정한다.
+- [x] 모델이 반환한 `translatedQuestion`과 fallback `translatedQuestion` 모두 고정 질문 톤에 맞게 보정한다.
+- [x] `prompt-engineering-patterns` 기준으로 `next-question`, `turn-feedback`, `session-feedback`, `guide` 프롬프트를 점검한다.
+- [x] 필요한 프롬프트 지시와 self-check만 최소 변경으로 반영한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 의미 있는 단위로 커밋한다.
+
+## session-feedback highlight와 turn benchmark 정합성
+
+- [x] `GOOD` detectedPattern이 최종 turn benchmark와 다른 수치 highlight를 만들지 않는 RED 테스트를 추가한다.
+- [x] session highlight 후보를 최종 `turnFeedbacks[].benchmarkMessage` 중심으로 좁힌다.
+- [x] session-feedback 프롬프트의 evidence priority 문구를 구현과 맞춘다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## error pattern catalog 문구 갱신
+
+- [x] 첨부 JSON과 현재 catalog의 차이를 확인한다.
+- [x] `app/data/error_patterns.json`을 첨부 내용 기준으로 갱신한다.
+- [x] catalog 문구를 직접 기대하는 테스트를 새 문구에 맞춘다.
+- [x] 관련 테스트, 전체 테스트, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 커밋하고 `develop`에 push한다.
+- [ ] GitHub Actions develop 배포와 live health를 확인한다.
+
+## LAN-28 배포 후 AI 500 장애 대응
+
+- [x] develop AI live `next-question`에서 validation 이후 500이 재현되는지 확인한다.
+- [x] 라우트와 서비스의 예외 흐름을 확인해 전역 500으로 새는 후보를 좁힌다.
+- [x] LLM 호출 예외가 `AI_GENERATION_FAILED` 계약으로 변환되는 RED 테스트를 추가한다.
+- [x] 최소 수정으로 `next-question`, `turn-feedback` LLM 호출 실패를 계약 오류로 감싼다.
+- [x] SSM `OPENROUTER_API_KEY` 형식 오류를 확인하고 develop SecureString을 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋하고 `origin`과 `origin/develop`에 push한다.
+- [x] GitHub Actions develop 배포와 live smoke를 확인한다.
+
+## live 품질 테스트 기반 AI 응답 튜닝
+
+- [x] BE live 테스트 결과에서 품질 실패 유형을 분류한다.
+- [x] `I don't care`, `Next question`, 방어적/무례한 발화가 GOOD으로 저장되지 않는 RED 테스트를 추가한다.
+- [x] 속마음이 튜터 관찰문이 아니라 상대방의 1인칭 반응으로 보정되는 RED 테스트를 추가한다.
+- [x] 근거 없는 benchmark/highlight 숫자 hook이 남지 않는 RED 테스트를 추가한다.
+- [x] 프롬프트와 deterministic postprocess를 최소 변경으로 보강한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] live smoke에서 문제 발화 세트를 다시 검증한다.
+- [x] 결과와 남은 리스크를 context notes에 기록한다.
+
+## GOOD benchmarkMessage 기본값 복구
+
+- [x] GOOD에서 정량 근거가 없을 때 비정량 기본 `benchmarkMessage`를 반환하는 RED 테스트를 추가한다.
+- [x] NEEDS_IMPROVEMENT에서는 `benchmarkMessage=null` 정책이 유지되는지 확인한다.
+- [x] 턴 피드백 프롬프트와 후처리를 새 정책에 맞게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## GOOD 기본 benchmark 하이라이트 보정
+
+- [x] live smoke에서 기본 `benchmarkMessage`가 세션 `highlightMessage`로 그대로 승격되는 문제를 확인한다.
+- [x] 기본 `benchmarkMessage`를 title-like highlight로 쓰지 않는 RED 테스트를 추가한다.
+- [x] 세션 하이라이트 후처리를 좁게 보강한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## live 재테스트 기반 highlight와 속마음 보정
+
+- [x] GOOD 발화가 generic NORMAL 속마음으로 내려오는 케이스를 RED 테스트로 고정한다.
+- [x] 명확한 이유 답변의 속마음이 GOOD 1인칭 반응으로 보정되도록 후처리를 보강한다.
+- [x] NEEDS_IMPROVEMENT detectedPatterns에서 수치형 세션 highlight를 만들지 않는 정책을 RED 테스트로 고정한다.
+- [x] all-NEEDS 세션에서 과긍정 highlight가 나오면 도전형 비수치 fallback으로 되돌린다.
+- [x] 세션 highlight 프롬프트와 후보 생성을 GOOD cached benchmark 중심으로 좁힌다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
+## 3개 시나리오 2회 재테스트 후속 보정
+
+- [x] GOOD 긴 답변이 generic NORMAL 속마음으로 남는 문제를 RED 테스트로 고정한다.
+- [x] EDGE 답변의 generic NORMAL 속마음을 발화 맥락이 있는 1인칭 반응으로 바꾼다.
+- [x] `Stop asking`처럼 대화를 끊는 표현은 BAD 속마음과 tone issue로 보정한다.
+- [x] 음식 맥락의 `I hate vegetable` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
+- [x] focused 테스트와 전체 unittest를 실행한다.
+
+## closing-message API 추가
+
+- [x] BE 종료 흐름에서 필요한 closing-message 계약을 정리한다.
+- [x] 마지막 사용자 발화에 대한 속마음과 마지막 AI 발화를 반환하는 RED 테스트를 추가한다.
+- [x] `POST /api/v1/conversation/closing-message` 모델, 서비스, 라우트를 구현한다.
+- [x] README에 BE 연동 기준과 응답 형식을 정리한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 커밋하고 `feat/LAN-28`, `develop`에 push한다.
+
+## 룸메이트 카테고리 라이브 재테스트 후속 보정
+
+- [x] GOOD 룸메이트 발화가 generic NORMAL 속마음으로 남는 문제를 RED 테스트로 고정한다.
+- [x] `I hate fish. Don't make that.` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
+- [x] closing-message에서 BAD 타입과 긍정 속마음 텍스트가 불일치하는 문제를 RED 테스트로 고정한다.
+- [x] 속마음 fallback과 tone issue 후처리를 좁게 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## GOOD benchmarkMessage 수치형 우선 정책
+
+- [x] GOOD 턴에서 LLM이 detectedPatterns를 누락해도 명확한 surface usage를 수치형 benchmark로 복구하는 RED 테스트를 추가한다.
+- [x] 기본 benchmark 문구를 “정량 catalog 근거가 전혀 없을 때만” 쓰도록 후처리를 수정한다.
+- [x] 턴 피드백 프롬프트의 benchmark 정책을 새 기준에 맞게 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## LAN-28 feedback benchmark quality tuning
+
+- [x] 복수형 benchmark가 `works`, `Congratulations` 같은 비명사 s 토큰에서 생성되지 않도록 RED 테스트를 추가한다.
+- [x] LLM이 근거 약한 `sv_agreement` detectedPattern을 보내도 구조 검증 없이 benchmark로 통과하지 않도록 RED 테스트를 추가한다.
+- [x] 룸메이트/친구 역할에서도 민감한 연애 상태 질문은 NEEDS_IMPROVEMENT로 보정하는 RED 테스트를 추가한다.
+- [x] evidence 검증과 tone issue 보정을 일반 규칙으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] live smoke를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## LAN-28 roommate live quality follow-up
+
+- [x] 명확한 룸메이트 GOOD 답변의 generic NORMAL 속마음을 RED 테스트로 고정한다.
+- [x] `No. Buy me milk.` 같은 룸메이트 명령형 요청의 속마음 타입/내용 불일치를 RED 테스트로 고정한다.
+- [x] 축하 상황의 `Good.` 같은 무성의한 반응이 GOOD으로 남지 않도록 RED 테스트로 고정한다.
+- [x] 역할 기반 속마음 보정과 짧은 반응 tone issue를 일반 규칙으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 roommate live quality second pass
+
+- [x] 룸메이트 직접 요청의 교정 표현과 설명이 role/context를 유지하도록 RED 테스트로 고정한다.
+- [x] 짧은 부모님 이유 답변의 generic 속마음을 실제 룸메이트 반응으로 바꾸는 RED 테스트를 추가한다.
+- [x] 큰 tone issue가 있는 혼합 세션에서 문법 수치 highlight가 과하게 우선되지 않도록 RED 테스트로 고정한다.
+- [x] 하드코딩 대신 role-aware 보정과 evidence 기반 highlight fallback으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 innerThought scripted flow 보정
+
+- [x] 다음 주제/다음 상황을 미리 준비하는 속마음을 RED 테스트로 고정한다.
+- [x] 속마음 프롬프트가 현재 발화 반응에만 머무르도록 보강한다.
+- [x] scripted innerThought 후처리를 일반 marker 기반으로 추가한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 배포 후 live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 innerThought 품질 추가 튜닝
+
+- [x] `마무리`, `빨리 알려주고`, `물어봐도`, `넘겨보자` 류 scripted 속마음을 RED 테스트로 고정한다.
+- [x] `Nothing. I just sleep.`, `Good.`의 generic 튜터식 속마음을 RED 테스트로 고정한다.
+- [x] correction/benchmark 로직은 건드리지 않고 next-question innerThought 후처리만 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 배포 후 innerThought 전용 live smoke를 실행하고 결과를 context notes에 기록한다.
+
+## LAN-28 role-grounded innerThought and turn feedback
+
+- [x] 룸메이트 역할에서 `No. Buy me milk.` 속마음이 긍정/실행 계획으로 남는 문제를 RED 테스트로 고정한다.
+- [x] `I don't snore. That's not funny.`가 GOOD 피드백으로 남거나 마무리 계획 속마음으로 나오는 문제를 RED 테스트로 고정한다.
+- [x] 사적인 연애 질문의 교정 표현이 메타 발화가 아니라 실제 사용 가능한 질문으로 나오도록 RED 테스트로 고정한다.
+- [x] 속마음 프롬프트와 후처리를 실제 상대 역할의 솔직한 사적 반응 기준으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] origin/feat/LAN-28와 origin/develop에 push하고 develop 배포를 확인한다.
+- [x] dev 서버 live smoke에서 24개 발화 세트 치명적 오류 0건을 확인하고 context notes에 기록한다.
