@@ -201,7 +201,7 @@ class ConversationServiceTest(unittest.TestCase):
             return json.dumps({
                 "aiMessage": "좋아요. 이 상황은 여기서 마무리할게요.",
                 "translatedMessage": "Good. Let's wrap up this situation here.",
-                "innerThought": "The meaning came through clearly enough to wrap up.",
+                "innerThought": "Their meaning came through clearly.",
                 "innerThoughtType": "GOOD",
             })
 
@@ -230,7 +230,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
         self.assertEqual(result.aiMessage, "좋아요. 이 상황은 여기서 마무리할게요.")
         self.assertEqual(result.translatedMessage, "Good. Let's wrap up this situation here.")
-        self.assertEqual(result.innerThought, "The meaning came through clearly enough to wrap up.")
+        self.assertEqual(result.innerThought, "Their meaning came through clearly.")
         self._assert_no_hangul(result.innerThought)
 
     def test_american_learner_next_question_replaces_korean_inner_thought_with_english(self):
@@ -249,6 +249,28 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self._assert_no_hangul(result.innerThought)
+
+    def test_american_learner_next_question_replaces_english_planner_inner_thought(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "아, 그런 느낌도 있죠. 요리는 자주 하나요?",
+            "translatedQuestion": "Oh, I get that feeling. Do you cook often?",
+            "innerThought": (
+                "Interesting—maybe they mean they like pizza a lot. "
+                "I should keep the conversation moving and ask about cooking next."
+            ),
+            "innerThoughtType": "GOOD",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="피자가 매워서 좋아요.",
+            )
+        )
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("conversation moving", result.innerThought)
+        self.assertNotIn("ask about cooking next", result.innerThought)
 
     def test_american_learner_next_question_fallback_inner_thought_is_english(self):
         self.service.chat = lambda *args, **kwargs: "not json"

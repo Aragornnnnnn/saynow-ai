@@ -1147,7 +1147,8 @@ def _american_learner_next_question_system_prompt() -> str:
             "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
-            "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought."
+            "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
+            "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue."
         ),
         (
             "Output Schema:\n"
@@ -1277,6 +1278,7 @@ def _american_learner_closing_message_system_prompt() -> str:
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Do not write what the counterpart plans to do next, how the conversation should move, or whether the scenario can end. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD."
         ),
         (
@@ -2310,6 +2312,16 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "묻지 않는 게",
         "건드리지",
         "힘들어 보였",
+        "i should keep",
+        "i should ask",
+        "ask about",
+        "ask them about",
+        "keep the conversation moving",
+        "conversation moving",
+        "move the conversation",
+        "next topic",
+        "wrap up",
+        "end the conversation",
     ]
     return any(marker in normalized for marker in future_markers)
 
