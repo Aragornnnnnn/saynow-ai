@@ -945,3 +945,11 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] origin/feat/LAN-28와 origin/develop에 push하고 develop 배포를 확인한다.
 - [x] dev 서버 live smoke에서 24개 발화 세트 치명적 오류 0건을 확인하고 context notes에 기록한다.
+
+## American learner Korean quality smoke
+
+- [x] 인터넷 자료 기반 오류 유형을 5개 `patternKey`로 규격화한다.
+- [x] 전용 live smoke 스크립트의 case definition과 raw I/O 리포트 계약을 RED 테스트로 고정한다.
+- [x] `AMERICAN_LEARNER` payload, `benchmarkMessage=null` 기대값, Markdown/JSON 리포트를 구현한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.
