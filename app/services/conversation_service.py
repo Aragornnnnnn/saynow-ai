@@ -80,6 +80,26 @@ def _inner_thought_uses_wrong_language(
     return _is_american_learner(service_audience) and _contains_hangul(inner_thought)
 
 
+def _practice_message_uses_wrong_language(
+    service_audience: ServiceAudience,
+    message: str,
+) -> bool:
+    has_hangul = _contains_hangul(message)
+    if _is_american_learner(service_audience):
+        return not has_hangul
+    return has_hangul
+
+
+def _translation_message_uses_wrong_language(
+    service_audience: ServiceAudience,
+    message: str,
+) -> bool:
+    has_hangul = _contains_hangul(message)
+    if _is_american_learner(service_audience):
+        return has_hangul
+    return not has_hangul
+
+
 def _learning_language(service_audience: ServiceAudience) -> str:
     return "Korean" if _is_american_learner(service_audience) else "English"
 
@@ -2047,12 +2067,18 @@ def _repair_closing_message(
 ) -> ClosingMessageResponse:
     effective_service_audience = service_audience or _effective_service_audience_for_closing_message(request)
     updates: dict[str, Any] = {}
-    if _looks_like_question(response.aiMessage):
+    if _looks_like_question(response.aiMessage) or _practice_message_uses_wrong_language(
+        effective_service_audience,
+        response.aiMessage,
+    ):
         updates["aiMessage"] = _fallback_closing_message_practice(
             request,
             service_audience=effective_service_audience,
         )
-    if _looks_like_question(response.translatedMessage):
+    if _looks_like_question(response.translatedMessage) or _translation_message_uses_wrong_language(
+        effective_service_audience,
+        response.translatedMessage,
+    ):
         updates["translatedMessage"] = _fallback_closing_message_translation(
             request,
             service_audience=effective_service_audience,

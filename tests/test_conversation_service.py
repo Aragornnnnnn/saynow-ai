@@ -409,6 +409,35 @@ class ConversationServiceTest(unittest.TestCase):
         self._assert_no_hangul(result.innerThought)
         self.assertIn(result.innerThoughtType, {"GOOD", "NORMAL", "BAD"})
 
+    def test_american_learner_closing_message_repairs_mixed_language_translation(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "좋아, 다음에 같이 가자! 오늘 이야기해서 반가웠어.",
+            "translatedMessage": "좋아, let's go together next time! It was nice talking today.",
+            "innerThought": "Oh nice, they are open to going together. That feels friendly.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+            "currentTurn": {
+                "aiQuestion": "다음에 콘서트 같이 갈래?",
+                "translatedQuestion": "Wanna go to a concert together sometime?",
+                "userUtterance": "좋아.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertRegex(result.aiMessage, r"[가-힣]")
+        self._assert_no_hangul(result.translatedMessage)
+        self.assertNotIn("좋아", result.translatedMessage)
+
     def test_american_learner_closing_message_repairs_mixed_language_inner_thought_when_general_repair_disabled(self):
         from app.models.conversation import ClosingMessageRequest
 
