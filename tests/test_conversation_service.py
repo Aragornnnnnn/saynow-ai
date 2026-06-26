@@ -343,6 +343,39 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("correctionExpression is required and must be the improved Korean expression only", captured["system"])
         self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
 
+    def test_american_learner_turn_feedback_prompt_includes_scenario_pragmatics_rubric(self):
+        from app.models.conversation import ServiceAudience
+
+        system_prompt = self.service._turn_feedback_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+
+        self.assertIn("Scenario Pragmatics Rubric", system_prompt)
+        self.assertIn("fan-sign compliment", system_prompt)
+        self.assertIn("네, 저 한국어 잘해요", system_prompt)
+        self.assertIn("아직 부족하지만", system_prompt)
+        self.assertIn("same-age K-pop fan friend", system_prompt)
+        self.assertIn("-습니다", system_prompt)
+        self.assertIn("내 최애는 민지야", system_prompt)
+        self.assertIn("blind date", system_prompt)
+        self.assertIn("아무거나요", system_prompt)
+        self.assertIn("당연하죠", system_prompt)
+        self.assertIn("아니요, 싫어요", system_prompt)
+        self.assertIn("cushion phrase", system_prompt)
+        self.assertIn("Do not mark these as GOOD just because the grammar is understandable", system_prompt)
+
+    def test_american_learner_conversation_prompts_include_role_reaction_pragmatics(self):
+        from app.models.conversation import ServiceAudience
+
+        next_prompt = self.service._next_question_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+        closing_prompt = self.service._closing_message_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+
+        for prompt in (next_prompt, closing_prompt):
+            self.assertIn("American learner pragmatic calibration", prompt)
+            self.assertIn("fan-sign idol", prompt)
+            self.assertIn("same-age K-pop fan friend", prompt)
+            self.assertIn("Korean blind date partner", prompt)
+            self.assertIn("I should", prompt)
+            self.assertIn("Do not write planning thoughts", prompt)
+
     def test_american_learner_session_feedback_prompt_targets_korean_learning(self):
         from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
 

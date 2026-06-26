@@ -1148,7 +1148,20 @@ def _american_learner_next_question_system_prompt() -> str:
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
-            "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue."
+            "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue. "
+            "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'."
+        ),
+        (
+            "American learner pragmatic calibration:\n"
+            "Use the Counterpart role and Scenario title when deciding the private reaction. "
+            "For a fan-sign idol, direct self-praise after a compliment may feel cute but a little awkward, while '상관없어요' can feel like the fan has no special interest. "
+            "For a same-age K-pop fan friend, formal -습니다 speech can feel distant even when grammatically correct. "
+            "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
+            "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
+            "Bad innerThought style: 'I should keep it calm and leave a good impression.' "
+            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that sounds like they do not really have anything they want to say to me.' "
+            "Good innerThought for a same-age fan friend hearing formal speech: 'They are being polite, but it feels a little distant for a fellow fan.' "
+            "Good innerThought for a blind date partner hearing direct refusal: 'That was very direct, and it stings a bit even though I can accept it.'"
         ),
         (
             "Output Schema:\n"
@@ -1279,7 +1292,20 @@ def _american_learner_closing_message_system_prompt() -> str:
             "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Do not write what the counterpart plans to do next, how the conversation should move, or whether the scenario can end. "
+            "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD."
+        ),
+        (
+            "American learner pragmatic calibration:\n"
+            "Use the Counterpart role and Scenario title when deciding the private reaction. "
+            "For a fan-sign idol, direct self-praise after a compliment may feel cute but a little awkward, while '상관없어요' can feel like the fan has no special interest. "
+            "For a same-age K-pop fan friend, formal -습니다 speech can feel distant even when grammatically correct. "
+            "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
+            "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
+            "Bad innerThought style: 'I should keep it calm and leave a good impression.' "
+            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that sounds like they do not really have anything they want to say to me.' "
+            "Good innerThought for a same-age fan friend hearing formal speech: 'They are being polite, but it feels a little distant for a fellow fan.' "
+            "Good innerThought for a blind date partner hearing direct refusal: 'That was very direct, and it stings a bit even though I can accept it.'"
         ),
         (
             "Output Schema:\n"
@@ -1455,15 +1481,30 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Actionable Issue Gate: first check whether Korean grammar, particles, verb endings, word choice, word order, politeness, nuance, or relevance creates a real correction point. "
             "GOOD Gate: mark GOOD when the answer fits the AI question, the meaning is clear without guesswork, and there is no actionable correction point. "
             "NEEDS_IMPROVEMENT Gate: mark NEEDS_IMPROVEMENT only when there is an actionable issue and you can provide a better Korean expression that preserves the user's intent. "
-            "Use the provided Counterpart role when judging nuance, politeness, and relevance."
+            "Use the provided Counterpart role when judging nuance, politeness, and relevance. "
+            "Do not mark these as GOOD just because the grammar is understandable; Korean conversation quality includes situation-fit, relationship distance, and tact."
+        ),
+        (
+            "Scenario Pragmatics Rubric:\n"
+            "Fan-sign compliment calibration: when an idol says the learner's Korean improved, '네, 저 한국어 잘해요' is understandable but too direct in Korean fan-sign culture. "
+            "Mark it NEEDS_IMPROVEMENT and suggest a modest fan-like answer such as '아직 부족하지만 열심히 공부하고 있어요' or '아직 많이 부족하지만 좋게 봐줘서 고마워요'. "
+            "Fan-sign closing calibration: when an idol asks for any final message, '상관없어요' sounds uninterested, like 'I don't care'. "
+            "Mark it NEEDS_IMPROVEMENT and suggest a warm fan message such as '만나서 정말 좋았어요. 항상 응원할게요'. "
+            "Same-age K-pop fan friend calibration: with a same-age K-pop fan friend, answers ending in -습니다 or -입니다 can sound distant and interview-like. "
+            "Mark formal answers such as '제 최애는 민지입니다', '입덕했습니다', '가고 싶습니다', or '같이 가고 싶습니다' as NEEDS_IMPROVEMENT and suggest casual fan talk such as '내 최애는 민지야', '유튜브에서 무대 보고 입덕했어', or '응, 같이 가고 싶어'. "
+            "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '예쁜 사람이 좋아요' can sound shallow. "
+            "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
+            "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
+            "Mark them NEEDS_IMPROVEMENT and suggest a cushion phrase such as '그래도 될까요? 감사합니다' for acceptance or '감사하지만 괜찮아요. 혼자 갈게요' for refusal."
         ),
         (
             "Field Policy:\n"
             "koreanAnalogy is required for every response. For this service audience, write it in English and explain how the Korean utterance sounds to a Korean listener. "
             "feedbackDetail is required for GOOD and must be null for NEEDS_IMPROVEMENT. "
-            "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt before correction. "
+            "For NEEDS_IMPROVEMENT, positiveFeedback is required, must be English, and must praise the user's attempt before correction. "
             "For NEEDS_IMPROVEMENT, correctionExpression is required and must be the improved Korean expression only. "
             "For NEEDS_IMPROVEMENT, correctionReason is required and must explain in English why correctionExpression is better. "
+            "correctionReason must be English-only with no Hangul; refer to the original phrase or improved expression without quoting Korean text. "
             "For GOOD, feedbackDetail must explain in English how well the user did and why. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
@@ -1476,8 +1517,19 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "2. NEEDS_IMPROVEMENT has positiveFeedback, correctionExpression, correctionReason, feedbackDetail=null, and benchmarkMessage=null. "
             "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and benchmarkMessage=null. "
             "4. correctionExpression is Korean when it is present. "
-            "5. feedbackDetail and correctionReason are English. "
+            "5. feedbackDetail and correctionReason are English, and correctionReason contains no Hangul. "
             "6. No legacy fields are present."
+        ),
+        (
+            "Feedback Examples:\n"
+            "NEEDS_IMPROVEMENT for fan-sign compliment answer '네, 저 한국어 잘해요.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a Korean idol, this sounds like directly agreeing with a compliment instead of receiving it modestly.","positiveFeedback":"You answered the compliment clearly and confidently.","feedbackDetail":null,"correctionExpression":"아직 부족하지만 열심히 공부하고 있어요.","correctionReason":"In a fan-sign compliment moment, a modest response feels warmer and less self-congratulatory than directly saying you are good at Korean.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for same-age K-pop fan friend answer '제 최애는 민지입니다.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a same-age fan friend, this sounds like an interview answer instead of casual fan talk.","positiveFeedback":"You named your bias clearly.","feedbackDetail":null,"correctionExpression":"내 최애는 민지야.","correctionReason":"With a same-age fan friend, casual speech makes the answer feel closer and more natural than formal interview-style wording.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for blind date answer '아무거나요.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this can sound like you are not interested in choosing together.","positiveFeedback":"You tried to be easygoing and flexible.","feedbackDetail":null,"correctionExpression":"저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?","correctionReason":"On a first date, giving one preference while still considering the other person sounds warmer than saying anything is fine.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for blind date refusal '아니요, 싫어요.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"When someone offers help, this sounds like a flat rejection to their face.","positiveFeedback":"You made your refusal clear.","feedbackDetail":null,"correctionExpression":"감사하지만 괜찮아요. 혼자 갈게요.","correctionReason":"A cushion phrase thanks the other person first, so the refusal feels polite instead of abrupt.","benchmarkMessage":null,"detectedPatterns":[]}'
         ),
         (
             "Output Schema:\n"
