@@ -855,6 +855,17 @@
 - [x] 음식 맥락의 `I hate vegetable` 교정이 소음 표현으로 오염되지 않게 RED 테스트로 고정한다.
 - [x] focused 테스트와 전체 unittest를 실행한다.
 
+## 미국인 대상 한국어 회화 모드 추가
+
+- [x] 요청 계약에 `serviceAudience` 기본값과 미국인 대상 값을 추가한다.
+- [x] 기존 한국인 대상 영어 회화 요청은 필드 생략 시 그대로 동작하는 RED 테스트를 추가한다.
+- [x] 미국인 대상 한국어 회화 요청의 next-question, closing-message, turn-feedback, session-feedback, guide 프롬프트 분기를 RED 테스트로 고정한다.
+- [x] 미국인 대상 GOOD 턴의 `benchmarkMessage`가 `null`로 저장되는 RED 테스트를 추가한다.
+- [x] 미국인 대상 guide가 한국어 학습 질문을 차단하지 않는 RED 테스트를 추가한다.
+- [x] 모델, 프롬프트, 안전검사, README를 최소 변경으로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 하나의 논리 커밋으로 만든다.
+
 ## closing-message API 추가
 
 - [x] BE 종료 흐름에서 필요한 closing-message 계약을 정리한다.

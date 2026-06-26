@@ -29,12 +29,18 @@ def _strip_korean_analogy_framing(value: str) -> str:
     return stripped
 
 
+class ServiceAudience(StrEnum):
+    KOREAN_LEARNER = "KOREAN_LEARNER"
+    AMERICAN_LEARNER = "AMERICAN_LEARNER"
+
+
 class ScenarioContext(BaseModel):
     scenarioId: int = Field(gt=0)
     title: str
     briefing: str
     conversationGoal: str
     counterpartRole: str
+    serviceAudience: ServiceAudience = ServiceAudience.KOREAN_LEARNER
 
     @field_validator("title", "briefing", "conversationGoal", "counterpartRole")
     @classmethod
@@ -265,6 +271,7 @@ class SessionFeedbackResponse(BaseModel):
 class GuideChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    serviceAudience: ServiceAudience = ServiceAudience.KOREAN_LEARNER
     question: str
     scenarioTitle: str
     scenarioSituation: str

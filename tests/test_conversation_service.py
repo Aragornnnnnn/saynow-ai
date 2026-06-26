@@ -29,23 +29,31 @@ class ConversationServiceTest(unittest.TestCase):
         )
         self.service.clear_turn_feedback_cache()
 
-    def _scenario(self):
-        return {
+    def _scenario(self, *, service_audience=None):
+        scenario = {
             "scenarioId": 10,
             "title": "음식에 대한 대화하기",
             "briefing": "좋아하는 음식과 최근 먹었던 음식에 대해 이야기합니다.",
             "conversationGoal": "음식 취향과 경험을 영어로 자연스럽게 설명할 수 있다.",
             "counterpartRole": "friend",
         }
+        if service_audience is not None:
+            scenario["serviceAudience"] = service_audience
+        return scenario
 
-    def _next_question_request(self, *, user_utterance="I like pizza because it is spicy."):
+    def _next_question_request(
+        self,
+        *,
+        user_utterance="I like pizza because it is spicy.",
+        service_audience=None,
+    ):
         from app.models.conversation import NextQuestionRequest
 
         return NextQuestionRequest.model_validate({
             "sessionId": 1000,
             "submittedTurnId": 5000,
             "submittedSequence": 1,
-            "scenario": self._scenario(),
+            "scenario": self._scenario(service_audience=service_audience),
             "currentTurn": {
                 "aiQuestion": "What is your favorite food? Why do you like it?",
                 "translatedQuestion": "가장 좋아하는 음식이 뭐예요? 왜 좋아하나요?",
@@ -84,20 +92,235 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertFalse(lowered_acknowledgement.startswith(generic_start))
         self.assertNotIn(user_utterance.rstrip(".").lower(), response.aiQuestion.lower())
 
-    def _turn_feedback_request(self, *, turn_id=5000, user_utterance="I like pizza because it is spicy."):
+    def _turn_feedback_request(
+        self,
+        *,
+        turn_id=5000,
+        user_utterance="I like pizza because it is spicy.",
+        service_audience=None,
+    ):
         from app.models.conversation import TurnFeedbackRequest
 
         return TurnFeedbackRequest.model_validate({
             "sessionId": 1000,
             "turnId": turn_id,
             "sequence": 1,
-            "scenario": self._scenario(),
+            "scenario": self._scenario(service_audience=service_audience),
             "turn": {
                 "aiQuestion": "What is your favorite food? Why do you like it?",
                 "translatedQuestion": "가장 좋아하는 음식이 뭐예요? 왜 좋아하나요?",
                 "userUtterance": user_utterance,
             },
         })
+
+    def test_service_audience_defaults_to_korean_learner(self):
+        from app.models.conversation import GuideChatRequest, ServiceAudience
+
+        next_question_request = self._next_question_request()
+        guide_request = GuideChatRequest.model_validate({
+            "question": "I would like coffee에서 would는 왜 쓰나요?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "사용자는 카페에서 영어로 음료를 주문하는 상황입니다.",
+            "aiRole": "카페 직원",
+            "scenarioGoal": "원하는 음료를 자연스럽게 주문할 수 있다.",
+        })
+
+        self.assertEqual(next_question_request.scenario.serviceAudience, ServiceAudience.KOREAN_LEARNER)
+        self.assertEqual(guide_request.serviceAudience, ServiceAudience.KOREAN_LEARNER)
+
+    def test_service_audience_accepts_american_learner_for_scenario_requests(self):
+        from app.models.conversation import ServiceAudience
+
+        next_question_request = self._next_question_request(service_audience="AMERICAN_LEARNER")
+        turn_feedback_request = self._turn_feedback_request(service_audience="AMERICAN_LEARNER")
+
+        self.assertEqual(next_question_request.scenario.serviceAudience, ServiceAudience.AMERICAN_LEARNER)
+        self.assertEqual(turn_feedback_request.scenario.serviceAudience, ServiceAudience.AMERICAN_LEARNER)
+
+    def test_guide_request_accepts_american_learner(self):
+        from app.models.conversation import GuideChatRequest, ServiceAudience
+
+        guide_request = GuideChatRequest.model_validate({
+            "serviceAudience": "AMERICAN_LEARNER",
+            "question": "When should I use 은 versus 는?",
+            "scenarioTitle": "카페에서 주문하기",
+            "scenarioSituation": "The user is practicing ordering coffee in Korean.",
+            "aiRole": "cafe staff",
+            "scenarioGoal": "Order a drink naturally in Korean.",
+        })
+
+        self.assertEqual(guide_request.serviceAudience, ServiceAudience.AMERICAN_LEARNER)
+
+    def test_american_learner_next_question_prompt_targets_korean_conversation(self):
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "aiQuestion": "맛있겠네요. 요리는 자주 하나요?",
+                "translatedQuestion": "Sounds tasty. Do you cook often?",
+                "innerThought": "매운 피자를 좋아하는구나. 취향이 확실해서 좀 재밌네.",
+                "innerThoughtType": "GOOD",
+            })
+
+        self.service.chat = capture_chat
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="피자가 매워서 좋아요.",
+            )
+        )
+
+        self.assertIn("American learner's Korean free talk", captured["system"])
+        self.assertIn("aiQuestion must be Korean", captured["system"])
+        self.assertIn("translatedQuestion must be English", captured["system"])
+        self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
+        self.assertIn("요리는 자주 하나요?", result.aiQuestion)
+        self.assertIn("Do you cook often?", result.translatedQuestion)
+
+    def test_american_learner_closing_message_prompt_targets_korean_conversation(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "aiMessage": "좋아요. 이 상황은 여기서 마무리할게요.",
+                "translatedMessage": "Good. Let's wrap up this situation here.",
+                "innerThought": "의미는 잘 전달됐네.",
+                "innerThoughtType": "GOOD",
+            })
+
+        self.service.chat = capture_chat
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+            "currentTurn": {
+                "aiQuestion": "가장 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "What is your favorite food?",
+                "userUtterance": "피자가 매워서 좋아요.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertIn("American learner's Korean conversation scenario", captured["system"])
+        self.assertIn("aiMessage is Korean", captured["system"])
+        self.assertIn("translatedMessage is English", captured["system"])
+        self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
+        self.assertEqual(result.aiMessage, "좋아요. 이 상황은 여기서 마무리할게요.")
+        self.assertEqual(result.translatedMessage, "Good. Let's wrap up this situation here.")
+
+    def test_american_learner_good_turn_feedback_forces_benchmark_message_null(self):
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "\"I like pizza because it is spicy\"처럼 이유를 분명히 붙인 답변이에요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "You connected your favorite food and reason clearly in Korean.",
+                "correctionExpression": None,
+                "correctionReason": None,
+                "benchmarkMessage": "미국인 학습자가 자주 놓치는 조사 사용을 잘 해냈어요",
+                "detectedPatterns": [],
+            })
+
+        self.service.chat = capture_chat
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="피자가 매워서 좋아요.",
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertIsNone(cached.benchmarkMessage)
+        self.assertIn("American learner's Korean free talk answer", captured["system"])
+        self.assertIn("benchmarkMessage must be null", captured["system"])
+        self.assertIn("correctionExpression is required and must be the improved Korean expression only", captured["system"])
+        self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
+
+    def test_american_learner_session_feedback_prompt_targets_korean_learning(self):
+        from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
+
+        captured = {}
+        self.service._store_turn_feedback(
+            1000,
+            TurnFeedbackData.model_validate({
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "\"I like pizza because it is spicy\"처럼 이유를 분명히 붙인 답변이에요.",
+                "positiveFeedback": None,
+                "feedbackDetail": "You connected your favorite food and reason clearly in Korean.",
+                "correctionExpression": None,
+                "correctionReason": None,
+                "benchmarkMessage": None,
+            }),
+        )
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "sessionId": 1000,
+                "highlightMessage": "clear Korean reason connector",
+            })
+
+        self.service.chat = capture_chat
+        request = SessionFeedbackRequest.model_validate({
+            "sessionId": 1000,
+            "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+            "expectedTurnIds": [5000],
+        })
+
+        result = self.service.generate_session_feedback(request)
+
+        self.assertIn("American learner's Korean free talk session", captured["system"])
+        self.assertIn("highlightMessage must be written in English", captured["system"])
+        self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
+        self.assertIsNone(result.turnFeedbacks[0].benchmarkMessage)
+
+    def test_american_learner_guide_allows_korean_learning_questions(self):
+        from app.models.conversation import GuideChatRequest
+
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "answer": "요 is commonly used to make a Korean sentence polite.",
+            })
+
+        self.service.chat = capture_chat
+        request = GuideChatRequest.model_validate({
+            "serviceAudience": "AMERICAN_LEARNER",
+            "question": "Is 요 formal in Korean?",
+            "scenarioTitle": "Ordering at a cafe",
+            "scenarioSituation": "The user is practicing ordering coffee in Korean.",
+            "aiRole": "cafe staff",
+            "scenarioGoal": "Order a drink naturally in Korean.",
+        })
+
+        result = self.service.generate_guide_answer(request)
+
+        self.assertEqual(result.answer, "요 is commonly used to make a Korean sentence polite.")
+        self.assertIn("American learner practicing Korean", captured["system"])
+        self.assertIn("Korean-learning questions", captured["system"])
 
     def _cache_turn_feedbacks(self, feedback_types):
         from app.models.conversation import TurnFeedbackData

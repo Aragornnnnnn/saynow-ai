@@ -9,10 +9,20 @@
 - 대화를 종료할 때는 마지막 사용자 발화에 대한 속마음과 마지막 AI 발화를 `closing-message`로 생성합니다.
 - 사용자 발화 1개에 대한 턴별 피드백을 생성하고 AI 서버 프로세스 메모리 캐시에 최대 3시간 보관합니다.
 - 최종 피드백 생성 시 캐시된 턴별 피드백을 모아 `nativeScore`, `highlightMessage`와 함께 반환합니다.
-- 영어 학습 가이드 질문은 기존 `guide` API로 계속 처리합니다.
+- 영어 또는 한국어 학습 가이드 질문은 기존 `guide` API로 계속 처리합니다.
 
 슬롯 완료 판정, 세션/턴 생성, DB 저장, NPS, 최종 완료 상태 관리는 백엔드 책임입니다.
 대화 종료 조건도 백엔드가 판단합니다. 종료가 필요하면 백엔드는 다음 질문을 요청하지 않고 `closing-message`를 호출해 AI가 마지막으로 말하게 저장합니다.
+
+## 서비스 대상 구분
+
+BE-AI 요청은 `serviceAudience`로 학습 대상을 구분합니다. 필드를 생략하면 기존 한국인 대상 영어 회화 모드인 `KOREAN_LEARNER`로 처리합니다.
+
+- `KOREAN_LEARNER`는 한국인 사용자가 영어 회화를 연습하는 기본 모드입니다. `aiQuestion`, `aiMessage`, `correctionExpression`은 영어이고, 설명과 `translatedQuestion`, `translatedMessage`는 한국어입니다.
+- `AMERICAN_LEARNER`는 미국인 사용자가 한국어 회화를 연습하는 모드입니다. `aiQuestion`, `aiMessage`, `correctionExpression`은 한국어이고, 설명과 `translatedQuestion`, `translatedMessage`는 영어입니다.
+
+`next-question`, `closing-message`, `turn-feedback`, `session-feedback`은 `scenario.serviceAudience`를 사용합니다. `guide`는 `scenario` 객체가 없어서 요청 최상위의 `serviceAudience`를 사용합니다.
+미국인 대상 한국어 회화 모드에서는 GOOD 턴이어도 `benchmarkMessage`를 항상 `null`로 내려줍니다.
 
 ## API
 
@@ -55,7 +65,8 @@ BE 연동 기준.
     "title": "기숙사에서 조용히 해달라고 말하기",
     "briefing": "밤에 소음이 있는 룸메이트에게 조용히 부탁합니다.",
     "conversationGoal": "정중하게 조용히 해달라고 요청합니다.",
-    "counterpartRole": "roommate"
+    "counterpartRole": "roommate",
+    "serviceAudience": "KOREAN_LEARNER"
   },
   "currentTurn": {
     "aiQuestion": "Is the noise bothering you?",
@@ -130,7 +141,7 @@ BE 연동 기준.
 
 ### `POST /api/v1/conversation/guide`
 
-시나리오 대화 중 영어 표현, 문법, 단어, 뉘앙스를 질문할 때 사용합니다. 가이드 대화는 턴별 피드백이나 최종 피드백 입력에 포함하지 않습니다.
+시나리오 대화 중 학습 언어의 표현, 문법, 단어, 뉘앙스를 질문할 때 사용합니다. 가이드 대화는 턴별 피드백이나 최종 피드백 입력에 포함하지 않습니다.
 
 ## 피드백 기준
 
@@ -146,7 +157,7 @@ BE 연동 기준.
 
 `innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `correctionExpression`은 개선된 영어 표현만 담고, `correctionReason`은 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after와 한국어 이유를 담습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요` 기본 문구를 씁니다. 턴별 정량 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다.
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `KOREAN_LEARNER`에서 `correctionExpression`은 개선된 영어 표현만 담고, `correctionReason`은 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after와 한국어 이유를 담습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `KOREAN_LEARNER`의 `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요` 기본 문구를 씁니다. 턴별 정량 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다. `AMERICAN_LEARNER`에서는 `correctionExpression`이 개선된 한국어 표현이고, GOOD 턴의 `benchmarkMessage`도 `null`입니다.
 
 ## 한국인 오류 패턴 seed
 
@@ -206,7 +217,7 @@ uvicorn app.main:app --reload
 ## Verification
 
 ```bash
-OPENAI_API_KEY=test-key python -m unittest discover -s tests -p 'test*.py'
-python -m compileall app tests
+OPENAI_API_KEY=test-key .venv/bin/python -m unittest discover -s tests -p 'test*.py'
+.venv/bin/python -m compileall app tests
 git diff --check
 ```
