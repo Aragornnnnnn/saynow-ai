@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## AMERICAN_LEARNER BE live smoke 계약 위반 보정
+
+- [x] BE live smoke 원본에서 next-question 언어 혼합과 GOOD feedbackDetail 한국어 출력을 확인한다.
+- [x] root cause를 `context-notes.md`에 기록한다.
+- [x] 미국인 모드 next-question이 영어 고정 질문을 `aiQuestion`에 섞으면 한국어 고정 질문으로 복구하는 RED 테스트를 추가한다.
+- [x] 미국인 모드 GOOD `feedbackDetail`이 한국어 generic 문구로 내려오면 영어 상세 문구로 복구하는 RED 테스트를 추가한다.
+- [x] 최소 후처리 수정으로 RED 테스트를 GREEN으로 만든다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] main 배포 후 `dev-saynow.p-e.kr` 기준 BE live smoke를 재실행해 계약 위반 0건을 확인한다.
+- [ ] 검증 결과와 리포트 경로를 남기고 의미 있는 단위로 커밋한다.
+
 ## AMERICAN_LEARNER 시나리오 품질 프롬프트 튜닝
 
 - [x] fallback/repair를 새로 추가하지 않는 성공 기준을 `context-notes.md`에 기록한다.

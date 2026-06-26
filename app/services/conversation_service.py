@@ -84,6 +84,74 @@ def _learning_language(service_audience: ServiceAudience) -> str:
     return "Korean" if _is_american_learner(service_audience) else "English"
 
 
+def _effective_service_audience_for_next_question(
+    request: NextQuestionRequest,
+) -> ServiceAudience:
+    return _effective_service_audience_for_turn_context(
+        request.scenario.serviceAudience,
+        ai_question=request.currentTurn.aiQuestion,
+        translated_question=request.currentTurn.translatedQuestion,
+        user_utterance=request.currentTurn.userUtterance,
+    )
+
+
+def _effective_service_audience_for_closing_message(
+    request: ClosingMessageRequest,
+) -> ServiceAudience:
+    return _effective_service_audience_for_turn_context(
+        request.scenario.serviceAudience,
+        ai_question=request.currentTurn.aiQuestion,
+        translated_question=request.currentTurn.translatedQuestion,
+        user_utterance=request.currentTurn.userUtterance,
+    )
+
+
+def _effective_service_audience_for_turn_feedback(
+    request: TurnFeedbackRequest,
+) -> ServiceAudience:
+    return _effective_service_audience_for_turn_context(
+        request.scenario.serviceAudience,
+        ai_question=request.turn.aiQuestion,
+        translated_question=request.turn.translatedQuestion,
+        user_utterance=request.turn.userUtterance,
+    )
+
+
+def _effective_service_audience_for_turn_context(
+    service_audience: ServiceAudience,
+    *,
+    ai_question: str,
+    translated_question: str,
+    user_utterance: str,
+) -> ServiceAudience:
+    if _is_american_learner(service_audience):
+        return ServiceAudience.AMERICAN_LEARNER
+    if _looks_like_american_learner_turn(
+        ai_question=ai_question,
+        translated_question=translated_question,
+        user_utterance=user_utterance,
+    ):
+        return ServiceAudience.AMERICAN_LEARNER
+    return service_audience
+
+
+def _looks_like_american_learner_turn(
+    *,
+    ai_question: str,
+    translated_question: str,
+    user_utterance: str,
+) -> bool:
+    return (
+        _contains_hangul(user_utterance)
+        and _contains_hangul(ai_question)
+        and _contains_latin(translated_question)
+    )
+
+
+def _contains_latin(value: str) -> bool:
+    return re.search(r"[A-Za-z]", value) is not None
+
+
 @dataclass(frozen=True)
 class _TurnFeedbackCacheEntry:
     feedback: TurnFeedbackData
@@ -127,10 +195,11 @@ class TurnFeedbackNotReadyError(Exception):
 @_record_workflow_duration("next_question")
 def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse:
     workflow = "next_question"
+    service_audience = _effective_service_audience_for_next_question(request)
     stage_started_at = time.perf_counter()
     raw = _call_chat(
-        _next_question_system_prompt(request.scenario.serviceAudience),
-        _next_question_user_prompt(request),
+        _next_question_system_prompt(service_audience),
+        _next_question_user_prompt(request, service_audience=service_audience),
         max_tokens=384,
         temperature=0,
         workflow=workflow,
@@ -153,8 +222,8 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     stage_started_at = time.perf_counter()
-    response = _repair_next_question_drift(request, response)
-    response = _repair_next_question_inner_thought(request, response)
+    response = _repair_next_question_drift(request, response, service_audience=service_audience)
+    response = _repair_next_question_inner_thought(request, response, service_audience=service_audience)
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
 
@@ -162,10 +231,11 @@ def generate_next_question(request: NextQuestionRequest) -> NextQuestionResponse
 @_record_workflow_duration("closing_message")
 def generate_closing_message(request: ClosingMessageRequest) -> ClosingMessageResponse:
     workflow = "closing_message"
+    service_audience = _effective_service_audience_for_closing_message(request)
     stage_started_at = time.perf_counter()
     raw = _call_chat(
-        _closing_message_system_prompt(request.scenario.serviceAudience),
-        _closing_message_user_prompt(request),
+        _closing_message_system_prompt(service_audience),
+        _closing_message_user_prompt(request, service_audience=service_audience),
         max_tokens=320,
         temperature=0,
         workflow=workflow,
@@ -188,7 +258,7 @@ def generate_closing_message(request: ClosingMessageRequest) -> ClosingMessageRe
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
     stage_started_at = time.perf_counter()
-    response = _repair_closing_message(request, response)
+    response = _repair_closing_message(request, response, service_audience=service_audience)
     _log_workflow_stage_duration(workflow, "postprocess", stage_started_at)
     return response
 
@@ -220,10 +290,11 @@ def _normalize_next_question_data_before_validation(
 @_record_workflow_duration("turn_feedback")
 def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreationResponse:
     workflow = "turn_feedback"
+    service_audience = _effective_service_audience_for_turn_feedback(request)
     stage_started_at = time.perf_counter()
     _raw, data = _call_chat_json(
-        _turn_feedback_system_prompt(request.scenario.serviceAudience),
-        _turn_feedback_user_prompt(request),
+        _turn_feedback_system_prompt(service_audience),
+        _turn_feedback_user_prompt(request, service_audience=service_audience),
         max_tokens=768,
         temperature=0,
         workflow=workflow,
@@ -799,7 +870,7 @@ def _postprocess_turn_benchmark_message(
     feedback: TurnFeedbackData,
     detected_patterns: tuple[DetectedErrorPattern, ...],
 ) -> TurnFeedbackData:
-    if _is_american_learner(request.scenario.serviceAudience):
+    if _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
         if feedback.benchmarkMessage is None:
             return feedback
         return _validated_turn_feedback_copy(feedback, {"benchmarkMessage": None})
@@ -1176,12 +1247,18 @@ def _american_learner_next_question_system_prompt() -> str:
     ])
 
 
-def _next_question_user_prompt(request: NextQuestionRequest) -> str:
+def _next_question_user_prompt(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
     return (
         f"Session ID: {request.sessionId}\n"
         f"Submitted turn ID: {request.submittedTurnId}\n"
         f"Submitted sequence: {request.submittedSequence}\n"
         f"Service audience: {request.scenario.serviceAudience}\n"
+        f"Effective service audience: {effective_service_audience}\n"
         f"Scenario ID: {request.scenario.scenarioId}\n"
         f"Scenario title: {request.scenario.title}\n"
         f"Scenario briefing: {request.scenario.briefing}\n"
@@ -1193,7 +1270,9 @@ def _next_question_user_prompt(request: NextQuestionRequest) -> str:
         f"Next fixed question ID: {request.nextQuestion.questionId}\n"
         f"Next fixed question sequence: {request.nextQuestion.sequence}\n"
         f"Next fixed question English: {request.nextQuestion.questionEn}\n"
-        f"Next fixed question Korean: {request.nextQuestion.questionKo}"
+        f"Next fixed question Korean: {request.nextQuestion.questionKo}\n"
+        f"Next fixed question for aiQuestion: {_next_fixed_question_practice_text(request, service_audience=effective_service_audience)}\n"
+        f"Next fixed question for translatedQuestion: {_next_fixed_question_translation_text(request, service_audience=effective_service_audience)}"
     )
 
 
@@ -1320,12 +1399,18 @@ def _american_learner_closing_message_system_prompt() -> str:
     ])
 
 
-def _closing_message_user_prompt(request: ClosingMessageRequest) -> str:
+def _closing_message_user_prompt(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_closing_message(request)
     return (
         f"Session ID: {request.sessionId}\n"
         f"Submitted turn ID: {request.submittedTurnId}\n"
         f"Submitted sequence: {request.submittedSequence}\n"
         f"Service audience: {request.scenario.serviceAudience}\n"
+        f"Effective service audience: {effective_service_audience}\n"
         f"Scenario ID: {request.scenario.scenarioId}\n"
         f"Scenario title: {request.scenario.title}\n"
         f"Scenario briefing: {request.scenario.briefing}\n"
@@ -1541,12 +1626,18 @@ def _american_learner_turn_feedback_system_prompt() -> str:
     ])
 
 
-def _turn_feedback_user_prompt(request: TurnFeedbackRequest) -> str:
+def _turn_feedback_user_prompt(
+    request: TurnFeedbackRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_turn_feedback(request)
     return (
         f"Session ID: {request.sessionId}\n"
         f"Turn ID: {request.turnId}\n"
         f"Turn sequence: {request.sequence}\n"
         f"Service audience: {request.scenario.serviceAudience}\n"
+        f"Effective service audience: {effective_service_audience}\n"
         f"Scenario ID: {request.scenario.scenarioId}\n"
         f"Scenario title: {request.scenario.title}\n"
         f"Scenario briefing: {request.scenario.briefing}\n"
@@ -1819,9 +1910,18 @@ def _guide_user_prompt(request: GuideChatRequest) -> str:
 def _repair_next_question_drift(
     request: NextQuestionRequest,
     response: NextQuestionResponse,
+    *,
+    service_audience: ServiceAudience | None = None,
 ) -> NextQuestionResponse:
-    fixed_question_practice = _next_fixed_question_practice_text(request)
-    fixed_question_translation = _next_fixed_question_translation_text(request)
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    fixed_question_practice = _next_fixed_question_practice_text(
+        request,
+        service_audience=effective_service_audience,
+    )
+    fixed_question_translation = _next_fixed_question_translation_text(
+        request,
+        service_audience=effective_service_audience,
+    )
     if _same_visible_text(response.aiQuestion, fixed_question_practice) and _same_visible_text(
         response.translatedQuestion,
         fixed_question_translation,
@@ -1830,6 +1930,7 @@ def _repair_next_question_drift(
             request,
             inner_thought=response.innerThought,
             inner_thought_type=response.innerThoughtType,
+            service_audience=effective_service_audience,
         )
 
     if _has_generic_acknowledgement(response.aiQuestion):
@@ -1837,6 +1938,7 @@ def _repair_next_question_drift(
             request,
             inner_thought=response.innerThought,
             inner_thought_type=response.innerThoughtType,
+            service_audience=effective_service_audience,
         )
 
     if _has_overinterpreted_acknowledgement_for_vague_answer(request, response.aiQuestion):
@@ -1844,13 +1946,18 @@ def _repair_next_question_drift(
             request,
             inner_thought=response.innerThought,
             inner_thought_type=response.innerThoughtType,
+            service_audience=effective_service_audience,
         )
 
     if _contains_text(response.aiQuestion, fixed_question_practice) and _contains_text(
         response.translatedQuestion,
         fixed_question_translation,
     ):
-        return _align_next_question_korean_tone(request, response)
+        return _align_next_question_korean_tone(
+            request,
+            response,
+            service_audience=effective_service_audience,
+        )
 
     logger.info(
         "다음 고정 질문 drift 보정 | sessionId=%s turnId=%s fixedQuestionId=%s",
@@ -1859,33 +1966,75 @@ def _repair_next_question_drift(
         request.nextQuestion.questionId,
     )
     return NextQuestionResponse(
-        aiQuestion=f"{_fallback_acknowledgement_practice(request)} {fixed_question_practice}",
-        translatedQuestion=f"{_fallback_acknowledgement_translation(request)} {fixed_question_translation}",
+        aiQuestion=(
+            f"{_fallback_acknowledgement_practice(request, service_audience=effective_service_audience)} "
+            f"{fixed_question_practice}"
+        ),
+        translatedQuestion=(
+            f"{_fallback_acknowledgement_translation(request, service_audience=effective_service_audience)} "
+            f"{fixed_question_translation}"
+        ),
         innerThought=response.innerThought,
         innerThoughtType=response.innerThoughtType,
     )
 
 
-def _next_fixed_question_practice_text(request: NextQuestionRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
-        return request.nextQuestion.questionKo
+def _next_fixed_question_practice_text(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
+        return _korean_fixed_question_text(request)
     return request.nextQuestion.questionEn
 
 
-def _next_fixed_question_translation_text(request: NextQuestionRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _next_fixed_question_translation_text(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
+        return _english_fixed_question_text(request)
+    return request.nextQuestion.questionKo
+
+
+def _korean_fixed_question_text(request: NextQuestionRequest) -> str:
+    if _contains_hangul(request.nextQuestion.questionKo):
+        return request.nextQuestion.questionKo
+    if _contains_hangul(request.nextQuestion.questionEn):
         return request.nextQuestion.questionEn
     return request.nextQuestion.questionKo
 
 
-def _fallback_acknowledgement_practice(request: NextQuestionRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _english_fixed_question_text(request: NextQuestionRequest) -> str:
+    if not _contains_hangul(request.nextQuestion.questionEn):
+        return request.nextQuestion.questionEn
+    if not _contains_hangul(request.nextQuestion.questionKo):
+        return request.nextQuestion.questionKo
+    return request.nextQuestion.questionEn
+
+
+def _fallback_acknowledgement_practice(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
         return _fallback_acknowledgement_ko(request)
     return _fallback_acknowledgement_en(request)
 
 
-def _fallback_acknowledgement_translation(request: NextQuestionRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _fallback_acknowledgement_translation(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
         return _fallback_acknowledgement_en(request)
     return _fallback_acknowledgement_ko(request)
 
@@ -1893,14 +2042,26 @@ def _fallback_acknowledgement_translation(request: NextQuestionRequest) -> str:
 def _repair_closing_message(
     request: ClosingMessageRequest,
     response: ClosingMessageResponse,
+    *,
+    service_audience: ServiceAudience | None = None,
 ) -> ClosingMessageResponse:
+    effective_service_audience = service_audience or _effective_service_audience_for_closing_message(request)
     updates: dict[str, Any] = {}
     if _looks_like_question(response.aiMessage):
-        updates["aiMessage"] = _fallback_closing_message_practice(request)
+        updates["aiMessage"] = _fallback_closing_message_practice(
+            request,
+            service_audience=effective_service_audience,
+        )
     if _looks_like_question(response.translatedMessage):
-        updates["translatedMessage"] = _fallback_closing_message_translation(request)
+        updates["translatedMessage"] = _fallback_closing_message_translation(
+            request,
+            service_audience=effective_service_audience,
+        )
 
-    expected_type = _fallback_inner_thought_type_for_closing(request)
+    expected_type = _fallback_inner_thought_type_for_closing(
+        request,
+        service_audience=effective_service_audience,
+    )
     issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if expected_type == "BAD":
         if response.innerThoughtType != expected_type:
@@ -1911,7 +2072,10 @@ def _repair_closing_message(
                 and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
             )
         ):
-            updates["innerThought"] = _fallback_inner_thought_for_closing(request)
+            updates["innerThought"] = _fallback_inner_thought_for_closing(
+                request,
+                service_audience=effective_service_audience,
+            )
     elif expected_type == "NORMAL" and response.innerThoughtType != expected_type:
         updates["innerThoughtType"] = expected_type
     if (
@@ -1924,12 +2088,15 @@ def _repair_closing_message(
         or _is_meta_inner_thought(response.innerThought)
         or _has_future_inner_thought_marker(response.innerThought)
         or _inner_thought_uses_wrong_language(
-            request.scenario.serviceAudience,
+            effective_service_audience,
             response.innerThought,
         )
     )
     if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
-        updates["innerThought"] = _fallback_inner_thought_for_closing(request)
+        updates["innerThought"] = _fallback_inner_thought_for_closing(
+            request,
+            service_audience=effective_service_audience,
+        )
 
     if not updates:
         return response
@@ -1939,22 +2106,33 @@ def _repair_closing_message(
 
 
 def _fallback_closing_message(request: ClosingMessageRequest) -> ClosingMessageResponse:
+    service_audience = _effective_service_audience_for_closing_message(request)
     return ClosingMessageResponse(
-        aiMessage=_fallback_closing_message_practice(request),
-        translatedMessage=_fallback_closing_message_translation(request),
-        innerThought=_fallback_inner_thought_for_closing(request),
-        innerThoughtType=_fallback_inner_thought_type_for_closing(request),
+        aiMessage=_fallback_closing_message_practice(request, service_audience=service_audience),
+        translatedMessage=_fallback_closing_message_translation(request, service_audience=service_audience),
+        innerThought=_fallback_inner_thought_for_closing(request, service_audience=service_audience),
+        innerThoughtType=_fallback_inner_thought_type_for_closing(request, service_audience=service_audience),
     )
 
 
-def _fallback_closing_message_practice(request: ClosingMessageRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _fallback_closing_message_practice(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_closing_message(request)
+    if _is_american_learner(effective_service_audience):
         return _fallback_closing_message_ko(request)
     return _fallback_closing_message_en(request)
 
 
-def _fallback_closing_message_translation(request: ClosingMessageRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _fallback_closing_message_translation(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_closing_message(request)
+    if _is_american_learner(effective_service_audience):
         return _fallback_closing_message_en(request)
     return _fallback_closing_message_ko(request)
 
@@ -1979,12 +2157,26 @@ def _fallback_closing_message_ko(request: ClosingMessageRequest) -> str:
     return "무슨 뜻인지는 알겠어. 일단 여기서 마무리하자."
 
 
-def _fallback_inner_thought_type_for_closing(request: ClosingMessageRequest) -> str:
-    return _fallback_inner_thought_type(request)  # type: ignore[arg-type]
+def _fallback_inner_thought_type_for_closing(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    return _fallback_inner_thought_type(  # type: ignore[arg-type]
+        request,
+        service_audience=service_audience or _effective_service_audience_for_closing_message(request),
+    )
 
 
-def _fallback_inner_thought_for_closing(request: ClosingMessageRequest) -> str:
-    return _fallback_inner_thought(request)  # type: ignore[arg-type]
+def _fallback_inner_thought_for_closing(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    return _fallback_inner_thought(  # type: ignore[arg-type]
+        request,
+        service_audience=service_audience or _effective_service_audience_for_closing_message(request),
+    )
 
 
 def _looks_like_question(value: str) -> bool:
@@ -1995,8 +2187,14 @@ def _looks_like_question(value: str) -> bool:
 def _repair_next_question_inner_thought(
     request: NextQuestionRequest,
     response: NextQuestionResponse,
+    *,
+    service_audience: ServiceAudience | None = None,
 ) -> NextQuestionResponse:
-    expected_type = _fallback_inner_thought_type(request)
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    expected_type = _fallback_inner_thought_type(
+        request,
+        service_audience=effective_service_audience,
+    )
     issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
     should_replace_thought = (
@@ -2020,7 +2218,7 @@ def _repair_next_question_inner_thought(
     ) or (
         _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought) or _inner_thought_uses_wrong_language(
-        request.scenario.serviceAudience,
+        effective_service_audience,
         response.innerThought,
     )
     updates: dict[str, Any] = {}
@@ -2032,7 +2230,10 @@ def _repair_next_question_inner_thought(
     ):
         updates["innerThoughtType"] = expected_type
     if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
-        updates["innerThought"] = _fallback_inner_thought(request)
+        updates["innerThought"] = _fallback_inner_thought(
+            request,
+            service_audience=effective_service_audience,
+        )
     if not updates:
         return response
     data = response.model_dump(mode="json")
@@ -2045,29 +2246,42 @@ def _fallback_acknowledged_next_question(
     *,
     inner_thought: str | None = None,
     inner_thought_type: str | None = None,
+    service_audience: ServiceAudience | None = None,
 ) -> NextQuestionResponse:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
     return NextQuestionResponse(
         aiQuestion=(
-            f"{_fallback_acknowledgement_practice(request)} "
-            f"{_next_fixed_question_practice_text(request)}"
+            f"{_fallback_acknowledgement_practice(request, service_audience=effective_service_audience)} "
+            f"{_next_fixed_question_practice_text(request, service_audience=effective_service_audience)}"
         ),
         translatedQuestion=(
-            f"{_fallback_acknowledgement_translation(request)} "
-            f"{_next_fixed_question_translation_text(request)}"
+            f"{_fallback_acknowledgement_translation(request, service_audience=effective_service_audience)} "
+            f"{_next_fixed_question_translation_text(request, service_audience=effective_service_audience)}"
         ),
-        innerThought=inner_thought or _fallback_inner_thought(request),
-        innerThoughtType=inner_thought_type or _fallback_inner_thought_type(request),
+        innerThought=inner_thought or _fallback_inner_thought(
+            request,
+            service_audience=effective_service_audience,
+        ),
+        innerThoughtType=inner_thought_type or _fallback_inner_thought_type(
+            request,
+            service_audience=effective_service_audience,
+        ),
     )
 
 
-def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
+def _fallback_inner_thought_type(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
     issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if issue_kind == "defensive_joke_rejection":
         return "NORMAL"
     if issue_kind:
         return "BAD"
-    if _is_american_learner(request.scenario.serviceAudience) and _looks_like_korean_clear_reason_answer(
+    if _is_american_learner(effective_service_audience) and _looks_like_korean_clear_reason_answer(
         request.currentTurn.userUtterance
     ):
         return "GOOD"
@@ -2084,8 +2298,13 @@ def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
     return "NORMAL"
 
 
-def _fallback_inner_thought(request: NextQuestionRequest) -> str:
-    if _is_american_learner(request.scenario.serviceAudience):
+def _fallback_inner_thought(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
         return _fallback_inner_thought_en(request)
     return _fallback_inner_thought_ko(request)
 
@@ -2764,11 +2983,16 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
 
 def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    fixed_question_ko = (
+        _korean_fixed_question_text(request)
+        if _is_american_learner(_effective_service_audience_for_next_question(request))
+        else request.nextQuestion.questionKo
+    )
 
     def tone(acknowledgement: str) -> str:
         return _match_korean_acknowledgement_tone(
             acknowledgement,
-            request.nextQuestion.questionKo,
+            fixed_question_ko,
         )
 
     like_with_reason = re.search(
@@ -2814,7 +3038,12 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
 def _align_next_question_korean_tone(
     request: NextQuestionRequest,
     response: NextQuestionResponse,
+    *,
+    service_audience: ServiceAudience | None = None,
 ) -> NextQuestionResponse:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if _is_american_learner(effective_service_audience):
+        return response
     fixed_question_ko = request.nextQuestion.questionKo.strip()
     if not _is_casual_korean_question(fixed_question_ko):
         return response
@@ -3563,6 +3792,8 @@ def _repair_good_feedback_detail(
 ) -> str:
     if feedback.feedbackType != FeedbackType.GOOD:
         return feedback.feedbackDetail
+    if _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
+        return _repair_american_learner_good_feedback_detail(request, feedback)
     utterance = _normalize_visible_text(request.turn.userUtterance)
     if _looks_like_sleeping_habit_change_answer(utterance):
         return (
@@ -3588,6 +3819,22 @@ def _repair_good_feedback_detail(
     if _looks_like_clear_reason_answer(request.turn.userUtterance):
         return "좋아하는 것과 이유를 한 문장 안에서 분명하게 말했고, because로 이유를 바로 붙여 듣는 사람이 답변의 핵심을 쉽게 이해할 수 있어요."
     return "질문에 맞는 핵심 내용을 분명하게 말해서 대화가 자연스럽게 이어질 수 있어요."
+
+
+def _repair_american_learner_good_feedback_detail(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> str:
+    feedback_detail = feedback.feedbackDetail or ""
+    if feedback_detail and not _contains_hangul(feedback_detail) and not _is_generic_good_praise(feedback):
+        return feedback_detail
+
+    utterance = _normalize_visible_text(request.turn.userUtterance)
+    if _looks_like_korean_clear_reason_answer(request.turn.userUtterance):
+        return "Your Korean answer gives a clear reason, so the listener can understand your choice and continue naturally."
+    if any(marker in utterance for marker in ["좋아해", "좋아요", "괜찮아요", "괜찮아"]):
+        return "Your Korean answer directly matches the question and keeps the conversation easy to continue."
+    return "Your Korean answer is clear enough for the situation and responds to the question without confusing the listener."
 
 
 def _is_generic_good_praise(feedback: TurnFeedbackData) -> bool:
@@ -3880,6 +4127,13 @@ def _repair_korean_analogy(
     request: TurnFeedbackRequest,
     feedback: TurnFeedbackData,
 ) -> str:
+    if _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
+        if feedback.koreanAnalogy and not _contains_hangul(feedback.koreanAnalogy):
+            return feedback.koreanAnalogy
+        if feedback.feedbackType == FeedbackType.GOOD:
+            return "To a Korean listener, this sounds clear and appropriate for the situation."
+        return "To a Korean listener, the meaning is understandable, but the wording or social tone needs adjustment."
+
     utterance = _normalize_visible_text(request.turn.userUtterance)
     if feedback.feedbackType == FeedbackType.GOOD:
         if _looks_like_sleeping_habit_change_answer(utterance):

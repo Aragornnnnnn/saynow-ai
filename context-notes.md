@@ -1,5 +1,9 @@
 # 작업 맥락 기록
 
+- 2026-06-27 BE live smoke `/Users/sangmin8817/Soma/saynow-be/codex-artifacts/saynow-dev-live-smoke-20260626T165001Z.json`에서 `AMERICAN_LEARNER` 계약 위반을 확인했다. `next-question` 27건은 `aiQuestion`에 영어 고정 질문이 섞이고 `translatedQuestion`에 한국어 고정 질문이 섞였다. GOOD `turnFeedback.feedbackDetail` 23건은 미국인 대상 계약과 달리 한국어 generic 문구로 내려왔다.
+- 2026-06-27 root cause는 두 겹이다. `next-question`은 모델이 `questionEn/questionKo` 필드명을 보고 고정 질문을 반대 필드에 넣어도 AI 서버 postprocess가 “반대 필드에 정확히 들어간 drift”를 명시적으로 잡지 못했다. `feedbackDetail`은 미국인 모드 프롬프트가 영어를 요구하지만 `_repair_good_feedback_detail()`의 generic fallback이 한국어 하나로 고정돼 있었다. BE 구현은 prod 설정과 요청 DTO에서 `serviceAudience=AMERICAN_LEARNER`를 넣고 있으므로, AI 서버에서 언어 계약을 최종 방어한다.
+- 2026-06-27 보정은 실제 턴 언어 기준의 `effective service audience`를 추가하고, 미국인 대상 고정 질문은 필드명보다 실제 한글/영어 여부로 선택하게 했다. GOOD `feedbackDetail`과 `koreanAnalogy`도 미국인 대상이면 영어로 최종 보정한다. 로컬 검증은 focused 4개, `tests.test_conversation_service` 171개, 전체 `unittest discover -s tests -p 'test*.py'` 214개, `compileall app tests scripts`, `git diff --check`가 통과했다.
+
 - 2026-06-27 `define-goal` 기준으로 AMERICAN_LEARNER 시나리오 품질 목표를 잡았다. 성공 기준은 3개 시나리오 13턴 live smoke에서 `fatalIssueCount=0`, `reviewNoteCount=0`이며, 로컬 `unittest discover`, `compileall`, `git diff --check`도 통과해야 한다. 이번 작업은 서버 fallback/repair를 새로 추가하지 않는다. 팬사인회 겸손 리액션, 덕메 반말, 소개팅 쿠션어처럼 모델이 문화/말투 기준으로 직접 판단해야 하는 축을 프롬프트와 테스트 기준에 명시한다.
 - 2026-06-27 현재 prod live smoke 실패는 문법 오류보다 역할/상황별 화용 판단 누락에 가깝다. `네, 저 한국어 잘해요.`, `제 최애는 민지입니다.`, `아무거나요.`, `당연하죠!`처럼 문법적으로는 통하는 답변이 팬사인회, 또래 덕메, 첫 소개팅에서는 어색하거나 무성의하게 들릴 수 있는데, 현재 `AMERICAN_LEARNER` turn feedback 프롬프트는 이 기준을 충분히 알려주지 못한다.
 - 2026-06-27 RED 테스트로 `Scenario Pragmatics Rubric`와 `American learner pragmatic calibration` 누락을 먼저 실패 확인한 뒤, `AMERICAN_LEARNER` prompt에 팬사인회, 덕메, 소개팅 기준과 few-shot을 추가했다. 새 deterministic fallback/repair는 추가하지 않았다. 로컬 검증은 focused 2개, 전체 `unittest discover -s tests -p 'test*.py'` 210개, `compileall app tests scripts`, `git diff --check`로 통과했다.

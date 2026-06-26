@@ -190,6 +190,88 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThought, "They clearly like spicy pizza, so the answer feels easy to follow.")
         self._assert_no_hangul(result.innerThought)
 
+    def test_american_learner_next_question_repairs_swapped_fixed_question_language(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "계속 이어가 볼게. What do you usually do on weekends?",
+            "translatedQuestion": "Let's keep going. 주말엔 보통 뭐 하면서 시간 보내세요?",
+            "innerThought": "They seem easygoing, but a little reserved.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+                "userUtterance": "한식 좋아해요.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "주말엔 보통 뭐 하면서 시간 보내세요?",
+                "questionKo": "What do you usually do on weekends?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertIn("주말엔 보통 뭐 하면서 시간 보내세요?", result.aiQuestion)
+        self.assertNotIn("What do you usually do on weekends?", result.aiQuestion)
+        self.assertIn("What do you usually do on weekends?", result.translatedQuestion)
+        self.assertNotIn("주말엔 보통 뭐 하면서 시간 보내세요?", result.translatedQuestion)
+
+    def test_american_learner_next_question_infers_audience_from_korean_turn_when_missing(self):
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "aiQuestion": "계속 이어가 볼게. What do you usually do on weekends?",
+                "translatedQuestion": "Let's keep going. 주말엔 보통 뭐 하면서 시간 보내세요?",
+                "innerThought": "They seem easygoing, but a little reserved.",
+                "innerThoughtType": "NORMAL",
+            })
+
+        self.service.chat = capture_chat
+        request = self._next_question_request(
+            service_audience=None,
+            user_utterance="한식 좋아해요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "currentTurn": request.currentTurn.model_copy(update={
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+            }),
+            "nextQuestion": request.nextQuestion.model_copy(update={
+                "questionEn": "주말엔 보통 뭐 하면서 시간 보내세요?",
+                "questionKo": "What do you usually do on weekends?",
+            }),
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertIn("American learner's Korean free talk", captured["system"])
+        self.assertIn("Effective service audience: AMERICAN_LEARNER", captured["user"])
+        self.assertIn("주말엔 보통 뭐 하면서 시간 보내세요?", result.aiQuestion)
+        self.assertIn("What do you usually do on weekends?", result.translatedQuestion)
+
     def test_american_learner_closing_message_prompt_targets_korean_conversation(self):
         from app.models.conversation import ClosingMessageRequest
 
@@ -342,6 +424,76 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("benchmarkMessage must be null", captured["system"])
         self.assertIn("correctionExpression is required and must be the improved Korean expression only", captured["system"])
         self.assertIn("Service audience: AMERICAN_LEARNER", captured["user"])
+
+    def test_american_learner_good_turn_feedback_repairs_generic_korean_detail_to_english(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a Korean listener, this sounds clear and natural.",
+            "positiveFeedback": None,
+            "feedbackDetail": "질문에 맞는 핵심 내용을 분명하게 말해서 대화가 자연스럽게 이어질 수 있어요.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="한식 좋아해요.",
+            )
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self._assert_no_hangul(cached.feedbackDetail)
+        self.assertIn("Korean", cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
+    def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
+        captured = {}
+
+        def capture_chat(system, user, **kwargs):
+            captured["system"] = system
+            captured["user"] = user
+            return json.dumps({
+                "turnId": 5000,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "To a Korean listener, this sounds clear and natural.",
+                "positiveFeedback": None,
+                "feedbackDetail": "질문에 맞는 핵심 내용을 분명하게 말해서 대화가 자연스럽게 이어질 수 있어요.",
+                "correctionExpression": None,
+                "correctionReason": None,
+                "benchmarkMessage": "한국인 대상 기본 벤치마크",
+                "detectedPatterns": [],
+            })
+
+        self.service.chat = capture_chat
+        request = self._turn_feedback_request(
+            service_audience=None,
+            user_utterance="한식 좋아해요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertIn("American learner's Korean free talk answer", captured["system"])
+        self.assertIn("Effective service audience: AMERICAN_LEARNER", captured["user"])
+        self._assert_no_hangul(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
 
     def test_american_learner_turn_feedback_prompt_includes_scenario_pragmatics_rubric(self):
         from app.models.conversation import ServiceAudience
