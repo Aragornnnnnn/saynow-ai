@@ -7,8 +7,8 @@
 - [x] `AMERICAN_LEARNER` turn feedback 프롬프트에 문화/말투 판단 기준과 few-shot을 추가한다.
 - [x] `AMERICAN_LEARNER` next-question/closing-message 속마음 프롬프트에 역할별 즉시 반응 기준을 보강한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] main 배포 후 scenario live smoke를 실행하고 `fatalIssueCount=0`, `reviewNoteCount=0`을 확인한다.
-- [ ] 검증 결과와 리포트 경로를 남기고 의미 있는 단위로 커밋한다.
+- [x] main 배포 후 scenario live smoke를 실행하고 `fatalIssueCount=0`, `reviewNoteCount=0`을 확인한다.
+- [x] 검증 결과와 리포트 경로를 남기고 의미 있는 단위로 커밋한다.
 
 ## LAN-28 자연스러운 속마음과 교정 설명 후속 튜닝
 
