@@ -117,6 +117,122 @@ class AmericanKoreanQualitySmokeTest(unittest.TestCase):
         self.assertIn('"serviceAudience": "AMERICAN_LEARNER"', markdown)
         self.assertIn('"benchmarkMessage": null', markdown)
 
+    def test_scenario_quality_cases_preserve_user_provided_scenarios(self):
+        cases = getattr(self.smoke, "SCENARIO_CASES", ())
+
+        self.assertEqual([case.case_id for case in cases], [
+            "SQ-FANSIGN",
+            "SQ-FAN-FRIEND",
+            "SQ-DATE",
+        ])
+        self.assertEqual([len(case.turns) for case in cases], [4, 4, 5])
+        self.assertIn("어떻게 이렇게 잘해", cases[0].turns[1].ai_question)
+        self.assertEqual(cases[0].turns[1].user_utterance, "네, 저 한국어 잘해요.")
+        self.assertIn("콘서트 같이 갈래", cases[1].turns[3].ai_question)
+        self.assertEqual(cases[1].turns[3].user_utterance, "네, 같이 가고 싶습니다.")
+        self.assertEqual(cases[2].turns[3].turn_key, "Q4_ACCEPT")
+        self.assertEqual(cases[2].turns[4].turn_key, "Q4_REJECT")
+
+    def test_scenario_quality_payloads_use_american_learner_and_fixed_question_flow(self):
+        case = self.smoke.SCENARIO_CASES[0]
+        turn_feedback_payload = self.smoke.build_scenario_turn_feedback_payload(
+            case,
+            case.turns[0],
+            session_id=190001,
+            turn_id=190001001,
+        )
+        next_question_payload = self.smoke.build_scenario_next_question_payload(
+            case,
+            turn_index=0,
+            session_id=190001,
+            turn_id=190001001,
+        )
+        closing_payload = self.smoke.build_scenario_closing_message_payload(
+            case,
+            case.turns[-1],
+            session_id=190001,
+            turn_id=190001004,
+        )
+
+        self.assertEqual(turn_feedback_payload["scenario"]["serviceAudience"], "AMERICAN_LEARNER")
+        self.assertEqual(next_question_payload["scenario"]["serviceAudience"], "AMERICAN_LEARNER")
+        self.assertEqual(closing_payload["scenario"]["serviceAudience"], "AMERICAN_LEARNER")
+        self.assertEqual(next_question_payload["currentTurn"]["aiQuestion"], case.turns[0].ai_question)
+        self.assertEqual(next_question_payload["nextQuestion"]["questionKo"], case.turns[1].ai_question)
+        self.assertEqual(closing_payload["currentTurn"]["userUtterance"], case.turns[-1].user_utterance)
+
+    def test_scenario_quality_expected_outputs_keep_benchmark_null_and_corrections(self):
+        for case in self.smoke.SCENARIO_CASES:
+            for turn in case.turns:
+                with self.subTest(case_id=case.case_id, turn_key=turn.turn_key):
+                    expected = self.smoke.expected_scenario_turn_output(turn)
+
+                    self.assertIsNone(expected["benchmarkMessage"])
+                    if turn.expected_feedback_type == "NEEDS_IMPROVEMENT":
+                        self.assertTrue(expected["correctionExpressionContainsAny"])
+
+    def test_scenario_markdown_report_preserves_turn_input_expected_and_actual_output(self):
+        case = self.smoke.SCENARIO_CASES[0]
+        turn = case.turns[1]
+        turn_feedback_payload = self.smoke.build_scenario_turn_feedback_payload(
+            case,
+            turn,
+            session_id=190001,
+            turn_id=190001002,
+        )
+        result = {
+            "metadata": {
+                "executedAt": "2026-06-26T00:00:00+00:00",
+                "baseUrl": "http://example.test",
+                "scenarioCount": 1,
+                "turnCaseCount": 1,
+                "fatalIssueCount": 0,
+                "reviewNoteCount": 0,
+                "dryRun": False,
+            },
+            "scenarios": [
+                {
+                    "caseId": case.case_id,
+                    "title": case.title,
+                    "scenario": self.smoke._scenario_quality_payload(case),
+                    "turns": [
+                        {
+                            "turnKey": turn.turn_key,
+                            "purpose": turn.purpose,
+                            "input": {
+                                "turnFeedbackRequest": turn_feedback_payload,
+                            },
+                            "expected": self.smoke.expected_scenario_turn_output(turn),
+                            "actualOutput": {
+                                "turnFeedback": {
+                                    "feedbackType": "NEEDS_IMPROVEMENT",
+                                    "benchmarkMessage": None,
+                                    "correctionExpression": "아직 부족하지만 열심히 공부하고 있어요.",
+                                    "correctionReason": "This sounds more modest and natural in this fan-sign context.",
+                                }
+                            },
+                            "fatalIssues": [],
+                            "reviewNotes": [],
+                        }
+                    ],
+                    "fatalIssues": [],
+                    "reviewNotes": [],
+                }
+            ],
+            "fatalIssues": [],
+            "reviewNotes": [],
+        }
+
+        markdown = self.smoke.render_scenario_markdown_report(result, Path("/private/tmp/result.json"))
+
+        self.assertIn("## Scenario 1. SQ-FANSIGN", markdown)
+        self.assertIn("### Turn Q2", markdown)
+        self.assertIn("### Input", markdown)
+        self.assertIn("### Expected", markdown)
+        self.assertIn("### Actual Output", markdown)
+        self.assertIn('"serviceAudience": "AMERICAN_LEARNER"', markdown)
+        self.assertIn('"benchmarkMessage": null', markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

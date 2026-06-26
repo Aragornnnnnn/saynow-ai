@@ -962,3 +962,12 @@
 - [x] 프롬프트와 fallback을 영어 `innerThought` 기준으로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## American learner scenario quality smoke
+
+- [x] 팬사인회, 덕메 1:1, 소개팅 시나리오를 Q1-Q4 흐름으로 구조화한다.
+- [x] 각 턴의 유도 오류, 기대 feedbackType, 기대 교정 fragment를 RED 테스트로 고정한다.
+- [x] scenario smoke가 `next-question`, `turn-feedback`, `closing-message`, `session-feedback` input/output을 모두 리포트하도록 구현한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] prod AI 내부 API로 live smoke를 실행하고 결과를 채팅에 요약한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.
