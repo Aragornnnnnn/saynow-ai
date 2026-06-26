@@ -2083,16 +2083,19 @@ def _repair_closing_message(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
+    wrong_language_inner_thought = _inner_thought_uses_wrong_language(
+        effective_service_audience,
+        response.innerThought,
+    )
     should_replace_thought = (
         _is_generic_normal_inner_thought(response.innerThought)
         or _is_meta_inner_thought(response.innerThought)
         or _has_future_inner_thought_marker(response.innerThought)
-        or _inner_thought_uses_wrong_language(
-            effective_service_audience,
-            response.innerThought,
-        )
+        or wrong_language_inner_thought
     )
-    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
+    if wrong_language_inner_thought or (
+        _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought
+    ):
         updates["innerThought"] = _fallback_inner_thought_for_closing(
             request,
             service_audience=effective_service_audience,
@@ -2197,6 +2200,10 @@ def _repair_next_question_inner_thought(
     )
     issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
+    wrong_language_inner_thought = _inner_thought_uses_wrong_language(
+        effective_service_audience,
+        response.innerThought,
+    )
     should_replace_thought = (
         expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
     ) or (
@@ -2217,10 +2224,7 @@ def _repair_next_question_inner_thought(
         _is_scripted_future_inner_thought(request, response.innerThought)
     ) or (
         _is_generic_normal_inner_thought(response.innerThought)
-    ) or _is_meta_inner_thought(response.innerThought) or _inner_thought_uses_wrong_language(
-        effective_service_audience,
-        response.innerThought,
-    )
+    ) or _is_meta_inner_thought(response.innerThought) or wrong_language_inner_thought
     updates: dict[str, Any] = {}
     if expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type:
         updates["innerThoughtType"] = expected_type
@@ -2229,7 +2233,9 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
+    if wrong_language_inner_thought or (
+        _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought
+    ):
         updates["innerThought"] = _fallback_inner_thought(
             request,
             service_audience=effective_service_audience,

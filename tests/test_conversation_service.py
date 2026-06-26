@@ -332,6 +332,25 @@ class ConversationServiceTest(unittest.TestCase):
 
         self._assert_no_hangul(result.innerThought)
 
+    def test_american_learner_next_question_repairs_mixed_language_inner_thought_when_general_repair_disabled(self):
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "열심히 했네요. 요리는 자주 하나요?",
+            "translatedQuestion": "You worked hard. Do you cook often?",
+            "innerThought": "They have been 꾸준히 studying Korean, and that feels sweet.",
+            "innerThoughtType": "NORMAL",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="오랜만이에요! 저는 잘 지냈어요.",
+            )
+        )
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("꾸준히", result.innerThought)
+
     def test_american_learner_next_question_replaces_english_planner_inner_thought(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "아, 그런 느낌도 있죠. 요리는 자주 하나요?",
@@ -389,6 +408,35 @@ class ConversationServiceTest(unittest.TestCase):
 
         self._assert_no_hangul(result.innerThought)
         self.assertIn(result.innerThoughtType, {"GOOD", "NORMAL", "BAD"})
+
+    def test_american_learner_closing_message_repairs_mixed_language_inner_thought_when_general_repair_disabled(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "좋아요. 여기서 마무리할게요.",
+            "translatedMessage": "Good. Let's wrap up here.",
+            "innerThought": "They sound 정말 warm, so I feel grateful.",
+            "innerThoughtType": "GOOD",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+            "currentTurn": {
+                "aiQuestion": "가장 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "What is your favorite food?",
+                "userUtterance": "피자가 매워서 좋아요.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("정말", result.innerThought)
 
     def test_american_learner_good_turn_feedback_forces_benchmark_message_null(self):
         captured = {}
