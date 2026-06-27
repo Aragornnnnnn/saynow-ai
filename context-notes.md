@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-06-27 새 기준을 세운다. `AMERICAN_LEARNER` turn feedback은 문법 정확도보다 질문 의도 충족과 대화 흐름을 우선한다. 문법적으로 맞는 짧은 답변이라도 열린 질문에서 상대가 이어갈 정보가 부족하면 GOOD이 아니라 NEEDS_IMPROVEMENT다. 대표 사례는 소개팅 Q2 `주말엔 보통 뭐 하면서 시간 보내세요?`에 `집에 있어요.`, 소개팅 Q3 `이상형이 어떻게 돼요?`에 `착한 사람이요.`처럼 의미는 통하지만 대화가 닫히는 답변이다.
+- 2026-06-27 위 기준을 RED 테스트 2개로 고정했다. `test_american_learner_turn_feedback_marks_thin_blind_date_weekend_answer_as_needs`는 `집에 있어요.`를 `주말에는 보통 집에서 쉬고, 가끔 친구들이랑 카페에 가요.`로 교정하게 한다. `test_american_learner_turn_feedback_marks_generic_blind_date_ideal_type_as_needs`는 `착한 사람이요.`를 `저는 대화가 잘 통하고 배려심 있는 사람이 좋아요.`로 교정하게 한다. GREEN 구현은 `Conversation Flow Gate` 프롬프트 보강과 질문-답변 조합을 좁게 보는 후처리로 제한했다. 로컬 검증은 focused 3개, `tests.test_conversation_service` 178개, 전체 `unittest discover -s tests -p 'test*.py'` 221개, `compileall app tests scripts`, `git diff --check`로 통과했다.
+
 - 2026-06-27 추가 기준을 반영한다. 덕메 질문 `헐 우리 취향 비슷하다! 어쩌다 입덕했어?`에 `영상 봤어.`라고만 답하면 입덕 계기의 핵심 맥락이 부족하다. GOOD은 어떤 영상이나 어디서 본 영상인지처럼 대화가 이어질 최소 단서를 포함해야 한다. 단순 `영상 봤어.`는 문법적으로 가능해도 NEEDS_IMPROVEMENT로 본다.
 - 2026-06-27 위 기준을 RED 테스트 `test_american_learner_turn_feedback_marks_vague_deokjil_origin_as_needs`로 고정했다. LLM이 `영상 봤어.`를 GOOD으로 내려도, 서버 후처리에서 질문에 `어쩌다`와 `입덕`이 있고 답변이 영상 단답이면 NEEDS_IMPROVEMENT로 전환한다. 교정 예시는 `유튜브에서 무대 영상 보고 입덕했어.`다. `AMERICAN_LEARNER` turn feedback 프롬프트에도 thin fan origin answer few-shot을 추가했다.
 - 2026-06-27 로컬 검증은 RED 실패 확인 후 focused 2개, `tests.test_conversation_service` 176개, 전체 `unittest discover -s tests -p 'test*.py'` 219개, `compileall app tests scripts`, `git diff --check`로 통과했다.

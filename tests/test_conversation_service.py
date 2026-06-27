@@ -602,6 +602,80 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_marks_thin_blind_date_weekend_answer_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a Korean blind date partner, this is grammatically clear.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer directly says what you do on weekends.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="집에 있어요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "주말엔 보통 뭐 하면서 시간 보내세요?",
+                "translatedQuestion": "What do you usually do on weekends?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "주말에는 보통 집에서 쉬고, 가끔 친구들이랑 카페에 가요.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
+    def test_american_learner_turn_feedback_marks_generic_blind_date_ideal_type_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a Korean blind date partner, this is grammatical and polite.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer gives a simple ideal type.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="착한 사람이요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "혹시 이상형 물어봐도 돼요? 이상형이 어떻게 돼요?",
+                "translatedQuestion": "Can I ask what your type is? What's your ideal type?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "저는 대화가 잘 통하고 배려심 있는 사람이 좋아요.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
         captured = {}
 
@@ -665,6 +739,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("-습니다", system_prompt)
         self.assertIn("내 최애는 민지야", system_prompt)
         self.assertIn("blind date", system_prompt)
+        self.assertIn("집에 있어요", system_prompt)
+        self.assertIn("착한 사람이요", system_prompt)
         self.assertIn("아무거나요", system_prompt)
         self.assertIn("당연하죠", system_prompt)
         self.assertIn("아니요, 싫어요", system_prompt)

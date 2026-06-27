@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AMERICAN_LEARNER 대화 흐름 우선 평가 보정
+
+- [x] 문법보다 질문 의도와 대화 흐름을 우선하는 평가 기준을 기록한다.
+- [x] 소개팅 열린 질문의 짧은 문법적 단답을 RED 테스트로 고정한다.
+- [x] `AMERICAN_LEARNER` turn feedback 프롬프트에 대화 흐름 우선 기준을 명시한다.
+- [x] 최소 후처리 기준으로 RED 테스트를 GREEN으로 만든다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] main 배포 후 live smoke로 대화 흐름 단답 품질 변화를 확인한다.
+
 ## AMERICAN_LEARNER 질문 의도 충족 평가 보정
 
 - [x] 덕메 Q2의 `어쩌다 입덕했어?`에 대한 `영상 봤어.` 단답 사례를 RED 테스트로 고정한다.
