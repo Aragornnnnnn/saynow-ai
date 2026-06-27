@@ -2486,6 +2486,9 @@ def _has_generic_acknowledgement(ai_question: str) -> bool:
         "thanks for sharing",
         "thank you for sharing",
         "i see",
+        "okay got it",
+        "ok got it",
+        "got it",
         "interesting",
         "that sounds like a fun trip",
     ]

@@ -327,6 +327,21 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("Let's keep going", result.aiQuestion)
         self.assertNotIn("계속 이어가", result.translatedQuestion)
 
+    def test_next_question_removes_model_got_it_acknowledgement_when_user_utterance_is_unclear(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Okay, got it. Do you cook often?",
+            "translatedQuestion": "그래, 알겠어. 요리는 자주 하나요?",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(user_utterance="Honey no I like veal. Tool. Pill. Pill. Pill.")
+        )
+
+        self.assertEqual(result.aiQuestion, "Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
+        self.assertNotIn("got it", result.aiQuestion.lower())
+        self.assertNotIn("알겠어", result.translatedQuestion)
+
     def test_next_question_repairs_blunt_inner_thought_from_model_output(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Okay, anywhere works. Do you cook often?",

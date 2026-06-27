@@ -6,6 +6,7 @@
 - [x] 근거 있는 fallback 맞장구는 유지하고, 근거 없는 기본 fallback만 생략하도록 구현한다.
 - [x] 빈 맞장구일 때 앞 공백 없이 고정 질문만 반환하도록 조인 로직을 추가한다.
 - [x] fallback 제거 후 live에서 발견한 `파티 얘기로 넘어가 보자` 진행자식 속마음을 현재 반응만 남기도록 추가 보정한다.
+- [x] 모델이 직접 반환한 `Okay, got it.` 계열 이해한 척 맞장구도 불명확 발화에서는 제거한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 코드에 `계속 이어가 볼게` / `Let's keep going` 기본 fallback 문자열이 남지 않았는지 확인한다.
 
