@@ -5,8 +5,10 @@
 - [x] 짧지만 질문에 답한 표현은 GOOD으로 허용하는 기준을 기록한다.
 - [x] 소개팅 Q2 `집에 있어요.`, Q3 `착한 사람이요.`, Q4 `네 좋아요.`가 GOOD으로 남는 RED 테스트를 만든다.
 - [x] 과도한 hard NEEDS 후처리와 프롬프트 예시를 제거한다.
+- [x] 소개팅 Q1 `한식이요.`는 두 슬롯 미충족으로 NEEDS 유지하는 RED 테스트를 만든다.
+- [x] Q1 bare food category 후처리와 프롬프트 기준을 추가한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] main 배포 후 live smoke로 Q2/Q3/Q4 GOOD 허용과 계약 게이트 0건을 확인한다.
+- [ ] main 배포 후 live smoke로 Q1 NEEDS, Q2/Q3/Q4 GOOD 허용과 계약 게이트 0건을 확인한다.
 
 ## AMERICAN_LEARNER 대화 흐름 우선 평가 보정
 

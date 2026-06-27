@@ -602,6 +602,43 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_marks_bare_blind_date_food_category_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a Korean blind date partner, this is short but understandable.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer says you want Korean food.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="한식이요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "한식이 좋아요. 특히 불고기나 비빔밥을 좋아해요.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_allows_short_blind_date_weekend_answer_as_good(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -782,6 +819,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("집에 있어요", system_prompt)
         self.assertIn("착한 사람이요", system_prompt)
         self.assertIn("아무거나요", system_prompt)
+        self.assertIn("한식이요", system_prompt)
+        self.assertIn("too underspecified", system_prompt)
         self.assertIn("당연하죠", system_prompt)
         self.assertIn("네 좋아요", system_prompt)
         self.assertIn("아니요, 싫어요", system_prompt)

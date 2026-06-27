@@ -1608,6 +1608,7 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Mark it NEEDS_IMPROVEMENT and suggest a slightly fuller casual answer such as '유튜브에서 무대 영상 보고 입덕했어'. "
             "Mark formal answers such as '제 최애는 민지입니다', '입덕했습니다', '가고 싶습니다', or '같이 가고 싶습니다' as NEEDS_IMPROVEMENT and suggest casual fan talk such as '내 최애는 민지야', '유튜브에서 무대 보고 입덕했어', or '응, 같이 가고 싶어'. "
             "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '예쁜 사람이 좋아요' can sound shallow. "
+            "If the food question asks both what the user wants to eat and what kind of food they like, a bare category answer such as '한식이요' is too underspecified; mark it NEEDS_IMPROVEMENT and suggest one category plus a specific example. "
             "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
             "Short but valid answers such as '집에 있어요', '착한 사람이요', or '네 좋아요' can be GOOD when they directly answer the question and the only issue is that they are brief. "
             "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
@@ -3741,6 +3742,28 @@ def _needs_feedback_for_missing_required_question_intent(
     if not _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
         return None
     question = _normalize_visible_text(request.turn.aiQuestion)
+    if (
+        "뭐" in question
+        and "드시고" in question
+        and "좋아하는 음식" in question
+        and _looks_like_bare_korean_food_category_answer(utterance)
+    ):
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy=(
+                "On a first blind date, this is understandable but too bare for a two-part food "
+                "preference question."
+            ),
+            feedbackDetail=None,
+            correctionExpression="한식이 좋아요. 특히 불고기나 비빔밥을 좋아해요.",
+            correctionReason=(
+                "The question asks both what you would like to eat and what kind of food you like. "
+                "Adding a specific example gives your date something natural to respond to."
+            ),
+            positiveFeedback="You gave a clear food category politely.",
+            benchmarkMessage=None,
+        )
     if "어쩌다" in question and "입덕" in question and _looks_like_only_video_watched_answer(utterance):
         return TurnFeedbackData(
             turnId=feedback.turnId,
@@ -3778,6 +3801,16 @@ def _needs_feedback_for_missing_required_question_intent(
         positiveFeedback="You answered the first part in a friendly casual tone.",
         benchmarkMessage=None,
     )
+
+
+def _looks_like_bare_korean_food_category_answer(utterance: str) -> bool:
+    compact = utterance.replace(" ", "")
+    return compact in {
+        "한식",
+        "한식이요",
+        "한국음식",
+        "한국음식이요",
+    }
 
 
 def _looks_like_only_video_watched_answer(utterance: str) -> bool:
