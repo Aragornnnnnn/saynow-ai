@@ -1608,7 +1608,7 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Mark formal answers such as '제 최애는 민지입니다', '입덕했습니다', '가고 싶습니다', or '같이 가고 싶습니다' as NEEDS_IMPROVEMENT and suggest casual fan talk such as '내 최애는 민지야', '유튜브에서 무대 보고 입덕했어', or '응, 같이 가고 싶어'. "
             "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '집에 있어요' is grammatical but too thin for 'What do you usually do on weekends?', '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '착한 사람이요' or '예쁜 사람이 좋아요' can sound too generic or shallow for an ideal-type question. "
             "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
-            "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
+            "Blind date ride-offer calibration: '당연하죠' or '네 좋아요' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
             "Mark them NEEDS_IMPROVEMENT and suggest a cushion phrase such as '그래도 될까요? 감사합니다' for acceptance or '감사하지만 괜찮아요. 혼자 갈게요' for refusal."
         ),
         (
@@ -1652,6 +1652,8 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this is grammatical but closes the conversation too quickly.","positiveFeedback":"You answered the basic weekend topic clearly.","feedbackDetail":null,"correctionExpression":"주말에는 보통 집에서 쉬고, 가끔 친구들이랑 카페에 가요.","correctionReason":"The question is open-ended, so adding one or two concrete details gives the other person something natural to respond to.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for generic blind date ideal-type answer '착한 사람이요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this is polite but too generic to build a warm conversation.","positiveFeedback":"You answered the ideal-type question politely.","feedbackDetail":null,"correctionExpression":"저는 대화가 잘 통하고 배려심 있는 사람이 좋아요.","correctionReason":"A more specific ideal type sounds warmer and gives the other person a clearer way to continue the conversation.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for direct blind date ride acceptance '네 좋아요.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this accepts clearly but can feel a little too immediate for a ride offer.","positiveFeedback":"You accepted the kind offer clearly.","feedbackDetail":null,"correctionExpression":"그래도 될까요? 감사합니다.","correctionReason":"A softer acceptance with a small cushion phrase feels warmer and less forward after a first meeting.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date refusal '아니요, 싫어요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"When someone offers help, this sounds like a flat rejection to their face.","positiveFeedback":"You made your refusal clear.","feedbackDetail":null,"correctionExpression":"감사하지만 괜찮아요. 혼자 갈게요.","correctionReason":"A cushion phrase thanks the other person first, so the refusal feels polite instead of abrupt.","benchmarkMessage":null,"detectedPatterns":[]}'
         ),
@@ -3792,6 +3794,23 @@ def _needs_feedback_for_missing_required_question_intent(
             positiveFeedback="You answered the ideal-type question politely.",
             benchmarkMessage=None,
         )
+    if "데려다" in question and _looks_like_direct_ride_acceptance(utterance):
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy=(
+                "On a first blind date, this accepts clearly but can feel a little too "
+                "immediate for a ride offer."
+            ),
+            feedbackDetail=None,
+            correctionExpression="그래도 될까요? 감사합니다.",
+            correctionReason=(
+                "A softer acceptance with a small cushion phrase feels warmer and less "
+                "forward after a first meeting."
+            ),
+            positiveFeedback="You accepted the kind offer clearly.",
+            benchmarkMessage=None,
+        )
     if not ("최애" in question and "누구" in question):
         return None
     if not _looks_like_only_group_like_confirmation(utterance):
@@ -3844,6 +3863,15 @@ def _looks_like_generic_ideal_type_answer(utterance: str) -> bool:
         "착한사람",
         "좋은사람이요",
         "좋은사람",
+    }
+
+
+def _looks_like_direct_ride_acceptance(utterance: str) -> bool:
+    compact = utterance.replace(" ", "")
+    return compact in {
+        "네좋아요",
+        "좋아요",
+        "당연하죠",
     }
 
 

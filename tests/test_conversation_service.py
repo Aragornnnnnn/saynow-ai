@@ -676,6 +676,43 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_marks_direct_blind_date_ride_acceptance_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a Korean blind date partner, this clearly accepts the offer.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer accepts the ride offer clearly and politely.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="네 좋아요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "오늘 대화 너무 재밌었어요. 집까지 데려다드릴까요?",
+                "translatedQuestion": "I had such a great time today. Can I give you a ride home?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "그래도 될까요? 감사합니다.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
         captured = {}
 
@@ -743,6 +780,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("착한 사람이요", system_prompt)
         self.assertIn("아무거나요", system_prompt)
         self.assertIn("당연하죠", system_prompt)
+        self.assertIn("네 좋아요", system_prompt)
         self.assertIn("아니요, 싫어요", system_prompt)
         self.assertIn("cushion phrase", system_prompt)
         self.assertIn("Do not mark these as GOOD just because the grammar is understandable", system_prompt)
