@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## LAN-28 innerThoughtType 기준 재정의
+
+- [x] 기존 프롬프트와 fallback 타입 분기에서 GOOD/NORMAL/BAD 기준을 확인한다.
+- [x] 의미 파악 실패, 핵심 의도 불충족, 약한 관계 톤 경계 사례를 RED 테스트로 고정한다.
+- [x] next-question과 closing-message 프롬프트에 새 기준을 반영한다.
+- [x] fallback 타입 분기에서 BAD를 무례함 외 의도 불충족과 의미 파악 실패까지 포함하도록 조정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 커밋하고 origin에 반영한다.
+
 ## LAN-28 native score GOOD 개수 밴드 적용
 
 - [x] GOOD 개수별 nativeScore 밴드 RED 테스트를 추가한다.

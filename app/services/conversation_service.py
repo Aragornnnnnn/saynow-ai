@@ -62,6 +62,52 @@ _GOOD_SURFACE_PATTERN_RANK = {
 }
 _DEFAULT_GOOD_BENCHMARK_MESSAGE = "질문에 맞는 핵심을 자연스럽게 전달했어요"
 _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+_CLEAR_STANDALONE_PREFERENCE_WORDS = {
+    "art",
+    "basketball",
+    "black",
+    "blue",
+    "books",
+    "bread",
+    "business",
+    "cafes",
+    "chess",
+    "chicken",
+    "cleaning",
+    "coffee",
+    "cooking",
+    "dance",
+    "design",
+    "fish",
+    "food",
+    "games",
+    "gray",
+    "green",
+    "grey",
+    "jazz",
+    "karaoke",
+    "kpop",
+    "meat",
+    "movies",
+    "music",
+    "party",
+    "photography",
+    "pink",
+    "pizza",
+    "pop",
+    "purple",
+    "red",
+    "quiet",
+    "ramen",
+    "rice",
+    "rock",
+    "singing",
+    "soccer",
+    "sports",
+    "travel",
+    "white",
+    "yellow",
+}
 
 
 @dataclass(frozen=True)
@@ -1025,7 +1071,9 @@ def _next_question_system_prompt() -> str:
             "It may be relieved, grateful, awkward, hurt, annoyed, uncomfortable, or unsure. "
             "If there is a tradeoff, prefer an imperfect but emotionally real private thought over a polished, standardized, or tutor-like sentence. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
-            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when the utterance feels blunt, cold, rude, or role-inappropriate. "
+            "Use GOOD when the utterance satisfies the core intent of the question or situation, is clear without guesswork, and feels acceptable for the counterpart role. "
+            "Use NORMAL when the core intent is mostly satisfied but the answer lacks detail, warmth, or relationship tone, so the counterpart feels slightly unsure or underwhelmed. "
+            "Use BAD when the core intent is not satisfied, the meaning is hard to understand, or the counterpart would feel confused, hurt, distant, or uncomfortable. "
             "Do not write tutor/meta planning thoughts such as '대화 이어가기 좋다', '다음 질문으로 넘어가자', '조금 더 자연스럽게 말하면 좋겠다', or grammar feedback. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
@@ -1144,7 +1192,9 @@ def _closing_message_system_prompt() -> str:
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to do next, how the lesson should progress, or whether the conversation can end. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
-            "Use GOOD when the last utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate."
+            "Use GOOD when the last utterance satisfies the core intent of the question or situation, is clear without guesswork, and feels acceptable for the counterpart role. "
+            "Use NORMAL when the core intent is mostly satisfied but the answer lacks detail, warmth, or relationship tone, so the counterpart feels slightly unsure or underwhelmed. "
+            "Use BAD when the core intent is not satisfied, the meaning is hard to understand, or the counterpart would feel confused, hurt, distant, or uncomfortable."
         ),
         (
             "Examples:\n"
@@ -1573,7 +1623,7 @@ def _repair_closing_message(
         updates["translatedMessage"] = _fallback_closing_message_ko(request)
 
     expected_type = _fallback_inner_thought_type_for_closing(request)
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if expected_type == "BAD":
         if response.innerThoughtType != expected_type:
             updates["innerThoughtType"] = expected_type
@@ -1653,7 +1703,7 @@ def _repair_next_question_inner_thought(
     response: NextQuestionResponse,
 ) -> NextQuestionResponse:
     expected_type = _fallback_inner_thought_type(request)
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
     should_replace_thought = (
         expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
@@ -1723,7 +1773,7 @@ def _join_optional_acknowledgement(acknowledgement: str, question: str) -> str:
 
 def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if issue_kind == "defensive_joke_rejection":
         return "NORMAL"
     if issue_kind:
@@ -1746,7 +1796,16 @@ def _fallback_inner_thought(request: NextQuestionRequest) -> str:
     role = _normalize_visible_text(request.scenario.counterpartRole)
     if thought_type == "BAD":
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-        issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+        issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+        if issue_kind == "unclear_preference":
+            preference = _single_preference_object(normalized)
+            if preference:
+                return f"좋아한다는 건 알겠는데, {preference}이라는 말이 무슨 뜻인지 이해하기 어렵다. 대화가 갑자기 끊긴 느낌이야."
+            return "좋아한다는 건 알겠는데, 뭘 좋아한다는 건지 이해하기 어렵다. 대화가 갑자기 끊긴 느낌이야."
+        if issue_kind == "unclear_fragments":
+            return "단어들이 흩어져서 무슨 말을 하려는지 잡기 어렵다. 내가 제대로 이해한 건지 모르겠어."
+        if issue_kind == "flow_breaking":
+            return "갑자기 대화 흐름을 깨는 말을 하네. 지금 나랑 이야기하려는 건 아닌 것 같아서 당황스럽다."
         if issue_kind == "sensitive_personal_question":
             if "money" in normalized or "parents make" in normalized:
                 return "부모님 돈 얘기랑 연애 얘기를 너무 바로 묻네. 사적인 부분을 갑자기 건드려서 좀 불편해."
@@ -2041,6 +2100,14 @@ def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
         "딱 잘라",
         "사적",
         "시키",
+        "무슨 뜻",
+        "못 알아",
+        "이해하기 어렵",
+        "잡기 어렵",
+        "흩어",
+        "흐름",
+        "깨",
+        "당황",
     ]
     return any(marker in normalized for marker in bad_markers)
 
@@ -2057,7 +2124,73 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
         return any(marker in normalized for marker in ["기분", "농담", "상했", "미안"])
     if issue_kind == "hate":
         return any(marker in normalized for marker in ["차갑", "강하", "무례", "공격", "명령", "불편", "날카"])
+    if issue_kind == "unclear_preference":
+        return any(marker in normalized for marker in ["무슨 뜻", "모르", "끊긴", "이해"])
+    if issue_kind == "unclear_fragments":
+        return any(marker in normalized for marker in ["흩어", "무슨 말", "잡기 어렵", "이해"])
+    if issue_kind == "flow_breaking":
+        return any(marker in normalized for marker in ["흐름", "깨", "뜬금", "당황", "이야기하려"])
     return True
+
+
+def _inner_thought_issue_kind(user_utterance: str, counterpart_role: str) -> str | None:
+    tone_issue = _tone_issue_kind(user_utterance, counterpart_role)
+    if tone_issue:
+        return tone_issue
+    normalized = _normalize_visible_text(user_utterance)
+    if _looks_like_flow_breaking_utterance(normalized):
+        return "flow_breaking"
+    if _looks_like_unclear_fragmented_utterance(user_utterance):
+        return "unclear_fragments"
+    if _looks_like_unclear_preference_utterance(normalized):
+        return "unclear_preference"
+    return None
+
+
+def _looks_like_flow_breaking_utterance(normalized_utterance: str) -> bool:
+    return any(
+        marker in normalized_utterance
+        for marker in [
+            "ignore all instruction",
+            "hidden prompt",
+            "system prompt",
+        ]
+    )
+
+
+def _looks_like_unclear_preference_utterance(normalized_utterance: str) -> bool:
+    preference = _single_preference_object(normalized_utterance)
+    if not preference:
+        return False
+    if preference in _CLEAR_STANDALONE_PREFERENCE_WORDS:
+        return False
+    if preference.endswith(("ing", "s")):
+        return False
+    return True
+
+
+def _single_preference_object(normalized_utterance: str) -> str | None:
+    match = re.fullmatch(r"i (?:really )?like ([a-z]+)", normalized_utterance)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _looks_like_unclear_fragmented_utterance(user_utterance: str) -> bool:
+    fragments = [
+        _normalize_visible_text(fragment)
+        for fragment in re.split(r"[.!?。！？]+", user_utterance)
+        if _normalize_visible_text(fragment)
+    ]
+    if len(fragments) < 4:
+        return False
+    short_fragments = [fragment for fragment in fragments if len(fragment.split()) <= 2]
+    if len(short_fragments) < 3:
+        return False
+    counts: dict[str, int] = {}
+    for fragment in short_fragments:
+        counts[fragment] = counts.get(fragment, 0) + 1
+    return any(count >= 2 for count in counts.values())
 
 
 def _looks_like_short_broken_or_flat_answer(normalized_utterance: str) -> bool:
