@@ -468,6 +468,43 @@ class ConversationServiceTest(unittest.TestCase):
         self._assert_no_hangul(result.innerThought)
         self.assertIn(result.innerThoughtType, {"GOOD", "NORMAL", "BAD"})
 
+    def test_american_learner_next_question_fallback_inner_thought_avoids_report_style(self):
+        self.service.chat = lambda *args, **kwargs: "not json"
+
+        result = self.service.generate_next_question(
+            self._next_question_request(
+                service_audience="AMERICAN_LEARNER",
+                user_utterance="I don't know what is it.",
+            )
+        )
+
+        self._assert_no_hangul(result.innerThought)
+        self.assertFalse(result.innerThought.startswith("They seem"))
+        self.assertNotIn("which makes", result.innerThought)
+        self.assertNotIn("meaning is only partly clear", result.innerThought)
+
+    def test_american_learner_next_question_fallback_inner_thought_uses_self_talk_style(self):
+        self.service.chat = lambda *args, **kwargs: "not json"
+
+        cases = [
+            "Rice is my life food.",
+            "Hotel no answer. I losted.",
+            "Ramen because cheap.",
+        ]
+
+        for user_utterance in cases:
+            with self.subTest(user_utterance=user_utterance):
+                result = self.service.generate_next_question(
+                    self._next_question_request(
+                        service_audience="AMERICAN_LEARNER",
+                        user_utterance=user_utterance,
+                    )
+                )
+
+                self._assert_no_hangul(result.innerThought)
+                self.assertFalse(result.innerThought.startswith("They "))
+                self.assertNotIn("which makes", result.innerThought)
+
     def test_american_learner_closing_message_fallback_inner_thought_is_english(self):
         from app.models.conversation import ClosingMessageRequest
 
@@ -721,6 +758,46 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_preserves_flexible_food_intent(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "On a first blind date, this can sound like you are not interested in choosing together.",
+            "positiveFeedback": "You tried to be easygoing and flexible.",
+            "feedbackDetail": None,
+            "correctionExpression": "저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?",
+            "correctionReason": "Giving one preference while considering the other person sounds warmer.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="아무거나요. 상관없어요.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.")
+        self.assertNotIn("한식", cached.correctionExpression)
+        self.assertNotIn("파스타", cached.correctionExpression)
+        self.assertIn("no strong preference", cached.correctionReason)
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_allows_short_blind_date_weekend_answer_as_good(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
@@ -924,8 +1001,29 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertIn("fan-sign idol", prompt)
             self.assertIn("same-age K-pop fan friend", prompt)
             self.assertIn("Korean blind date partner", prompt)
+            self.assertIn("immediate private self-talk", prompt)
+            self.assertIn("Do not write observer-report innerThought", prompt)
+            self.assertIn("They seem", prompt)
+            self.assertIn("which makes", prompt)
+            self.assertIn("balanced and pleasant", prompt)
+            self.assertIn("1-2 short sentences", prompt)
             self.assertIn("I should", prompt)
             self.assertIn("Do not write planning thoughts", prompt)
+
+    def test_american_learner_turn_feedback_prompt_preserves_user_intent_like_korean_learner(self):
+        from app.models.conversation import ServiceAudience
+
+        korean_prompt = self.service._turn_feedback_system_prompt(ServiceAudience.KOREAN_LEARNER)
+        american_prompt = self.service._turn_feedback_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+
+        self.assertIn("preserves the user's intent", korean_prompt)
+        self.assertIn("Do not introduce a new idea that the user did not say", korean_prompt)
+        self.assertIn("preserves the user's intent", american_prompt)
+        self.assertIn("Do not introduce a new idea that the user did not say", american_prompt)
+        self.assertIn("Do not invent a food preference", american_prompt)
+        self.assertIn("아무거나요", american_prompt)
+        self.assertIn("저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.", american_prompt)
+        self.assertNotIn("저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?", american_prompt)
 
     def test_american_learner_session_feedback_prompt_targets_korean_learning(self):
         from app.models.conversation import SessionFeedbackRequest, TurnFeedbackData
@@ -5118,6 +5216,44 @@ class ConversationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result.nativeScore, 61)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
+    def test_session_feedback_applies_all_needs_cap_for_korean_learner(self):
+        from app.models.conversation import NativeScoreBreakdown, SessionFeedbackRequest, TurnFeedbackData
+
+        for offset in range(4):
+            self.service._store_turn_feedback(
+                1000,
+                TurnFeedbackData.model_validate({
+                    "turnId": 5000 + offset,
+                    "feedbackType": "NEEDS_IMPROVEMENT",
+                    "koreanAnalogy": "\"조금 어색한 답변\"처럼 들려요.",
+                    "positiveFeedback": "어려운 표현을 시도한 점은 좋아요.",
+                    "feedbackDetail": None,
+                    "correctionExpression": "I can say it more clearly.",
+                    "correctionReason": "현재 표현은 더 부드럽게 다듬을 수 있어요.",
+                    "benchmarkMessage": None,
+                }),
+                native_score_breakdown=NativeScoreBreakdown(
+                    attemptedWordScore=100,
+                    sentenceComplexityScore=100,
+                    comprehensibilityScore=90,
+                ),
+            )
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "sessionId": 1000,
+            "highlightMessage": "어려운 표현에 도전한 사람",
+        })
+
+        result = self.service.generate_session_feedback(
+            SessionFeedbackRequest.model_validate({
+                "sessionId": 1000,
+                "scenario": self._scenario(),
+                "expectedTurnIds": [5000, 5001, 5002, 5003],
+            })
+        )
+
+        self.assertEqual(result.nativeScore, 68)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_american_learner_good_korean_session_scores_above_old_zero_word_floor(self):

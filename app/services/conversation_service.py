@@ -1152,7 +1152,7 @@ def _postprocess_native_score_for_feedback_mix(
     turn_feedback_entries: list[_TurnFeedbackCacheEntry],
     service_audience: ServiceAudience,
 ) -> int:
-    if not _is_american_learner(service_audience) or not turn_feedback_entries:
+    if not turn_feedback_entries:
         return native_score
     if all(
         entry.feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
@@ -1327,6 +1327,9 @@ def _american_learner_next_question_system_prompt() -> str:
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Write immediate private self-talk, not an analysis of the user. "
+            "Do not write observer-report innerThought. Avoid repeated report-style openings or causal summaries such as 'They seem...', 'which makes...', or 'balanced and pleasant'. "
+            "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue. "
@@ -1340,9 +1343,9 @@ def _american_learner_next_question_system_prompt() -> str:
             "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
             "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
             "Bad innerThought style: 'I should keep it calm and leave a good impression.' "
-            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that sounds like they do not really have anything they want to say to me.' "
-            "Good innerThought for a same-age fan friend hearing formal speech: 'They are being polite, but it feels a little distant for a fellow fan.' "
-            "Good innerThought for a blind date partner hearing direct refusal: 'That was very direct, and it stings a bit even though I can accept it.'"
+            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that stings a little. I wanted to hear something warmer.' "
+            "Good innerThought for a same-age fan friend hearing formal speech: 'Nice, the answer is clear. It just feels a bit distant for a fellow fan.' "
+            "Good innerThought for a blind date partner hearing direct refusal: 'Oof, that was direct. I get it, but it stings a bit.'"
         ),
         (
             "Output Schema:\n"
@@ -1480,6 +1483,9 @@ def _american_learner_closing_message_system_prompt() -> str:
             "Inner Thought Policy:\n"
             "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
+            "Write immediate private self-talk, not an analysis of the user. "
+            "Do not write observer-report innerThought. Avoid repeated report-style openings or causal summaries such as 'They seem...', 'which makes...', or 'balanced and pleasant'. "
+            "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
             "Do not write what the counterpart plans to do next, how the conversation should move, or whether the scenario can end. "
             "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD."
@@ -1492,9 +1498,9 @@ def _american_learner_closing_message_system_prompt() -> str:
             "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
             "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
             "Bad innerThought style: 'I should keep it calm and leave a good impression.' "
-            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that sounds like they do not really have anything they want to say to me.' "
-            "Good innerThought for a same-age fan friend hearing formal speech: 'They are being polite, but it feels a little distant for a fellow fan.' "
-            "Good innerThought for a blind date partner hearing direct refusal: 'That was very direct, and it stings a bit even though I can accept it.'"
+            "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that stings a little. I wanted to hear something warmer.' "
+            "Good innerThought for a same-age fan friend hearing formal speech: 'Nice, the answer is clear. It just feels a bit distant for a fellow fan.' "
+            "Good innerThought for a blind date partner hearing direct refusal: 'Oof, that was direct. I get it, but it stings a bit.'"
         ),
         (
             "Output Schema:\n"
@@ -1699,6 +1705,7 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Mark formal answers such as '제 최애는 민지입니다', '입덕했습니다', '가고 싶습니다', or '같이 가고 싶습니다' as NEEDS_IMPROVEMENT and suggest casual fan talk such as '내 최애는 민지야', '유튜브에서 무대 보고 입덕했어', or '응, 같이 가고 싶어'. "
             "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '예쁜 사람이 좋아요' can sound shallow. "
             "If the food question asks both what the user wants to eat and what kind of food they like, a bare category answer such as '한식이요' is too underspecified; mark it NEEDS_IMPROVEMENT and suggest one category plus a specific example. "
+            "For a flexible no-preference answer such as '아무거나요' or '상관없어요', preserve the no-strong-preference intent instead of inventing a food category or restaurant option. "
             "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
             "Short but valid answers such as '집에 있어요', '착한 사람이요', or '네 좋아요' can be GOOD when they directly answer the question and the only issue is that they are brief. "
             "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
@@ -1712,6 +1719,8 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "For NEEDS_IMPROVEMENT, correctionExpression is required and must be the improved Korean expression only. "
             "For NEEDS_IMPROVEMENT, correctionReason is required and must explain in English why correctionExpression is better. "
             "correctionReason must be English-only with no Hangul; refer to the original phrase or improved expression without quoting Korean text. "
+            "Do not introduce a new idea that the user did not say. "
+            "Do not invent a food preference, dish, restaurant, or option that the user did not say. "
             "For GOOD, feedbackDetail must explain in English how well the user did and why. "
             "For GOOD, positiveFeedback must be null. "
             "For GOOD, correctionExpression and correctionReason must be null. "
@@ -1740,7 +1749,7 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "NEEDS_IMPROVEMENT for thin same-age K-pop fan friend answer '영상 봤어.' to '어쩌다 입덕했어?': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a same-age fan friend, this is understandable but too thin to keep the fan story going.","positiveFeedback":"You gave the basic reason that a video made you interested.","feedbackDetail":null,"correctionExpression":"유튜브에서 무대 영상 보고 입덕했어.","correctionReason":"The question asks how you got into the group. Adding where or what kind of video you saw gives the other fan a clearer story to respond to.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date answer '아무거나요.': "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this can sound like you are not interested in choosing together.","positiveFeedback":"You tried to be easygoing and flexible.","feedbackDetail":null,"correctionExpression":"저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?","correctionReason":"On a first date, giving one preference while still considering the other person sounds warmer than saying anything is fine.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this can sound like you are not interested in choosing together.","positiveFeedback":"You tried to be easygoing and flexible.","feedbackDetail":null,"correctionExpression":"저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.","correctionReason":"On a first date, this keeps the no strong preference intent but sounds warmer than saying anything is fine or that you do not care.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date refusal '아니요, 싫어요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"When someone offers help, this sounds like a flat rejection to their face.","positiveFeedback":"You made your refusal clear.","feedbackDetail":null,"correctionExpression":"감사하지만 괜찮아요. 혼자 갈게요.","correctionReason":"A cushion phrase thanks the other person first, so the refusal feels polite instead of abrupt.","benchmarkMessage":null,"detectedPatterns":[]}'
         ),
@@ -2498,13 +2507,13 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
     if normalized == "good":
         return "They did respond, but the one-word answer feels a little dry."
     if "rice is my life food" in normalized:
-        return "They really seem to love rice, even if the wording feels unusual."
+        return "Wow, rice really matters to them. The wording is unusual, but the feeling is clear."
     if "i don t know what is it" in normalized:
-        return "They seem unsure while answering, so the meaning is only partly clear."
+        return "I'm a little lost here. I can only partly follow them."
     if "losted" in normalized or "hotel no answer" in normalized:
-        return "They sound frustrated because the hotel is not responding."
+        return "That sounds stressful. I can tell they need help fast."
     if "ramen" in normalized and "because cheap" in normalized:
-        return "They mean ramen is cheap, so the preference is simple but clear."
+        return "Okay, simple and honest. Cheap ramen is the main point."
     if "recommendation good" in normalized or "ads make me crazy" in normalized:
         return "They liked the recommendation but were clearly annoyed by the ads."
     if "professor" in role or "teacher" in role:
@@ -3324,6 +3333,10 @@ def _postprocess_turn_feedback(
     if tone_feedback:
         return tone_feedback
 
+    flexible_food_feedback = _feedback_for_american_learner_flexible_food_answer(request, feedback)
+    if flexible_food_feedback:
+        return flexible_food_feedback
+
     underwhelming_good_news_feedback = _feedback_for_underwhelming_good_news_reaction(request, feedback)
     if underwhelming_good_news_feedback:
         return underwhelming_good_news_feedback
@@ -3903,6 +3916,38 @@ def _needs_feedback_for_missing_required_question_intent(
     )
 
 
+def _feedback_for_american_learner_flexible_food_answer(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData | None:
+    if not _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
+        return None
+    question = _normalize_visible_text(request.turn.aiQuestion)
+    if not (
+        "뭐" in question
+        and "드시고" in question
+        and "좋아하는 음식" in question
+        and _looks_like_flexible_korean_food_answer(request.turn.userUtterance)
+    ):
+        return None
+    return TurnFeedbackData(
+        turnId=feedback.turnId,
+        feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+        koreanAnalogy=(
+            "On a first blind date, this keeps things flexible but can sound like "
+            "you are not interested in choosing together."
+        ),
+        feedbackDetail=None,
+        correctionExpression="저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.",
+        correctionReason=(
+            "This keeps the no strong preference intent, but it sounds warmer and more engaged "
+            "than saying anything is fine or that you do not care."
+        ),
+        positiveFeedback="You tried to be easygoing and flexible.",
+        benchmarkMessage=None,
+    )
+
+
 def _looks_like_bare_korean_food_category_answer(utterance: str) -> bool:
     compact = utterance.replace(" ", "")
     return compact in {
@@ -3911,6 +3956,11 @@ def _looks_like_bare_korean_food_category_answer(utterance: str) -> bool:
         "한국음식",
         "한국음식이요",
     }
+
+
+def _looks_like_flexible_korean_food_answer(utterance: str) -> bool:
+    compact = re.sub(r"[\s.,!?。]+", "", utterance)
+    return "아무거나" in compact or "상관없" in compact
 
 
 def _looks_like_only_video_watched_answer(utterance: str) -> bool:

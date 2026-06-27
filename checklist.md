@@ -1,5 +1,17 @@
 # 작업 체크리스트
 
+## 점수 정책 공통화와 AMERICAN_LEARNER 말투/교정 보정
+
+- [x] 한국인 대상 turn-feedback 프롬프트의 correctionExpression 의도 보존 기준을 확인한다.
+- [x] 작업 계획을 문서화하고 현재 결정 사항을 `context-notes.md`에 기록한다.
+- [x] 모든 `NEEDS_IMPROVEMENT` 세션 점수 상한이 audience와 무관하게 적용되는 RED 테스트를 추가한다.
+- [x] `AMERICAN_LEARNER` innerThought가 관찰 리포트체가 아니라 짧은 속마음체가 되도록 RED 테스트를 추가한다.
+- [x] `아무거나요. 상관없어요.` 교정이 새 취향을 invent하지 않고 원 입력을 +1 개선하도록 RED 테스트를 추가한다.
+- [x] 최소 구현으로 점수 정책, 속마음 프롬프트, 교정 예시와 후처리를 보정한다.
+- [x] fallback innerThought의 남은 `They ...` 리포트형 문구를 self-talk 스타일로 보정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+
 ## AMERICAN_LEARNER 짧지만 유효한 답변 재분류
 
 - [x] 짧지만 질문에 답한 표현은 GOOD으로 허용하는 기준을 기록한다.
