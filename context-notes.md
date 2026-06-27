@@ -1,5 +1,8 @@
 # 작업 맥락 기록
 
+- 2026-06-27 prompt cleanup 추가 기준을 적용한다. `아무거나요` 계열 no-preference 교정은 새 취향을 만들지 않고 warmth 또는 collaborative intent만 더해야 한다. `innerThought` prompt의 bad phrase는 `They seem`, `which makes`, `balanced and pleasant` 같은 literal 문장을 직접 노출하지 않고 third-person analysis, causal report clauses, evaluator adjectives 같은 패턴명으로 설명한다. fallback도 사용자에게 직접 보일 수 있으므로 `They ...` 시작 관찰문을 self-talk 스타일로 맞춘다.
+- 2026-06-27 RED 테스트는 `adds preference` 잔존, literal bad phrase 잔존, fallback `They ...` 시작 문구로 실패했고, GREEN 구현 후 focused 3개, `tests.test_conversation_service` 190개, 전체 `unittest discover -s tests -p 'test*.py'` 233개, `compileall app tests scripts`, `git diff --check`가 통과했다.
+
 - 2026-06-27 새 작업 기준을 잡는다. `AMERICAN_LEARNER`와 `KOREAN_LEARNER`는 점수 해석과 GOOD/NEEDS feedback-mix 정책을 공유해야 한다. 언어별 단어 수와 문장 복잡도 계산은 다를 수 있지만, 모든 턴이 `NEEDS_IMPROVEMENT`일 때 좋은 점수대로 올라가지 않게 제한하는 정책은 audience-specific 임시 보정이 아니라 공통 정책이어야 한다.
 - 2026-06-27 한국인 대상 turn-feedback 프롬프트를 확인했다. `NEEDS_IMPROVEMENT Gate`는 `preserves the user's intent`를 요구하고, Field Policy에는 `Do not add emotions or relationships that the user did not say`, `Do not introduce a new idea that the user did not say`가 이미 있다. 미국인 대상 프롬프트도 `preserves the user's intent`는 있으나, 소개팅 음식 예시가 `아무거나요`를 사용자가 말하지 않은 `한식/파스타` 선호로 바꾸고 있어 기준과 예시가 충돌한다.
 - 2026-06-27 속마음 말투 기준을 적용한다. `innerThought`는 제3자 관찰 리포트가 아니라 상대 캐릭터의 짧은 즉시 반응이어야 한다. `They seem...`, `which makes...`, `balanced and pleasant` 같은 설명문 패턴은 줄이고, 짧은 현재 감정과 관계 신호 중심으로 유도한다.

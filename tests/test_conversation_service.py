@@ -490,6 +490,8 @@ class ConversationServiceTest(unittest.TestCase):
             "Rice is my life food.",
             "Hotel no answer. I losted.",
             "Ramen because cheap.",
+            "Stop asking me.",
+            "I like pizza because it is spicy.",
         ]
 
         for user_utterance in cases:
@@ -504,6 +506,22 @@ class ConversationServiceTest(unittest.TestCase):
                 self._assert_no_hangul(result.innerThought)
                 self.assertFalse(result.innerThought.startswith("They "))
                 self.assertNotIn("which makes", result.innerThought)
+
+        server_request = self._next_question_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="Could I get iced coffee, please?",
+        )
+        server_request = server_request.model_copy(update={
+            "scenario": server_request.scenario.model_copy(update={
+                "counterpartRole": "cafe server",
+            }),
+        })
+
+        server_result = self.service.generate_next_question(server_request)
+
+        self._assert_no_hangul(server_result.innerThought)
+        self.assertFalse(server_result.innerThought.startswith("They "))
+        self.assertNotIn("which makes", server_result.innerThought)
 
     def test_american_learner_closing_message_fallback_inner_thought_is_english(self):
         from app.models.conversation import ClosingMessageRequest
@@ -1003,9 +1021,12 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertIn("Korean blind date partner", prompt)
             self.assertIn("immediate private self-talk", prompt)
             self.assertIn("Do not write observer-report innerThought", prompt)
-            self.assertIn("They seem", prompt)
-            self.assertIn("which makes", prompt)
-            self.assertIn("balanced and pleasant", prompt)
+            self.assertIn("third-person analysis", prompt)
+            self.assertIn("causal report clauses", prompt)
+            self.assertIn("evaluator adjectives", prompt)
+            self.assertNotIn("They seem", prompt)
+            self.assertNotIn("which makes", prompt)
+            self.assertNotIn("balanced and pleasant", prompt)
             self.assertIn("1-2 short sentences", prompt)
             self.assertIn("I should", prompt)
             self.assertIn("Do not write planning thoughts", prompt)
@@ -1021,6 +1042,11 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("preserves the user's intent", american_prompt)
         self.assertIn("Do not introduce a new idea that the user did not say", american_prompt)
         self.assertIn("Do not invent a food preference", american_prompt)
+        self.assertIn(
+            "add warmth or collaborative intent without inventing a specific food, dish, or restaurant unless the user said it",
+            american_prompt,
+        )
+        self.assertNotIn("adds preference", american_prompt)
         self.assertIn("아무거나요", american_prompt)
         self.assertIn("저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.", american_prompt)
         self.assertNotIn("저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?", american_prompt)

@@ -1328,7 +1328,7 @@ def _american_learner_next_question_system_prompt() -> str:
             "innerThought must be the counterpart's first-person private reaction to the user's utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Write immediate private self-talk, not an analysis of the user. "
-            "Do not write observer-report innerThought. Avoid repeated report-style openings or causal summaries such as 'They seem...', 'which makes...', or 'balanced and pleasant'. "
+            "Do not write observer-report innerThought. Avoid observer-report openings using third-person analysis, causal report clauses, or evaluator adjectives. "
             "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
             "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
@@ -1484,7 +1484,7 @@ def _american_learner_closing_message_system_prompt() -> str:
             "innerThought must be the counterpart's first-person private reaction to the user's last utterance, written in English. "
             "It must sound like what that role would secretly think, not a feedback explanation or grammar note. "
             "Write immediate private self-talk, not an analysis of the user. "
-            "Do not write observer-report innerThought. Avoid repeated report-style openings or causal summaries such as 'They seem...', 'which makes...', or 'balanced and pleasant'. "
+            "Do not write observer-report innerThought. Avoid observer-report openings using third-person analysis, causal report clauses, or evaluator adjectives. "
             "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
             "Do not write what the counterpart plans to do next, how the conversation should move, or whether the scenario can end. "
             "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'. "
@@ -1706,7 +1706,7 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '예쁜 사람이 좋아요' can sound shallow. "
             "If the food question asks both what the user wants to eat and what kind of food they like, a bare category answer such as '한식이요' is too underspecified; mark it NEEDS_IMPROVEMENT and suggest one category plus a specific example. "
             "For a flexible no-preference answer such as '아무거나요' or '상관없어요', preserve the no-strong-preference intent instead of inventing a food category or restaurant option. "
-            "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
+            "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that can add warmth or collaborative intent without inventing a specific food, dish, or restaurant unless the user said it. "
             "Short but valid answers such as '집에 있어요', '착한 사람이요', or '네 좋아요' can be GOOD when they directly answer the question and the only issue is that they are brief. "
             "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
             "Mark them NEEDS_IMPROVEMENT and suggest a cushion phrase such as '그래도 될까요? 감사합니다' for acceptance or '감사하지만 괜찮아요. 혼자 갈게요' for refusal."
@@ -2484,7 +2484,7 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
         if "hate fish" in normalized or "don t make that" in normalized or "don't make that" in normalized:
             return "I understand they cannot eat fish, but that sounded a bit cold."
         if "stop asking" in normalized:
-            return "They are telling me to stop asking, so it feels like they do not want to keep talking."
+            return "Oof, this feels like they do not want to keep talking."
         if "friend" in role or "roommate" in role:
             return "That feels a little cold, like they are irritated with me."
         return "I can roughly understand the intention, but it feels pretty blunt."
@@ -2493,19 +2493,19 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
         if "keep it down" in normalized and "early class" in normalized:
             return "I may have been too loud, and their early class makes the request easy to understand."
         if _looks_like_polite_service_request(normalized, request.scenario.counterpartRole):
-            return "They asked politely and clearly, so it is easy to help them."
+            return "Nice, that was clear and polite. Helping them feels easy."
         if "professor" in role or "teacher" in role:
-            return "They explained the point calmly, so it is easy for me to understand."
+            return "Good, the point is calm and clear. I can understand it easily."
         if "staff" in role or "barista" in role or "server" in role:
-            return "They made the request clearly, so it is easy to respond."
-        return "They gave enough of a reason, so I can understand what they mean."
+            return "Clear and polite. This is easy to respond to."
+        return "Nice, I can follow the reason clearly."
 
     if issue_kind == "defensive_joke_rejection":
         return "That was not just a joke to them, so I feel a little sorry."
     if "no plan" in normalized and "just go" in normalized:
-        return "They move without much of a plan, which feels a little sudden."
+        return "Whoa, that feels a little sudden without much of a plan."
     if normalized == "good":
-        return "They did respond, but the one-word answer feels a little dry."
+        return "Okay, that's an answer, but it feels a little dry."
     if "rice is my life food" in normalized:
         return "Wow, rice really matters to them. The wording is unusual, but the feeling is clear."
     if "i don t know what is it" in normalized:
@@ -2515,13 +2515,13 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
     if "ramen" in normalized and "because cheap" in normalized:
         return "Okay, simple and honest. Cheap ramen is the main point."
     if "recommendation good" in normalized or "ads make me crazy" in normalized:
-        return "They liked the recommendation but were clearly annoyed by the ads."
+        return "Glad the recommendation worked. The ads part still feels clearly annoying."
     if "professor" in role or "teacher" in role:
         return "I heard the answer, but I am still not sure what help they need."
     if "staff" in role or "barista" in role or "server" in role:
         return "I can tell they want to order, but the exact request is still not clear."
     if "roommate" in role:
-        return "They answered briefly, so it still feels a bit distant."
+        return "That was brief, so it still feels a bit distant."
     return "I can understand the basic meaning, but their feeling is still a little unclear."
 
 

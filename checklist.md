@@ -1,5 +1,14 @@
 # 작업 체크리스트
 
+## AMERICAN_LEARNER prompt cleanup and direct AI smoke
+
+- [x] `adds preference` 문구 제거, literal bad phrase 제거, fallback `They ...` 제거 기준을 RED 테스트로 고정한다.
+- [x] 프롬프트와 fallback 문구를 최소 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 변경 사항을 커밋하고 AI API에 반영한다.
+- [ ] AI API 직접 호출로 부사, 조사, 존댓말 오류 케이스를 실행한다.
+- [ ] 꼬리 질문, 속마음, 피드백 결과를 채팅에 정리한다.
+
 ## 점수 정책 공통화와 AMERICAN_LEARNER 말투/교정 보정
 
 - [x] 한국인 대상 turn-feedback 프롬프트의 correctionExpression 의도 보존 기준을 확인한다.
