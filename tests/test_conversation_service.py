@@ -327,7 +327,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("Let's keep going", result.aiQuestion)
         self.assertNotIn("계속 이어가", result.translatedQuestion)
 
-    def test_next_question_removes_model_got_it_acknowledgement_when_user_utterance_is_unclear(self):
+    def test_next_question_keeps_model_got_it_acknowledgement_without_extra_policy(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Okay, got it. Do you cook often?",
             "translatedQuestion": "그래, 알겠어. 요리는 자주 하나요?",
@@ -337,12 +337,10 @@ class ConversationServiceTest(unittest.TestCase):
             self._next_question_request(user_utterance="Honey no I like veal. Tool. Pill. Pill. Pill.")
         )
 
-        self.assertEqual(result.aiQuestion, "Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
-        self.assertNotIn("got it", result.aiQuestion.lower())
-        self.assertNotIn("알겠어", result.translatedQuestion)
+        self.assertEqual(result.aiQuestion, "Okay, got it. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "그래, 알겠어. 요리는 자주 하나요?")
 
-    def test_next_question_removes_any_acknowledgement_when_unclear_utterance_has_repeated_fragments(self):
+    def test_next_question_keeps_model_acknowledgement_for_repeated_fragments_without_extra_policy(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Maybe that’s a no on cleaning. Do you cook often?",
             "translatedQuestion": "청소는 좀 별로라는 뜻인가 보네. 요리는 자주 하나요?",
@@ -352,10 +350,8 @@ class ConversationServiceTest(unittest.TestCase):
             self._next_question_request(user_utterance="Honey no I like veal. Tool. Pill. Pill. Pill.")
         )
 
-        self.assertEqual(result.aiQuestion, "Do you cook often?")
-        self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
-        self.assertNotIn("no on cleaning", result.aiQuestion)
-        self.assertNotIn("청소는 좀 별로", result.translatedQuestion)
+        self.assertEqual(result.aiQuestion, "Maybe that’s a no on cleaning. Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "청소는 좀 별로라는 뜻인가 보네. 요리는 자주 하나요?")
 
     def test_next_question_repairs_blunt_inner_thought_from_model_output(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
@@ -582,14 +578,15 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThought, raw_inner_thought)
         self.assertEqual(result.innerThoughtType, "NORMAL")
 
-    def test_next_question_strips_scripted_future_sentence_when_repair_fallback_is_disabled(self):
+    def test_next_question_preserves_scripted_future_inner_thought_when_repair_fallback_is_disabled(self):
         from app.models.conversation import NextQuestionRequest
 
         self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        raw_inner_thought = "음... 무슨 말을 하려던 건지 잘 안 잡히네. 일단 파티 얘기로 넘어가 보자."
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Maybe that was a typo? Do you like parties?",
             "translatedQuestion": "아마 오타였나 보네? 파티 좋아해?",
-            "innerThought": "음... 무슨 말을 하려던 건지 잘 안 잡히네. 일단 파티 얘기로 넘어가 보자.",
+            "innerThought": raw_inner_thought,
             "innerThoughtType": "NORMAL",
         })
         request = NextQuestionRequest.model_validate({
@@ -618,9 +615,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(request)
 
-        self.assertEqual(result.innerThought, "음... 무슨 말을 하려던 건지 잘 안 잡히네.")
-        self.assertNotIn("넘어가", result.innerThought)
-        self.assertNotIn("파티 얘기", result.innerThought)
+        self.assertEqual(result.innerThought, raw_inner_thought)
         self.assertEqual(result.innerThoughtType, "NORMAL")
 
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):

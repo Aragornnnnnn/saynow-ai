@@ -1488,17 +1488,6 @@ def _repair_next_question_drift(
 ) -> NextQuestionResponse:
     fixed_question_en = request.nextQuestion.questionEn
     fixed_question_ko = request.nextQuestion.questionKo
-    if (
-        _looks_like_unclear_fragmented_utterance(request.currentTurn.userUtterance)
-        and _contains_text(response.aiQuestion, fixed_question_en)
-        and _contains_text(response.translatedQuestion, fixed_question_ko)
-    ):
-        return NextQuestionResponse(
-            aiQuestion=fixed_question_en,
-            translatedQuestion=fixed_question_ko,
-            innerThought=response.innerThought,
-            innerThoughtType=response.innerThoughtType,
-        )
     if _same_visible_text(response.aiQuestion, fixed_question_en) and _same_visible_text(
         response.translatedQuestion,
         fixed_question_ko,
@@ -1671,16 +1660,6 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    trimmed_inner_thought = _strip_scripted_future_inner_thought_sentences(
-        request,
-        response.innerThought,
-    )
-    if (
-        not _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED
-        and trimmed_inner_thought
-        and trimmed_inner_thought != response.innerThought
-    ):
-        updates["innerThought"] = trimmed_inner_thought
     if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought(request)
     if not updates:
@@ -1914,33 +1893,6 @@ def _is_scripted_future_inner_thought(
     return _leaks_next_question_topic(request, normalized)
 
 
-def _strip_scripted_future_inner_thought_sentences(
-    request: NextQuestionRequest,
-    inner_thought: str,
-) -> str:
-    ellipsis_placeholder = "<ELLIPSIS>"
-    protected_inner_thought = inner_thought.replace("...", ellipsis_placeholder)
-    parts = re.findall(r"[^.!?。！？]+[.!?。！？]?", protected_inner_thought)
-    if not parts:
-        return inner_thought.strip()
-
-    kept: list[str] = []
-    removed = False
-    for part in parts:
-        sentence = part.strip()
-        if not sentence:
-            continue
-        normalized = _normalize_visible_text(sentence)
-        if _has_future_inner_thought_marker(sentence) or _leaks_next_question_topic(request, normalized):
-            removed = True
-            continue
-        kept.append(sentence)
-
-    if not removed or not kept:
-        return inner_thought.strip()
-    return " ".join(kept).replace(ellipsis_placeholder, "...").strip()
-
-
 def _has_future_inner_thought_marker(inner_thought: str) -> bool:
     normalized = _normalize_visible_text(inner_thought)
     future_markers = [
@@ -1949,10 +1901,6 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "다음 얘기",
         "다음 이야기",
         "넘어가면",
-        "넘어가자",
-        "넘어 가자",
-        "넘어가 보자",
-        "넘어 가 보자",
         "이어가면",
         "이어 가면",
         "이어가야",
@@ -2497,9 +2445,6 @@ def _has_generic_acknowledgement(ai_question: str) -> bool:
         "thanks for sharing",
         "thank you for sharing",
         "i see",
-        "okay got it",
-        "ok got it",
-        "got it",
         "interesting",
         "that sounds like a fun trip",
     ]
@@ -2525,25 +2470,6 @@ def _has_overinterpreted_acknowledgement_for_vague_answer(
         "sounds interesting",
     ]
     return any(normalized_ai_question.startswith(start) for start in overinterpreted_starts)
-
-
-def _looks_like_unclear_fragmented_utterance(user_utterance: str) -> bool:
-    fragments = [
-        _normalize_visible_text(fragment)
-        for fragment in re.split(r"[.!?。！？]+", user_utterance)
-        if _normalize_visible_text(fragment)
-    ]
-    if len(fragments) < 3:
-        return False
-
-    short_fragments = [fragment for fragment in fragments if len(fragment.split()) <= 2]
-    if len(short_fragments) < 3:
-        return False
-
-    counts: dict[str, int] = {}
-    for fragment in short_fragments:
-        counts[fragment] = counts.get(fragment, 0) + 1
-    return any(count >= 2 for count in counts.values())
 
 
 def _clean_acknowledgement_fragment(value: str) -> str:
