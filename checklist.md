@@ -1107,3 +1107,13 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] SSM prod 설정을 주입한 로컬 직접 AI smoke로 핵심 회귀 4개를 확인한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.
+
+## AMERICAN_LEARNER innerThoughtType rubric 정리
+
+- [x] 승인된 GOOD/NORMAL/BAD 기준을 goal과 plan 문서로 고정한다.
+- [x] AMERICAN_LEARNER conversation prompt가 새 rubric을 명시하는 RED 테스트를 추가한다.
+- [x] 핵심 의도 미충족 답변이 BAD로 보정되는 RED 테스트를 추가한다.
+- [x] 짧지만 핵심 의도는 있는 답변이 NORMAL로 남는 guard 테스트를 추가한다.
+- [x] prompt와 fallback/repair 기준을 최소 범위로 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.

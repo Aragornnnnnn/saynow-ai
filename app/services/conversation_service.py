@@ -1336,7 +1336,12 @@ def _american_learner_next_question_system_prompt() -> str:
             "Write immediate private self-talk, not an analysis of the user. "
             "Do not write observer-report innerThought. Avoid observer-report openings using third-person analysis, causal report clauses, or evaluator adjectives. "
             "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
-            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, role-inappropriate, severely off-topic, or confusing enough to break the conversation flow. "
+            "Approved innerThoughtType rubric: "
+            "Use GOOD when the utterance satisfies the current question or situation's core intent, has clear meaning, and is acceptable for the counterpart role. "
+            "Use NORMAL when the core intent is mostly satisfied, but the answer has too little information or weak emotional/relationship tone, so the counterpart feels slightly unsure or underwhelmed. "
+            "Use BAD when the core intent is not satisfied, meaning is hard to understand, or the counterpart would feel confused, hurt, distant, or uncomfortable enough that the flow is damaged. "
+            "Before choosing NORMAL, verify that the user mostly answered the required core intent. "
+            "Do not use NORMAL as a catch-all for missing, unclear, or relationship-damaging answers. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue. "
             "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'."
@@ -1494,6 +1499,12 @@ def _american_learner_closing_message_system_prompt() -> str:
             "Write immediate private self-talk, not an analysis of the user. "
             "Do not write observer-report innerThought. Avoid observer-report openings using third-person analysis, causal report clauses, or evaluator adjectives. "
             "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
+            "Approved innerThoughtType rubric: "
+            "Use GOOD when the utterance satisfies the current question or situation's core intent, has clear meaning, and is acceptable for the counterpart role. "
+            "Use NORMAL when the core intent is mostly satisfied, but the answer has too little information or weak emotional/relationship tone, so the counterpart feels slightly unsure or underwhelmed. "
+            "Use BAD when the core intent is not satisfied, meaning is hard to understand, or the counterpart would feel confused, hurt, distant, or uncomfortable enough that the flow is damaged. "
+            "Before choosing NORMAL, verify that the user mostly answered the required core intent. "
+            "Do not use NORMAL as a catch-all for missing, unclear, or relationship-damaging answers. "
             "Do not write what the counterpart plans to do next, how the conversation should move, or whether the scenario can end. "
             "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD."
@@ -2463,7 +2474,62 @@ def _conversation_issue_kind(
         return tone_issue
     if _is_off_topic_flow_break(request, service_audience=service_audience):
         return "off_topic_flow_break"
+    if _is_core_intent_missing_flow_break(request, service_audience=service_audience):
+        return "missing_core_intent"
     return None
+
+
+def _is_core_intent_missing_flow_break(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> bool:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if not _is_american_learner(effective_service_audience):
+        return False
+    question = _normalize_visible_text(
+        f"{request.currentTurn.aiQuestion} {request.currentTurn.translatedQuestion}"
+    )
+    answer = _normalize_visible_text(request.currentTurn.userUtterance)
+    if not answer:
+        return True
+    if _question_requires_specific_person_answer(question):
+        return _is_generic_agreement_without_required_slot(answer)
+    return False
+
+
+def _question_requires_specific_person_answer(question: str) -> bool:
+    return ("최애" in question or "bias" in question) and ("누구" in question or "who" in question)
+
+
+def _is_generic_agreement_without_required_slot(answer: str) -> bool:
+    tokens = answer.split()
+    if not tokens:
+        return True
+    generic_tokens = {
+        "응",
+        "네",
+        "예",
+        "맞아",
+        "맞아요",
+        "좋아",
+        "좋아해",
+        "좋아해요",
+        "좋아요",
+        "yes",
+        "yeah",
+        "yep",
+        "i",
+        "do",
+        "like",
+        "them",
+        "it",
+        "too",
+        "also",
+    }
+    has_agreement = any(token in {"응", "네", "예", "맞아", "맞아요", "yes", "yeah", "yep"} for token in tokens)
+    has_like = any(token in {"좋아", "좋아해", "좋아해요", "좋아요", "like"} for token in tokens)
+    return all(token in generic_tokens for token in tokens) and (has_agreement or has_like)
 
 
 def _is_off_topic_flow_break(
@@ -2593,6 +2659,8 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
     if thought_type == "BAD":
         if issue_kind == "off_topic_flow_break":
             return "Wait, that is completely off-topic. I am caught off guard."
+        if issue_kind == "missing_core_intent":
+            return "Wait, that does not answer what I asked. I still do not know their actual answer."
         if issue_kind == "sensitive_personal_question":
             return "That jumps into private topics too directly, so it feels uncomfortable."
         if issue_kind == "chores_deflection":
@@ -2653,6 +2721,8 @@ def _fallback_inner_thought_ko(request: NextQuestionRequest) -> str:
         issue_kind = _conversation_issue_kind(request)
         if issue_kind == "off_topic_flow_break":
             return "갑자기 질문이랑 전혀 다른 말이 나오네. 좀 당황스럽다."
+        if issue_kind == "missing_core_intent":
+            return "질문한 핵심에는 답이 없네. 아직 뭘 말하려는지 잘 모르겠다."
         if issue_kind == "sensitive_personal_question":
             if "money" in normalized or "parents make" in normalized:
                 return "부모님 돈 얘기랑 연애 얘기를 너무 바로 묻네. 사적인 부분을 갑자기 건드려서 좀 불편해."
@@ -2960,8 +3030,12 @@ def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
         "off topic",
         "caught off guard",
         "confusing",
+        "not answer",
+        "does not answer",
+        "doesn t answer",
         "뜬금",
         "당황",
+        "답이 없",
     ]
     return any(marker in normalized for marker in bad_markers)
 
@@ -2985,6 +3059,11 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
         )
         has_positive_spin = any(marker in normalized for marker in ["cute", "playful", "funny", "amused", "귀엽"])
         return has_confusion and not has_positive_spin
+    if issue_kind == "missing_core_intent":
+        return any(
+            marker in normalized
+            for marker in ["not answer", "does not answer", "doesn t answer", "still do not know", "답이 없", "모르겠"]
+        )
     return True
 
 

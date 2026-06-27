@@ -1123,6 +1123,126 @@ class ConversationServiceTest(unittest.TestCase):
             self.assertIn("I should", prompt)
             self.assertIn("Do not write planning thoughts", prompt)
 
+    def test_american_learner_conversation_prompts_include_approved_inner_thought_type_rubric(self):
+        from app.models.conversation import ServiceAudience
+
+        next_prompt = self.service._next_question_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+        closing_prompt = self.service._closing_message_system_prompt(ServiceAudience.AMERICAN_LEARNER)
+
+        for prompt in (next_prompt, closing_prompt):
+            self.assertIn("Approved innerThoughtType rubric", prompt)
+            self.assertIn(
+                "GOOD when the utterance satisfies the current question or situation's core intent",
+                prompt,
+            )
+            self.assertIn(
+                "NORMAL when the core intent is mostly satisfied",
+                prompt,
+            )
+            self.assertIn(
+                "BAD when the core intent is not satisfied",
+                prompt,
+            )
+            self.assertIn("meaning is hard to understand", prompt)
+            self.assertIn("confused, hurt, distant, or uncomfortable", prompt)
+            self.assertIn("Before choosing NORMAL", prompt)
+            self.assertIn("Do not use NORMAL as a catch-all", prompt)
+
+    def test_american_learner_bias_question_generic_like_answer_is_bad_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "그래도 좋아하는구나. 헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+            "translatedQuestion": "So you do like them. OMG we have similar taste! How'd you get into them?",
+            "innerThought": "They like the group, but the answer is a bit short.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "One-on-One Chat with a Fellow Fan",
+                "briefing": "The learner is chatting casually with a same-age Korean K-pop fan friend.",
+                "conversationGoal": "Use casual, friendly Korean while answering the fan friend's questions.",
+                "counterpartRole": "same-age K-pop fan friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕! 어 너도 이 그룹 좋아해? 나도야! 너 최애 누구야?",
+                "translatedQuestion": "Hi! Oh, you like this group too? Me too! Who's your bias?",
+                "userUtterance": "응 좋아해.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "questionKo": "OMG we have similar taste! How'd you get into them?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertIn("not answer", result.innerThought.lower())
+
+    def test_american_learner_thin_core_intent_answers_stay_normal_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        cases = [
+            {
+                "question": "안녕! 어 너도 이 그룹 좋아해? 나도야! 너 최애 누구야?",
+                "translated": "Hi! Oh, you like this group too? Me too! Who's your bias?",
+                "utterance": "민지.",
+                "nextKo": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "nextEn": "OMG we have similar taste! How'd you get into them?",
+            },
+            {
+                "question": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "translated": "OMG we have similar taste! How'd you get into them?",
+                "utterance": "영상 봤어.",
+                "nextKo": "너 오프라인 콘서트나 팬싸 가본 적 있어? 아님 나중에 갈 생각 있어?",
+                "nextEn": "Have you ever been to a concert or fan-sign in person? Or are you thinking of going sometime?",
+            },
+        ]
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(utterance=case["utterance"]):
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "aiQuestion": f"알겠어. {case['nextKo']}",
+                    "translatedQuestion": f"Got it. {case['nextEn']}",
+                    "innerThought": "Okay, I get the basic answer, but I wish there were a little more.",
+                    "innerThoughtType": "NORMAL",
+                })
+                request = NextQuestionRequest.model_validate({
+                    "sessionId": 1000 + index,
+                    "submittedTurnId": 5000 + index,
+                    "submittedSequence": index,
+                    "scenario": {
+                        **self._scenario(service_audience="AMERICAN_LEARNER"),
+                        "title": "One-on-One Chat with a Fellow Fan",
+                        "briefing": "The learner is chatting casually with a same-age Korean K-pop fan friend.",
+                        "conversationGoal": "Use casual, friendly Korean while answering the fan friend's questions.",
+                        "counterpartRole": "same-age K-pop fan friend",
+                    },
+                    "currentTurn": {
+                        "aiQuestion": case["question"],
+                        "translatedQuestion": case["translated"],
+                        "userUtterance": case["utterance"],
+                    },
+                    "nextQuestion": {
+                        "questionId": 102 + index,
+                        "sequence": index + 1,
+                        "questionEn": case["nextKo"],
+                        "questionKo": case["nextEn"],
+                    },
+                })
+
+                result = self.service.generate_next_question(request)
+
+                self.assertEqual(result.innerThoughtType, "NORMAL")
+                self._assert_no_hangul(result.innerThought)
+
     def test_american_learner_turn_feedback_prompt_preserves_user_intent_like_korean_learner(self):
         from app.models.conversation import ServiceAudience
 
