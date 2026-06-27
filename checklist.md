@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## AMERICAN_LEARNER 점수 band와 프롬프트 품질 보정
+
+- [x] 작업 계획을 `docs/superpowers/plans/2026-06-27-american-learner-feedback-band-and-prompt-calibration.md`에 기록한다.
+- [x] GOOD 개수별 nativeScore band 계약을 RED 테스트로 고정한다.
+- [x] 팬사인회 Q1, 소개팅 Q4, 콘서트 목적격 조사 과교정 기준을 프롬프트 품질 RED 테스트로 고정한다.
+- [x] score band clamp를 구현한다.
+- [x] `AMERICAN_LEARNER` turn-feedback 프롬프트에 Relationship Fit, Minimal Particle Correction, contrastive few-shot, self-check 기준을 추가한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 변경 사항을 의미 있는 단위로 커밋한다.
+- [ ] 필요하면 main push와 배포 후 AI API 직접 smoke로 확인한다.
+
 ## AMERICAN_LEARNER prompt cleanup and direct AI smoke
 
 - [x] `adds preference` 문구 제거, literal bad phrase 제거, fallback `They ...` 제거 기준을 RED 테스트로 고정한다.
@@ -1084,4 +1095,15 @@
 - [x] 모델이 오프토픽 답변을 장난/귀여움으로 넘겨도 BAD 속마음으로 보정하는 RED 테스트를 추가한다.
 - [x] `BAD` 기준을 대화 흐름 붕괴와 상대 당황까지 포함하도록 프롬프트와 fallback을 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.
+
+## AMERICAN_LEARNER 점수 band와 프롬프트 품질 보정
+
+- [x] 점수 band 기준과 문장 하드코딩 금지 기준을 plan 문서로 정리한다.
+- [x] GOOD 개수별 nativeScore band를 RED 테스트로 고정한다.
+- [x] 팬사인회 warm answer, 소개팅 abrupt boundary, `콘서트를` 조사 보존 프롬프트 기준을 RED 테스트로 고정한다.
+- [x] `AMERICAN_LEARNER` 세션 점수를 GOOD 0개 50점, 1개 55-64점, 2개 65-74점, 3개 75-89점, 4개 90-100점으로 보정한다.
+- [x] 문장 감지 하드코딩 없이 평가 정책, self-check, contrastive example로 프롬프트를 보정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] SSM prod 설정을 주입한 로컬 직접 AI smoke로 핵심 회귀 4개를 확인한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.

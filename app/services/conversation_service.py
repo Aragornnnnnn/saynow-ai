@@ -1154,12 +1154,18 @@ def _postprocess_native_score_for_feedback_mix(
 ) -> int:
     if not turn_feedback_entries:
         return native_score
-    if all(
-        entry.feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
-        for entry in turn_feedback_entries
-    ):
-        return min(native_score, 68)
-    return native_score
+    good_count = sum(
+        1 for entry in turn_feedback_entries if entry.feedback.feedbackType == FeedbackType.GOOD
+    )
+    band_by_good_count = {
+        0: (50, 50),
+        1: (55, 64),
+        2: (65, 74),
+        3: (75, 89),
+        4: (90, 100),
+    }
+    lower_bound, upper_bound = band_by_good_count[min(good_count, 4)]
+    return _clamp_score(native_score, lower_bound, upper_bound)
 
 
 def _purge_expired_turn_feedbacks_locked(now: float) -> None:
@@ -1687,7 +1693,9 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Conversation Flow Gate: for open-ended personal questions, the answer must give enough concrete detail for the counterpart to respond naturally. "
             "Shortness alone is not an actionable issue when the answer directly satisfies the question and does not create a relationship or tact problem. "
             "A grammatically correct but conversation-closing answer is actionable only when it fails a required intent slot or sends a clearly cold, uninterested, rude, or culturally mismatched signal. "
+            "Relationship Fit Gate: judge whether the answer fits the scenario relationship, such as fan-sign warmth, same-age fan-friend casualness, or first-date tact. "
             "Actionable Issue Gate: first check whether Korean grammar, particles, verb endings, word choice, word order, politeness, nuance, or relevance creates a real correction point. "
+            "Minimal Particle Correction Gate: do not remove a valid object particle such as 을 or 를 just to make a sentence shorter; correct particles only when the particle is missing, wrong, or makes the Korean meaning unnatural. "
             "GOOD Gate: mark GOOD when the answer fits the AI question, the meaning is clear without guesswork, and there is no actionable correction point. "
             "NEEDS_IMPROVEMENT Gate: mark NEEDS_IMPROVEMENT only when there is an actionable issue and you can provide a better Korean expression that preserves the user's intent. "
             "Use the provided Counterpart role when judging nuance, politeness, and relevance. "
@@ -1695,6 +1703,9 @@ def _american_learner_turn_feedback_system_prompt() -> str:
         ),
         (
             "Scenario Pragmatics Rubric:\n"
+            "Fan-sign greeting calibration: when an idol asks how the learner has been, a short affirmative plus warm fan reaction can be GOOD. "
+            "For example, '당연하지. 뭐하고 지냈어? 너무 보고 싶었어.' answers that the learner has been well and adds warm reciprocal energy. "
+            "But '뭐하고 지냈어?' alone is NEEDS_IMPROVEMENT because it skips the direct how-have-you-been answer and only turns the question back. "
             "Fan-sign compliment calibration: when an idol says the learner's Korean improved, '네, 저 한국어 잘해요' is understandable but too direct in Korean fan-sign culture. "
             "Mark it NEEDS_IMPROVEMENT and suggest a modest fan-like answer such as '아직 부족하지만 열심히 공부하고 있어요' or '아직 많이 부족하지만 좋게 봐줘서 고마워요'. "
             "Fan-sign closing calibration: when an idol asks for any final message, '상관없어요' sounds uninterested, like 'I don't care'. "
@@ -1711,7 +1722,9 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that can add warmth or collaborative intent without inventing a specific food, dish, or restaurant unless the user said it. "
             "Short but valid answers such as '집에 있어요', '착한 사람이요', or '네 좋아요' can be GOOD when they directly answer the question and the only issue is that they are brief. "
             "Blind date ride-offer calibration: '당연하죠' can sound too forward for accepting a ride after a first meeting, while '아니요, 싫어요' sounds too blunt for refusing help. "
-            "Mark them NEEDS_IMPROVEMENT and suggest a cushion phrase such as '그래도 될까요? 감사합니다' for acceptance or '감사하지만 괜찮아요. 혼자 갈게요' for refusal."
+            "Mark them NEEDS_IMPROVEMENT and suggest a cushion phrase such as '그래도 될까요? 감사합니다' for acceptance or '감사하지만 괜찮아요. 혼자 갈게요' for refusal. "
+            "An abrupt disbelief response such as '엥? 우리 처음 봤는데?' can make the first-date partner feel embarrassed even though the boundary is understandable; mark it NEEDS_IMPROVEMENT and suggest a warmer polite boundary such as '아, 감사하지만 오늘은 제가 따로 갈게요 ㅎㅎ.'. "
+            "A polite refusal such as '아, 감사하지만 오늘은 제가 따로 갈게요 ㅎㅎ.' is GOOD because it keeps the boundary while thanking the other person."
         ),
         (
             "Field Policy:\n"
@@ -1738,10 +1751,16 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "5. feedbackDetail and correctionReason are English, and correctionReason contains no Hangul. "
             "6. A GOOD answer satisfies every core intent slot in the AI question, not only grammar or tone. "
             "7. A short answer can still be GOOD when it directly answers the question and creates no clear tact, intent, or relationship-distance problem. "
-            "8. No legacy fields are present."
+            "8. Before choosing GOOD, silently verify that the answer satisfies the current question's core intent, fits the relationship, and has no real actionable issue beyond being short. "
+            "9. If correction is needed, silently verify that correctionExpression preserves the user's original intent and does not invent new content. "
+            "10. No legacy fields are present."
         ),
         (
             "Feedback Examples:\n"
+            "GOOD for fan-sign greeting answer '당연하지. 뭐하고 지냈어? 너무 보고 싶었어.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"To a Korean idol, this sounds warm and excited while still answering that you have been well.","positiveFeedback":null,"feedbackDetail":"You gave a short but valid answer to how you have been, then added a warm fan-style reaction that fits a video fan-sign moment.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for fan-sign greeting answer '뭐하고 지냈어?' to '잘 지냈어?': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a Korean idol, this turns the question back before answering how you have been.","positiveFeedback":"You sounded interested in the idol too.","feedbackDetail":null,"correctionExpression":"응, 잘 지냈어. 너무 보고 싶었어.","correctionReason":"The question first asks how you have been. Answering that part before adding warmth makes the fan-sign flow feel complete.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for fan-sign compliment answer '네, 저 한국어 잘해요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a Korean idol, this sounds like directly agreeing with a compliment instead of receiving it modestly.","positiveFeedback":"You answered the compliment clearly and confidently.","feedbackDetail":null,"correctionExpression":"아직 부족하지만 열심히 공부하고 있어요.","correctionReason":"In a fan-sign compliment moment, a modest response feels warmer and less self-congratulatory than directly saying you are good at Korean.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for same-age K-pop fan friend answer '제 최애는 민지입니다.': "
@@ -1753,7 +1772,13 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "NEEDS_IMPROVEMENT for blind date answer '아무거나요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this can sound like you are not interested in choosing together.","positiveFeedback":"You tried to be easygoing and flexible.","feedbackDetail":null,"correctionExpression":"저는 특별히 가리는 음식은 없어요. 같이 골라봐도 좋아요.","correctionReason":"On a first date, this keeps the no strong preference intent but sounds warmer than saying anything is fine or that you do not care.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date refusal '아니요, 싫어요.': "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"When someone offers help, this sounds like a flat rejection to their face.","positiveFeedback":"You made your refusal clear.","feedbackDetail":null,"correctionExpression":"감사하지만 괜찮아요. 혼자 갈게요.","correctionReason":"A cushion phrase thanks the other person first, so the refusal feels polite instead of abrupt.","benchmarkMessage":null,"detectedPatterns":[]}'
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"When someone offers help, this sounds like a flat rejection to their face.","positiveFeedback":"You made your refusal clear.","feedbackDetail":null,"correctionExpression":"감사하지만 괜찮아요. 혼자 갈게요.","correctionReason":"A cushion phrase thanks the other person first, so the refusal feels polite instead of abrupt.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for abrupt blind date ride-offer boundary '엥? 우리 처음 봤는데?': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first date, this shows a boundary but can make the other person feel suddenly embarrassed.","positiveFeedback":"You clearly protected your comfort level.","feedbackDetail":null,"correctionExpression":"아, 감사하지만 오늘은 제가 따로 갈게요 ㅎㅎ.","correctionReason":"A warm cushion keeps the boundary without sounding suspicious or putting the other person on the spot.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "GOOD for polite blind date ride-offer refusal '아, 감사하지만 오늘은 제가 따로 갈게요 ㅎㅎ.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"On a first date, this sounds polite and comfortably bounded.","positiveFeedback":null,"feedbackDetail":"You thanked the other person first and declined in a warm, natural way for a first-date context.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "GOOD for valid object-particle sentence '나는 콘서트를 꼭 가보고 싶어.': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"To a same-age fan friend, this sounds like a natural casual plan with a correct object marker.","positiveFeedback":null,"feedbackDetail":"You used 를 naturally to mark 콘서트 as the thing you want to experience, so there is no particle correction needed.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":null,"detectedPatterns":[]}'
         ),
         (
             "Output Schema:\n"

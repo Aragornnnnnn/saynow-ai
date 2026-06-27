@@ -1086,6 +1086,14 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("네 좋아요", system_prompt)
         self.assertIn("아니요, 싫어요", system_prompt)
         self.assertIn("Short but valid answers", system_prompt)
+        self.assertIn("Relationship Fit Gate", system_prompt)
+        self.assertIn("Minimal Particle Correction Gate", system_prompt)
+        self.assertIn("당연하지. 뭐하고 지냈어? 너무 보고 싶었어.", system_prompt)
+        self.assertIn("뭐하고 지냈어?", system_prompt)
+        self.assertIn("엥? 우리 처음 봤는데?", system_prompt)
+        self.assertIn("아, 감사하지만 오늘은 제가 따로 갈게요 ㅎㅎ.", system_prompt)
+        self.assertIn("나는 콘서트를 꼭 가보고 싶어", system_prompt)
+        self.assertIn("do not remove a valid object particle", system_prompt)
         self.assertNotIn("NEEDS_IMPROVEMENT for thin blind date weekend answer", system_prompt)
         self.assertNotIn("NEEDS_IMPROVEMENT for generic blind date ideal-type answer", system_prompt)
         self.assertNotIn("NEEDS_IMPROVEMENT for direct blind date ride acceptance", system_prompt)
@@ -4756,7 +4764,7 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인의 79%가 틀리는 a/an을 정확히 쓴 사람")
-        self.assertEqual(result.nativeScore, 80)
+        self.assertEqual(result.nativeScore, 64)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
         self.assertFalse(hasattr(result, "summary"))
@@ -5280,8 +5288,60 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=72,
         )
 
-        self.assertEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeScore, 75)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
+    def test_session_feedback_clamps_four_turn_score_by_good_count_bands(self):
+        from app.models.conversation import NativeScoreBreakdown, SessionFeedbackRequest, TurnFeedbackData
+
+        cases = [
+            (["NEEDS_IMPROVEMENT"] * 4, 100, 50),
+            (["GOOD", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT"], 100, 64),
+            (["GOOD", "GOOD", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT"], 100, 74),
+            (["GOOD", "GOOD", "GOOD", "NEEDS_IMPROVEMENT"], 100, 89),
+            (["GOOD", "GOOD", "GOOD", "GOOD"], 40, 90),
+        ]
+        for offset, (feedback_types, raw_component_score, expected_score) in enumerate(cases):
+            with self.subTest(feedback_types=feedback_types):
+                session_id = 9000 + offset
+                expected_turn_ids = []
+                for turn_offset, feedback_type in enumerate(feedback_types):
+                    turn_id = 5000 + turn_offset
+                    expected_turn_ids.append(turn_id)
+                    is_good = feedback_type == "GOOD"
+                    self.service._store_turn_feedback(
+                        session_id,
+                        TurnFeedbackData.model_validate({
+                            "turnId": turn_id,
+                            "feedbackType": feedback_type,
+                            "koreanAnalogy": "한국어로 비유하자면 짧지만 뜻은 분명한 답변처럼 들려요.",
+                            "positiveFeedback": None if is_good else "어려운 표현을 시도한 점은 좋아요.",
+                            "feedbackDetail": "질문에 맞는 답변입니다." if is_good else None,
+                            "correctionExpression": None if is_good else "I can say it more clearly.",
+                            "correctionReason": None if is_good else "현재 표현보다 더 자연스럽게 말할 수 있어요.",
+                            "benchmarkMessage": "질문에 맞는 핵심을 자연스럽게 전달했어요" if is_good else None,
+                        }),
+                        native_score_breakdown=NativeScoreBreakdown(
+                            attemptedWordScore=raw_component_score,
+                            sentenceComplexityScore=raw_component_score,
+                            comprehensibilityScore=raw_component_score,
+                        ),
+                    )
+                self.service.chat = lambda *args, **kwargs: json.dumps({
+                    "sessionId": session_id,
+                    "highlightMessage": "핵심 질문에 자연스럽게 답한 사람",
+                })
+
+                result = self.service.generate_session_feedback(
+                    SessionFeedbackRequest.model_validate({
+                        "sessionId": session_id,
+                        "scenario": self._scenario(),
+                        "expectedTurnIds": expected_turn_ids,
+                    })
+                )
+
+                self.assertEqual(result.nativeScore, expected_score)
+                self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_three_good_to_study_abroad_band(self):
         result = self._session_feedback_result_for_types(
@@ -5289,7 +5349,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=95,
         )
 
-        self.assertEqual(result.nativeScore, 70)
+        self.assertEqual(result.nativeScore, 75)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_five_turns_with_three_good_to_basic_conversation_band(self):
@@ -5299,7 +5359,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="원어민에 가까운 자연스러움",
         )
 
-        self.assertEqual(result.nativeScore, 68)
+        self.assertEqual(result.nativeScore, 75)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_one_good_to_sentence_structure_band(self):
@@ -5325,7 +5385,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="유학생 느낌",
         )
 
-        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_applies_all_needs_cap_for_korean_learner(self):
@@ -5363,7 +5423,7 @@ class ConversationServiceTest(unittest.TestCase):
             })
         )
 
-        self.assertEqual(result.nativeScore, 68)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_american_learner_good_korean_session_scores_above_old_zero_word_floor(self):
@@ -5410,7 +5470,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertGreaterEqual(result.nativeScore, 70)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
-    def test_american_learner_needs_korean_session_counts_attempted_korean(self):
+    def test_american_learner_all_needs_korean_session_scores_fixed_50(self):
         from app.models.conversation import SessionFeedbackRequest
 
         utterances = [
@@ -5458,8 +5518,7 @@ class ConversationServiceTest(unittest.TestCase):
             })
         )
 
-        self.assertGreaterEqual(result.nativeScore, 55)
-        self.assertLess(result.nativeScore, 70)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_american_learner_all_needs_korean_session_stays_below_good_band(self):
@@ -5672,7 +5731,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
@@ -5709,7 +5768,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 65)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
