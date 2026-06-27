@@ -2249,16 +2249,20 @@ def _repair_closing_message(
         request,
         service_audience=effective_service_audience,
     )
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _closing_issue_kind(request, service_audience=effective_service_audience)
     if expected_type == "BAD":
         if response.innerThoughtType != expected_type:
             updates["innerThoughtType"] = expected_type
-        if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and (
+        issue_specific_mismatch = (
+            issue_kind == "direct_personal_critique"
+            and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
+        )
+        if issue_specific_mismatch or (_INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and (
             not _looks_like_bad_inner_thought(response.innerThought) or (
                 issue_kind is not None
                 and not _bad_inner_thought_matches_issue(response.innerThought, issue_kind)
             )
-        ):
+        )):
             updates["innerThought"] = _fallback_inner_thought_for_closing(
                 request,
                 service_audience=effective_service_audience,
@@ -2487,6 +2491,19 @@ def _conversation_issue_kind(
     return None
 
 
+def _closing_issue_kind(
+    request: ClosingMessageRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str | None:
+    if _is_direct_personal_critique(request, service_audience=service_audience):
+        return "direct_personal_critique"
+    tone_issue = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    if tone_issue:
+        return tone_issue
+    return None
+
+
 def _is_core_intent_missing_flow_break(
     request: NextQuestionRequest,
     *,
@@ -2549,11 +2566,16 @@ def _is_role_label_instead_of_song_answer(answer: str) -> bool:
 
 
 def _is_direct_personal_critique(
-    request: NextQuestionRequest,
+    request: NextQuestionRequest | ClosingMessageRequest,
     *,
     service_audience: ServiceAudience | None = None,
 ) -> bool:
-    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if service_audience is not None:
+        effective_service_audience = service_audience
+    elif isinstance(request, ClosingMessageRequest):
+        effective_service_audience = _effective_service_audience_for_closing_message(request)
+    else:
+        effective_service_audience = _effective_service_audience_for_next_question(request)
     if not _is_american_learner(effective_service_audience):
         return False
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
@@ -3167,9 +3189,12 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
     if issue_kind == "direct_personal_critique":
         has_hurt_or_distance = any(
             marker in normalized
-            for marker in ["personal", "cold", "hurt", "stings", "ouch", "상처", "차갑", "꽂히"]
+            for marker in ["personal", "cold", "hurt", "stings", "stung", "ouch", "상처", "차갑", "꽂히"]
         )
-        has_softening_spin = any(marker in normalized for marker in ["appreciate the honesty", "honest feedback"])
+        has_softening_spin = any(
+            marker in normalized
+            for marker in ["appreciate the honesty", "honest feedback", "warmth of the call"]
+        )
         return has_hurt_or_distance and not has_softening_spin
     return True
 

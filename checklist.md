@@ -1127,3 +1127,4 @@
 - [x] prompt/repair/fallback 기준을 하드코딩 없이 최소 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.
+- [x] prod 재배포 smoke에서 확인된 closing softening 속마음 노출을 feature flag와 무관하게 보정한다.

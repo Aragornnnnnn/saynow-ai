@@ -1356,6 +1356,43 @@ class ConversationServiceTest(unittest.TestCase):
         self._assert_no_hangul(result.innerThought)
         self.assertNotIn("appreciate the honesty", result.innerThought.lower())
 
+    def test_american_learner_fansign_final_critique_bad_closing_replaces_softened_bad_thought(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "아, 그래도 솔직하게 말해줘서 고마워요. 오늘 이야기 반가웠어요.",
+            "translatedMessage": "Ah, thanks for being honest anyway. It was nice talking with you today.",
+            "innerThought": "That stung a little, but I appreciate the honesty. I still feel the warmth of the call.",
+            "innerThoughtType": "BAD",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "Video Call Fan Signing Event",
+                "briefing": "The learner is talking with their favorite idol in a short video fan-sign call.",
+                "conversationGoal": "Answer warmly and naturally in Korean during a fan-sign call.",
+                "counterpartRole": "idol at a video fan-sign event",
+            },
+            "currentTurn": {
+                "aiQuestion": "마지막으로 나한테 하고 싶은 말 있어? 뭐든!",
+                "translatedQuestion": "Anything you wanna say to me before we wrap up? Anything at all!",
+                "userUtterance": "너 너무 기계적이다.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("appreciate the honesty", result.innerThought.lower())
+        self.assertNotIn("warmth of the call", result.innerThought.lower())
+
     def test_american_learner_turn_feedback_prompt_preserves_user_intent_like_korean_learner(self):
         from app.models.conversation import ServiceAudience
 
