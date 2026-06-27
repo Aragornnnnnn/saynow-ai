@@ -5134,6 +5134,57 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertLess(result.nativeScore, 70)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
+    def test_american_learner_all_needs_korean_session_stays_below_good_band(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        utterances = [
+            "안녕하세요. 저도 이 그룹을 좋아합니다. 제 최애는 민수입니다.",
+            "저는 유튜브 알고리즘 때문에 입덕했습니다.",
+            "저는 오프라인 콘서트에 가본 적이 없습니다. 나중에 갈 생각이 있습니다.",
+            "네, 같이 가셔도 됩니다. 감사합니다.",
+        ]
+        responses = [
+            {
+                "turnId": 5000 + offset,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "The meaning is clear, but the tone is too formal for a fan friend.",
+                "positiveFeedback": "You answered the question clearly.",
+                "correctionExpression": correction,
+                "correctionReason": "A casual fellow-fan conversation needs warmer informal Korean.",
+                "benchmarkMessage": None,
+            }
+            for offset, correction in enumerate([
+                "안녕! 나도 이 그룹 좋아해. 내 최애는 민수야.",
+                "유튜브 알고리즘으로 입덕했어.",
+                "아직 오프라인 콘서트에 가본 적은 없어. 나중에 꼭 가보고 싶어.",
+                "응, 같이 가자! 나도 완전 좋아.",
+            ])
+        ]
+        responses.append({
+            "sessionId": 1000,
+            "highlightMessage": "Casual fan talk needs more warmth",
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        for offset, utterance in enumerate(utterances):
+            self.service.generate_turn_feedback(
+                self._turn_feedback_request(
+                    turn_id=5000 + offset,
+                    user_utterance=utterance,
+                    service_audience="AMERICAN_LEARNER",
+                )
+            )
+
+        result = self.service.generate_session_feedback(
+            SessionFeedbackRequest.model_validate({
+                "sessionId": 1000,
+                "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+                "expectedTurnIds": [5000, 5001, 5002, 5003],
+            })
+        )
+
+        self.assertLess(result.nativeScore, 70)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
         from app.models.conversation import SessionFeedbackRequest
 

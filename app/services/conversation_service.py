@@ -394,6 +394,11 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
         raise ConversationGenerationError("session feedback id does not match request session id")
     native_score_breakdown = _aggregate_native_score_breakdown(turn_feedback_entries)
     native_score = _native_score_from_breakdown(native_score_breakdown)
+    native_score = _postprocess_native_score_for_feedback_mix(
+        native_score,
+        turn_feedback_entries,
+        request.scenario.serviceAudience,
+    )
     highlight_message = _postprocess_highlight_message(
         highlight.highlightMessage,
         turn_feedback_entries,
@@ -1140,6 +1145,21 @@ def _native_score_from_breakdown(native_score_breakdown: NativeScoreBreakdown) -
         0,
         100,
     )
+
+
+def _postprocess_native_score_for_feedback_mix(
+    native_score: int,
+    turn_feedback_entries: list[_TurnFeedbackCacheEntry],
+    service_audience: ServiceAudience,
+) -> int:
+    if not _is_american_learner(service_audience) or not turn_feedback_entries:
+        return native_score
+    if all(
+        entry.feedback.feedbackType == FeedbackType.NEEDS_IMPROVEMENT
+        for entry in turn_feedback_entries
+    ):
+        return min(native_score, 68)
+    return native_score
 
 
 def _purge_expired_turn_feedbacks_locked(now: float) -> None:

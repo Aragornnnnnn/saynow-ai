@@ -1043,6 +1043,7 @@
 - [x] 한국어 GOOD 세션이 56점에 고정되지 않도록 RED 회귀 테스트를 추가한다.
 - [x] 한국어 NEEDS 세션이 43점에 고정되지 않고 개선 필요 수준으로 계산되는 RED 회귀 테스트를 추가한다.
 - [x] `AMERICAN_LEARNER` 전용 한국어 답변 길이와 복잡도 점수 산식을 구현한다.
-- [ ] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] all-NEEDS 한국어 세션이 GOOD band로 보이지 않도록 RED 회귀 테스트와 점수 캡을 추가한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [ ] 배포 후 live smoke로 점수 분포와 계약 필드를 재확인한다.
 - [ ] 결과를 context notes에 기록하고 커밋/push한다.
