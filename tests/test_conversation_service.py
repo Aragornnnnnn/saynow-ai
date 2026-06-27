@@ -3733,7 +3733,7 @@ class ConversationServiceTest(unittest.TestCase):
         result = self.service.generate_session_feedback(request)
 
         self.assertEqual(result.highlightMessage, "한국인의 79%가 틀리는 a/an을 정확히 쓴 사람")
-        self.assertEqual(result.nativeScore, 80)
+        self.assertEqual(result.nativeScore, 64)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertFalse(hasattr(result, "nativeLevelLabel"))
         self.assertFalse(hasattr(result, "summary"))
@@ -4257,7 +4257,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=72,
         )
 
-        self.assertEqual(result.nativeScore, 74)
+        self.assertEqual(result.nativeScore, 75)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_three_good_to_study_abroad_band(self):
@@ -4266,7 +4266,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_score=95,
         )
 
-        self.assertEqual(result.nativeScore, 70)
+        self.assertEqual(result.nativeScore, 75)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_five_turns_with_three_good_to_basic_conversation_band(self):
@@ -4276,7 +4276,25 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="원어민에 가까운 자연스러움",
         )
 
+        self.assertEqual(result.nativeScore, 75)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
+    def test_session_feedback_maps_two_good_to_good_count_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "GOOD", "NEEDS_IMPROVEMENT", "NEEDS_IMPROVEMENT"],
+            llm_score=95,
+        )
+
         self.assertEqual(result.nativeScore, 68)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
+    def test_session_feedback_maps_four_good_to_top_good_count_band(self):
+        result = self._session_feedback_result_for_types(
+            ["GOOD", "GOOD", "GOOD", "GOOD"],
+            llm_score=95,
+        )
+
+        self.assertEqual(result.nativeScore, 90)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_maps_four_turns_with_one_good_to_sentence_structure_band(self):
@@ -4302,7 +4320,7 @@ class ConversationServiceTest(unittest.TestCase):
             llm_label="유학생 느낌",
         )
 
-        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
@@ -4464,7 +4482,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 61)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 
@@ -4501,7 +4519,7 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_session_feedback(request)
 
-        self.assertEqual(result.nativeScore, 65)
+        self.assertEqual(result.nativeScore, 50)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
         self.assertEqual(result.highlightMessage, "어려운 표현에 도전한 사람")
 

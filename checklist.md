@@ -1,5 +1,13 @@
 # 작업 체크리스트
 
+## LAN-28 native score GOOD 개수 밴드 적용
+
+- [x] GOOD 개수별 nativeScore 밴드 RED 테스트를 추가한다.
+- [x] GOOD 0개는 50점으로 고정한다.
+- [x] GOOD 1개는 55~64점, 2개는 65~74점, 3개는 75~89점, 4개 이상은 90~100점으로 보정한다.
+- [x] 밴드 안의 세부 점수는 기존 원점수를 clamp해서 유지한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+
 ## LAN-28 generic fallback 맞장구 제거
 
 - [x] STT가 깨진 듯한 불명확 발화에서 `Let's keep going` / `계속 이어가 볼게`가 붙는 RED 테스트를 추가한다.

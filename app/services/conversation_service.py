@@ -278,7 +278,10 @@ def generate_session_feedback(request: SessionFeedbackRequest) -> SessionFeedbac
         )
         raise ConversationGenerationError("session feedback id does not match request session id")
     native_score_breakdown = _aggregate_native_score_breakdown(turn_feedback_entries)
-    native_score = _native_score_from_breakdown(native_score_breakdown)
+    native_score = _native_score_from_breakdown(
+        native_score_breakdown,
+        _good_turn_feedback_count(turn_feedback_entries),
+    )
     highlight_message = _postprocess_highlight_message(highlight.highlightMessage, turn_feedback_entries)
     _log_workflow_stage_duration(workflow, "parse_validate", stage_started_at)
 
@@ -927,17 +930,38 @@ def _aggregate_native_score_breakdown(
     )
 
 
-def _native_score_from_breakdown(native_score_breakdown: NativeScoreBreakdown) -> int:
-    return _clamp_score(
-        round(
-            native_score_breakdown.attemptedWordScore * 0.2
-            + native_score_breakdown.sentenceComplexityScore * 0.3
-            + native_score_breakdown.comprehensibilityScore * 0.5
-        ),
-        0,
-        100,
+def _good_turn_feedback_count(turn_feedback_entries: list[_TurnFeedbackCacheEntry]) -> int:
+    return sum(
+        1
+        for entry in turn_feedback_entries
+        if entry.feedback.feedbackType == FeedbackType.GOOD
     )
 
+
+def _native_score_from_breakdown(
+    native_score_breakdown: NativeScoreBreakdown,
+    good_count: int,
+) -> int:
+    if good_count <= 0:
+        return 50
+
+    band_min, band_max = _native_score_band_for_good_count(good_count)
+    raw_score = round(
+        native_score_breakdown.attemptedWordScore * 0.2
+        + native_score_breakdown.sentenceComplexityScore * 0.3
+        + native_score_breakdown.comprehensibilityScore * 0.5
+    )
+    return _clamp_score(raw_score, band_min, band_max)
+
+
+def _native_score_band_for_good_count(good_count: int) -> tuple[int, int]:
+    if good_count == 1:
+        return (55, 64)
+    if good_count == 2:
+        return (65, 74)
+    if good_count == 3:
+        return (75, 89)
+    return (90, 100)
 
 def _purge_expired_turn_feedbacks_locked(now: float) -> None:
     for session_id, session_feedbacks in list(_turn_feedback_cache.items()):
