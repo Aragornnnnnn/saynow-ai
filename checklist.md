@@ -7,7 +7,7 @@
 - [x] next-question과 closing-message 프롬프트에 새 기준을 반영한다.
 - [x] fallback 타입 분기에서 BAD를 무례함 외 의도 불충족과 의미 파악 실패까지 포함하도록 조정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] 변경 사항을 커밋하고 origin에 반영한다.
+- [x] 변경 사항을 커밋하고 origin에 반영한다.
 
 ## LAN-28 native score GOOD 개수 밴드 적용
 
