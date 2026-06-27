@@ -1601,6 +1601,8 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             "Same-age K-pop fan friend calibration: with a same-age K-pop fan friend, answers ending in -습니다 or -입니다 can sound distant and interview-like. "
             "If the question asks '너도 이 그룹 좋아해?' and '너 최애 누구야?', an answer like '응 좋아해' is incomplete because it does not answer who the bias is. "
             "Mark it NEEDS_IMPROVEMENT and suggest a casual complete answer such as '응, 좋아해. 내 최애는 민수야'. "
+            "If the question asks '어쩌다 입덕했어?', an answer like '영상 봤어' is too thin because it does not give the other fan enough context about what kind of video or where the user saw it. "
+            "Mark it NEEDS_IMPROVEMENT and suggest a slightly fuller casual answer such as '유튜브에서 무대 영상 보고 입덕했어'. "
             "Mark formal answers such as '제 최애는 민지입니다', '입덕했습니다', '가고 싶습니다', or '같이 가고 싶습니다' as NEEDS_IMPROVEMENT and suggest casual fan talk such as '내 최애는 민지야', '유튜브에서 무대 보고 입덕했어', or '응, 같이 가고 싶어'. "
             "Blind date calibration: on a first blind date, '아무거나요' can sound passive or uninterested, '저는 주말에 집에서 휴식을 취합니다' sounds report-like, and '예쁜 사람이 좋아요' can sound shallow. "
             "Mark them NEEDS_IMPROVEMENT and suggest warmer polite Korean that adds preference, personality, or conversational detail. "
@@ -1639,6 +1641,8 @@ def _american_learner_turn_feedback_system_prompt() -> str:
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a same-age fan friend, this sounds like an interview answer instead of casual fan talk.","positiveFeedback":"You named your bias clearly.","feedbackDetail":null,"correctionExpression":"내 최애는 민지야.","correctionReason":"With a same-age fan friend, casual speech makes the answer feel closer and more natural than formal interview-style wording.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for incomplete same-age K-pop fan friend answer '응 좋아해.' to '너도 이 그룹 좋아해? 너 최애 누구야?': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a same-age fan friend, this answers liking the group but leaves the bias question unanswered.","positiveFeedback":"You answered the first part in a friendly casual tone.","feedbackDetail":null,"correctionExpression":"응, 좋아해. 내 최애는 민수야.","correctionReason":"The question asks both whether you like the group and who your bias is. A complete answer should include the bias too, so the other fan can keep the conversation going.","benchmarkMessage":null,"detectedPatterns":[]}\n'
+            "NEEDS_IMPROVEMENT for thin same-age K-pop fan friend answer '영상 봤어.' to '어쩌다 입덕했어?': "
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"To a same-age fan friend, this is understandable but too thin to keep the fan story going.","positiveFeedback":"You gave the basic reason that a video made you interested.","feedbackDetail":null,"correctionExpression":"유튜브에서 무대 영상 보고 입덕했어.","correctionReason":"The question asks how you got into the group. Adding where or what kind of video you saw gives the other fan a clearer story to respond to.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date answer '아무거나요.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"On a first blind date, this can sound like you are not interested in choosing together.","positiveFeedback":"You tried to be easygoing and flexible.","feedbackDetail":null,"correctionExpression":"저는 한식 좋아해요. 혹시 파스타도 괜찮으세요?","correctionReason":"On a first date, giving one preference while still considering the other person sounds warmer than saying anything is fine.","benchmarkMessage":null,"detectedPatterns":[]}\n'
             "NEEDS_IMPROVEMENT for blind date refusal '아니요, 싫어요.': "
@@ -3732,6 +3736,23 @@ def _needs_feedback_for_missing_required_question_intent(
     if not _is_american_learner(_effective_service_audience_for_turn_feedback(request)):
         return None
     question = _normalize_visible_text(request.turn.aiQuestion)
+    if "어쩌다" in question and "입덕" in question and _looks_like_only_video_watched_answer(utterance):
+        return TurnFeedbackData(
+            turnId=feedback.turnId,
+            feedbackType=FeedbackType.NEEDS_IMPROVEMENT,
+            koreanAnalogy=(
+                "To a same-age fan friend, this is understandable but too thin to keep "
+                "the fan story going."
+            ),
+            feedbackDetail=None,
+            correctionExpression="유튜브에서 무대 영상 보고 입덕했어.",
+            correctionReason=(
+                "The question asks how you got into the group. Adding where or what kind of "
+                "video you saw gives the other fan a clearer story to respond to."
+            ),
+            positiveFeedback="You gave the basic reason that a video made you interested.",
+            benchmarkMessage=None,
+        )
     if not ("최애" in question and "누구" in question):
         return None
     if not _looks_like_only_group_like_confirmation(utterance):
@@ -3752,6 +3773,17 @@ def _needs_feedback_for_missing_required_question_intent(
         positiveFeedback="You answered the first part in a friendly casual tone.",
         benchmarkMessage=None,
     )
+
+
+def _looks_like_only_video_watched_answer(utterance: str) -> bool:
+    compact = utterance.replace(" ", "")
+    return compact in {
+        "영상봤어",
+        "영상봤어요",
+        "영상보고",
+        "영상보고입덕했어",
+        "영상보고입덕했어요",
+    }
 
 
 def _looks_like_only_group_like_confirmation(utterance: str) -> bool:

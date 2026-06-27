@@ -565,6 +565,43 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_marks_vague_deokjil_origin_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a same-age fan friend, this is understandable and casual.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer is short but relevant to how you got into the group.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="영상 봤어.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "One-on-One Chat with a Fellow Fan",
+                "briefing": "Talk casually with a same-age fan who likes the same K-pop group.",
+                "conversationGoal": "Answer naturally in casual Korean fan talk.",
+                "counterpartRole": "same-age K-pop fan friend",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "translatedQuestion": "OMG we have similar taste! How'd you get into them?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "유튜브에서 무대 영상 보고 입덕했어.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
         captured = {}
 
@@ -623,6 +660,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("same-age K-pop fan friend", system_prompt)
         self.assertIn("응 좋아해", system_prompt)
         self.assertIn("내 최애는 민수야", system_prompt)
+        self.assertIn("영상 봤어", system_prompt)
+        self.assertIn("유튜브에서 무대 영상 보고 입덕했어", system_prompt)
         self.assertIn("-습니다", system_prompt)
         self.assertIn("내 최애는 민지야", system_prompt)
         self.assertIn("blind date", system_prompt)

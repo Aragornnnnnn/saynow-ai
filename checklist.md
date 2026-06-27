@@ -2,6 +2,11 @@
 
 ## AMERICAN_LEARNER 질문 의도 충족 평가 보정
 
+- [x] 덕메 Q2의 `어쩌다 입덕했어?`에 대한 `영상 봤어.` 단답 사례를 RED 테스트로 고정한다.
+- [x] 입덕 계기 질문에 맥락 부족 답변이 오면 NEEDS로 전환한다.
+- [x] `AMERICAN_LEARNER` turn feedback 프롬프트에 입덕 계기 단답 기준을 명시한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] main 배포 후 live smoke로 덕메 Q2 품질 변화를 확인한다.
 - [x] 덕메 Q1의 `최애 누구야?` 누락 사례를 RED 테스트로 고정한다.
 - [x] 질문 의도 미충족 GOOD 오분류를 최소 후처리로 NEEDS 전환한다.
 - [x] `AMERICAN_LEARNER` turn feedback 프롬프트에 질문 의도 우선 기준을 명시한다.
