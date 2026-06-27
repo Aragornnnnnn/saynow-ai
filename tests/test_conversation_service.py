@@ -552,6 +552,47 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThought, raw_inner_thought)
         self.assertEqual(result.innerThoughtType, "NORMAL")
 
+    def test_next_question_strips_scripted_future_sentence_when_repair_fallback_is_disabled(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "Maybe that was a typo? Do you like parties?",
+            "translatedQuestion": "아마 오타였나 보네? 파티 좋아해?",
+            "innerThought": "음... 무슨 말을 하려던 건지 잘 안 잡히네. 일단 파티 얘기로 넘어가 보자.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날",
+                "briefing": "룸메이트와 첫 인사를 나눕니다.",
+                "conversationGoal": "자기소개와 생활 이야기를 나눈다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "How should we split the cleaning?",
+                "translatedQuestion": "청소는 어떻게 나눌까?",
+                "userUtterance": "Honey no I like veal. Tool. Pill. Pill. Pill.",
+            },
+            "nextQuestion": {
+                "questionId": 4,
+                "sequence": 4,
+                "questionEn": "Do you like parties?",
+                "questionKo": "파티 좋아해?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThought, "음... 무슨 말을 하려던 건지 잘 안 잡히네.")
+        self.assertNotIn("넘어가", result.innerThought)
+        self.assertNotIn("파티 얘기", result.innerThought)
+        self.assertEqual(result.innerThoughtType, "NORMAL")
+
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
         from app.models.conversation import NextQuestionRequest
 

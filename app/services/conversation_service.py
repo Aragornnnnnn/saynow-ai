@@ -1660,6 +1660,16 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
+    trimmed_inner_thought = _strip_scripted_future_inner_thought_sentences(
+        request,
+        response.innerThought,
+    )
+    if (
+        not _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED
+        and trimmed_inner_thought
+        and trimmed_inner_thought != response.innerThought
+    ):
+        updates["innerThought"] = trimmed_inner_thought
     if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
         updates["innerThought"] = _fallback_inner_thought(request)
     if not updates:
@@ -1893,6 +1903,33 @@ def _is_scripted_future_inner_thought(
     return _leaks_next_question_topic(request, normalized)
 
 
+def _strip_scripted_future_inner_thought_sentences(
+    request: NextQuestionRequest,
+    inner_thought: str,
+) -> str:
+    ellipsis_placeholder = "<ELLIPSIS>"
+    protected_inner_thought = inner_thought.replace("...", ellipsis_placeholder)
+    parts = re.findall(r"[^.!?。！？]+[.!?。！？]?", protected_inner_thought)
+    if not parts:
+        return inner_thought.strip()
+
+    kept: list[str] = []
+    removed = False
+    for part in parts:
+        sentence = part.strip()
+        if not sentence:
+            continue
+        normalized = _normalize_visible_text(sentence)
+        if _has_future_inner_thought_marker(sentence) or _leaks_next_question_topic(request, normalized):
+            removed = True
+            continue
+        kept.append(sentence)
+
+    if not removed or not kept:
+        return inner_thought.strip()
+    return " ".join(kept).replace(ellipsis_placeholder, "...").strip()
+
+
 def _has_future_inner_thought_marker(inner_thought: str) -> bool:
     normalized = _normalize_visible_text(inner_thought)
     future_markers = [
@@ -1901,6 +1938,10 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "다음 얘기",
         "다음 이야기",
         "넘어가면",
+        "넘어가자",
+        "넘어 가자",
+        "넘어가 보자",
+        "넘어 가 보자",
         "이어가면",
         "이어 가면",
         "이어가야",
