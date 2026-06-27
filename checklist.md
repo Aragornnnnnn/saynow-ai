@@ -1047,3 +1047,12 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 배포 후 live smoke로 점수 분포와 계약 필드를 재확인한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## Next-question fallback generic acknowledgement removal
+
+- [x] `계속 이어가 볼게`와 `Let's keep going` 계열 fallback 맞장구를 제거하는 기준을 기록한다.
+- [x] fallback next-question이 generic 진행자 멘트를 붙이지 않는 RED 테스트를 추가한다.
+- [x] LLM 반환 문구가 generic 진행자 멘트로 시작해도 최종 응답에서 제거되는 RED 테스트를 추가한다.
+- [x] fallback acknowledgement 기본값을 사용자 발화 기반 문구나 고정 질문 단독으로 바꾼다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋/push한다.

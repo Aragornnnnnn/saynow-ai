@@ -229,6 +229,8 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("What do you usually do on weekends?", result.aiQuestion)
         self.assertIn("What do you usually do on weekends?", result.translatedQuestion)
         self.assertNotIn("주말엔 보통 뭐 하면서 시간 보내세요?", result.translatedQuestion)
+        self.assertNotIn("계속 이어가", result.aiQuestion)
+        self.assertNotIn("Let's keep going", result.translatedQuestion)
 
     def test_american_learner_next_question_infers_audience_from_korean_turn_when_missing(self):
         captured = {}
@@ -271,6 +273,86 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Effective service audience: AMERICAN_LEARNER", captured["user"])
         self.assertIn("주말엔 보통 뭐 하면서 시간 보내세요?", result.aiQuestion)
         self.assertIn("What do you usually do on weekends?", result.translatedQuestion)
+        self.assertNotIn("계속 이어가", result.aiQuestion)
+        self.assertNotIn("Let's keep going", result.translatedQuestion)
+
+    def test_american_learner_next_question_fallback_omits_generic_keep_going_acknowledgement(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "주말엔 보통 뭐 하면서 시간 보내세요?",
+            "translatedQuestion": "What do you usually do on weekends?",
+            "innerThought": "They gave a simple food preference, but I still do not know much about them.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+                "userUtterance": "한식 좋아해요.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "주말엔 보통 뭐 하면서 시간 보내세요?",
+                "questionKo": "What do you usually do on weekends?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.aiQuestion, "주말엔 보통 뭐 하면서 시간 보내세요?")
+        self.assertEqual(result.translatedQuestion, "What do you usually do on weekends?")
+        self.assertNotIn("계속 이어가", result.aiQuestion)
+        self.assertNotIn("Let's keep going", result.translatedQuestion)
+
+    def test_american_learner_next_question_removes_llm_generic_keep_going_acknowledgement(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "계속 이어가 볼게. 주말엔 보통 뭐 하면서 시간 보내세요?",
+            "translatedQuestion": "Let's keep going. What do you usually do on weekends?",
+            "innerThought": "They gave a simple food preference, but I still do not know much about them.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "First Date with a Korean Person",
+                "briefing": "Go on a first date with a Korean person.",
+                "conversationGoal": "Use polite Korean in a warm and natural way.",
+                "counterpartRole": "Korean blind date partner",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕하세요! 만나서 반갑습니다 ㅎㅎ 뭐 드시고 싶으세요? 좋아하는 음식이 뭐예요?",
+                "translatedQuestion": "Hi, nice to meet you hehe. What would you like to eat? What kind of food do you like?",
+                "userUtterance": "한식 좋아해요.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "주말엔 보통 뭐 하면서 시간 보내세요?",
+                "questionKo": "What do you usually do on weekends?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.aiQuestion, "주말엔 보통 뭐 하면서 시간 보내세요?")
+        self.assertEqual(result.translatedQuestion, "What do you usually do on weekends?")
 
     def test_american_learner_closing_message_prompt_targets_korean_conversation(self):
         from app.models.conversation import ClosingMessageRequest

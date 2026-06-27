@@ -2094,13 +2094,13 @@ def _repair_next_question_drift(
         request.nextQuestion.questionId,
     )
     return NextQuestionResponse(
-        aiQuestion=(
-            f"{_fallback_acknowledgement_practice(request, service_audience=effective_service_audience)} "
-            f"{fixed_question_practice}"
+        aiQuestion=_join_acknowledgement_and_question(
+            _fallback_acknowledgement_practice(request, service_audience=effective_service_audience),
+            fixed_question_practice,
         ),
-        translatedQuestion=(
-            f"{_fallback_acknowledgement_translation(request, service_audience=effective_service_audience)} "
-            f"{fixed_question_translation}"
+        translatedQuestion=_join_acknowledgement_and_question(
+            _fallback_acknowledgement_translation(request, service_audience=effective_service_audience),
+            fixed_question_translation,
         ),
         innerThought=response.innerThought,
         innerThoughtType=response.innerThoughtType,
@@ -2390,13 +2390,13 @@ def _fallback_acknowledged_next_question(
 ) -> NextQuestionResponse:
     effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
     return NextQuestionResponse(
-        aiQuestion=(
-            f"{_fallback_acknowledgement_practice(request, service_audience=effective_service_audience)} "
-            f"{_next_fixed_question_practice_text(request, service_audience=effective_service_audience)}"
+        aiQuestion=_join_acknowledgement_and_question(
+            _fallback_acknowledgement_practice(request, service_audience=effective_service_audience),
+            _next_fixed_question_practice_text(request, service_audience=effective_service_audience),
         ),
-        translatedQuestion=(
-            f"{_fallback_acknowledgement_translation(request, service_audience=effective_service_audience)} "
-            f"{_next_fixed_question_translation_text(request, service_audience=effective_service_audience)}"
+        translatedQuestion=_join_acknowledgement_and_question(
+            _fallback_acknowledgement_translation(request, service_audience=effective_service_audience),
+            _next_fixed_question_translation_text(request, service_audience=effective_service_audience),
         ),
         innerThought=inner_thought or _fallback_inner_thought(
             request,
@@ -2407,6 +2407,14 @@ def _fallback_acknowledged_next_question(
             service_audience=effective_service_audience,
         ),
     )
+
+
+def _join_acknowledgement_and_question(acknowledgement: str, question: str) -> str:
+    cleaned_acknowledgement = acknowledgement.strip()
+    cleaned_question = question.strip()
+    if not cleaned_acknowledgement:
+        return cleaned_question
+    return f"{cleaned_acknowledgement} {cleaned_question}"
 
 
 def _fallback_inner_thought_type(
@@ -3118,7 +3126,7 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
         return "Sounds tasty."
     if "not sure" in normalized or "maybe" in normalized:
         return "Maybe, yeah."
-    return "Let's keep going."
+    return ""
 
 
 def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
@@ -3172,7 +3180,7 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
         return tone("맛있었겠네요.")
     if "not sure" in normalized or "maybe" in normalized:
         return tone("아직 확실하진 않은가 보네요.")
-    return tone("계속 이어가 볼게요.")
+    return ""
 
 
 def _align_next_question_korean_tone(
@@ -3258,6 +3266,8 @@ def _has_generic_acknowledgement(ai_question: str) -> bool:
         "i see",
         "interesting",
         "that sounds like a fun trip",
+        "let s keep going",
+        "계속 이어가",
     ]
     return any(normalized.startswith(start) for start in generic_starts)
 
