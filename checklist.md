@@ -1117,3 +1117,13 @@
 - [x] prompt와 fallback/repair 기준을 최소 범위로 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.
+
+## AMERICAN_LEARNER 팬사인회 innerThought 회귀 보정
+
+- [x] 사용자 제공 live session 로그를 기준으로 실패 유형을 정리한다.
+- [x] `잘 지냈어` 인사 답변이 GOOD으로 보정되는 RED 테스트를 추가한다.
+- [x] `나 아이돌` 노래 질문 답변이 BAD로 보정되는 RED 테스트를 추가한다.
+- [x] `너 너무 기계적이다.` 마지막 발화가 BAD로 보정되는 RED 테스트를 추가한다.
+- [x] prompt/repair/fallback 기준을 하드코딩 없이 최소 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.

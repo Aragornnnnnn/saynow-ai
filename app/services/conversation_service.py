@@ -1350,6 +1350,9 @@ def _american_learner_next_question_system_prompt() -> str:
             "American learner pragmatic calibration:\n"
             "Use the Counterpart role and Scenario title when deciding the private reaction. "
             "For a fan-sign idol, direct self-praise after a compliment may feel cute but a little awkward, while '상관없어요' can feel like the fan has no special interest. "
+            "For a fan-sign greeting, a short direct answer like '잘 지냈어' can be GOOD because it satisfies the greeting question. "
+            "For a fan-sign favorite-song question, an answer that only says the learner is an idol/fan/person without naming a song or reason is BAD because it misses the core intent. "
+            "For a fan-sign final message, direct personal criticism such as calling the counterpart mechanical or robotic is BAD because it can feel hurtful and distancing. "
             "For a same-age K-pop fan friend, formal -습니다 speech can feel distant even when grammatically correct. "
             "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
             "If the answer does not satisfy the current question at all, such as answering a bias question with a random object or a food question with a nonsensical sentence, set innerThoughtType to BAD. "
@@ -1513,6 +1516,9 @@ def _american_learner_closing_message_system_prompt() -> str:
             "American learner pragmatic calibration:\n"
             "Use the Counterpart role and Scenario title when deciding the private reaction. "
             "For a fan-sign idol, direct self-praise after a compliment may feel cute but a little awkward, while '상관없어요' can feel like the fan has no special interest. "
+            "For a fan-sign greeting, a short direct answer like '잘 지냈어' can be GOOD because it satisfies the greeting question. "
+            "For a fan-sign favorite-song question, an answer that only says the learner is an idol/fan/person without naming a song or reason is BAD because it misses the core intent. "
+            "For a fan-sign final message, direct personal criticism such as calling the counterpart mechanical or robotic is BAD because it can feel hurtful and distancing. "
             "For a same-age K-pop fan friend, formal -습니다 speech can feel distant even when grammatically correct. "
             "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
             "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
@@ -2469,6 +2475,8 @@ def _conversation_issue_kind(
     *,
     service_audience: ServiceAudience | None = None,
 ) -> str | None:
+    if _is_direct_personal_critique(request, service_audience=service_audience):
+        return "direct_personal_critique"
     tone_issue = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     if tone_issue:
         return tone_issue
@@ -2495,11 +2503,74 @@ def _is_core_intent_missing_flow_break(
         return True
     if _question_requires_specific_person_answer(question):
         return _is_generic_agreement_without_required_slot(answer)
+    if _question_requires_song_and_reason_answer(question):
+        return _is_role_label_instead_of_song_answer(answer)
     return False
 
 
 def _question_requires_specific_person_answer(question: str) -> bool:
     return ("최애" in question or "bias" in question) and ("누구" in question or "who" in question)
+
+
+def _question_requires_song_and_reason_answer(question: str) -> bool:
+    has_song_slot = any(marker in question for marker in ["노래", "곡", "song"])
+    has_reason_slot = any(marker in question for marker in ["왜", "why"])
+    has_favorite_slot = any(marker in question for marker in ["제일 좋아", "favorite"])
+    return has_song_slot and has_reason_slot and has_favorite_slot
+
+
+def _is_role_label_instead_of_song_answer(answer: str) -> bool:
+    song_or_reason_markers = [
+        "노래",
+        "곡",
+        "가사",
+        "멜로디",
+        "앨범",
+        "뮤비",
+        "무대",
+        "좋아",
+        "때문",
+        "라서",
+        "어서",
+        "해서",
+        "because",
+        "song",
+        "lyrics",
+        "melody",
+        "favorite",
+    ]
+    if any(marker in answer for marker in song_or_reason_markers):
+        return False
+    role_label_markers = ["아이돌", "가수", "팬", "사람", "idol", "singer", "fan"]
+    self_markers = ["나", "저", "나는", "저는", "i", "me", "my"]
+    return any(marker in answer for marker in role_label_markers) and any(
+        marker in answer for marker in self_markers
+    )
+
+
+def _is_direct_personal_critique(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> bool:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if not _is_american_learner(effective_service_audience):
+        return False
+    normalized = _normalize_visible_text(request.currentTurn.userUtterance)
+    critique_markers = [
+        "기계적",
+        "기계 같",
+        "로봇",
+        "봇 같",
+        "ai 같",
+        "에이아이 같",
+        "robotic",
+        "mechanical",
+        "bot like",
+        "like a bot",
+        "like ai",
+    ]
+    return any(marker in normalized for marker in critique_markers)
 
 
 def _is_generic_agreement_without_required_slot(answer: str) -> bool:
@@ -2626,6 +2697,8 @@ def _fallback_inner_thought_type(
         request.currentTurn.userUtterance
     ):
         return "GOOD"
+    if _is_american_learner(effective_service_audience) and _is_korean_direct_wellbeing_answer(request):
+        return "GOOD"
     if _looks_like_short_broken_or_flat_answer(normalized):
         return "NORMAL"
     if (
@@ -2637,6 +2710,25 @@ def _fallback_inner_thought_type(
     ):
         return "GOOD"
     return "NORMAL"
+
+
+def _is_korean_direct_wellbeing_answer(request: NextQuestionRequest) -> bool:
+    question = _normalize_visible_text(
+        f"{request.currentTurn.aiQuestion} {request.currentTurn.translatedQuestion}"
+    )
+    if not any(marker in question for marker in ["잘 지냈", "how ve you been", "how have you been"]):
+        return False
+    answer = _normalize_visible_text(request.currentTurn.userUtterance)
+    direct_positive_markers = [
+        "잘 지냈",
+        "잘 있었",
+        "좋았",
+        "괜찮았",
+        "괜찮아",
+        "응 잘",
+        "네 잘",
+    ]
+    return any(marker in answer for marker in direct_positive_markers)
 
 
 def _fallback_inner_thought(
@@ -2661,6 +2753,8 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
             return "Wait, that is completely off-topic. I am caught off guard."
         if issue_kind == "missing_core_intent":
             return "Wait, that does not answer what I asked. I still do not know their actual answer."
+        if issue_kind == "direct_personal_critique":
+            return "Ouch, that feels personal and cold. It hurts a little."
         if issue_kind == "sensitive_personal_question":
             return "That jumps into private topics too directly, so it feels uncomfortable."
         if issue_kind == "chores_deflection":
@@ -2723,6 +2817,8 @@ def _fallback_inner_thought_ko(request: NextQuestionRequest) -> str:
             return "갑자기 질문이랑 전혀 다른 말이 나오네. 좀 당황스럽다."
         if issue_kind == "missing_core_intent":
             return "질문한 핵심에는 답이 없네. 아직 뭘 말하려는지 잘 모르겠다."
+        if issue_kind == "direct_personal_critique":
+            return "방금 말은 좀 차갑게 꽂히네. 솔직히 살짝 상처받았다."
         if issue_kind == "sensitive_personal_question":
             if "money" in normalized or "parents make" in normalized:
                 return "부모님 돈 얘기랑 연애 얘기를 너무 바로 묻네. 사적인 부분을 갑자기 건드려서 좀 불편해."
@@ -3033,9 +3129,13 @@ def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
         "not answer",
         "does not answer",
         "doesn t answer",
+        "personal",
+        "hurts",
+        "hurt",
         "뜬금",
         "당황",
         "답이 없",
+        "상처",
     ]
     return any(marker in normalized for marker in bad_markers)
 
@@ -3064,6 +3164,13 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
             marker in normalized
             for marker in ["not answer", "does not answer", "doesn t answer", "still do not know", "답이 없", "모르겠"]
         )
+    if issue_kind == "direct_personal_critique":
+        has_hurt_or_distance = any(
+            marker in normalized
+            for marker in ["personal", "cold", "hurt", "stings", "ouch", "상처", "차갑", "꽂히"]
+        )
+        has_softening_spin = any(marker in normalized for marker in ["appreciate the honesty", "honest feedback"])
+        return has_hurt_or_distance and not has_softening_spin
     return True
 
 

@@ -1243,6 +1243,119 @@ class ConversationServiceTest(unittest.TestCase):
                 self.assertEqual(result.innerThoughtType, "NORMAL")
                 self._assert_no_hangul(result.innerThought)
 
+    def test_american_learner_fansign_simple_greeting_answer_is_good_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "응, 잘했어! 한국어가 더 는 것 같은데? 어떻게 이렇게 잘해?",
+            "translatedQuestion": "Oh, nice! Your Korean's gotten even better, hasn't it? How are you this good at it?",
+            "innerThought": "That feels warm and easy to talk to. I’m glad they’re sharing a simple, friendly answer.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "Video Call Fan Signing Event",
+                "briefing": "The learner is talking with their favorite idol in a short video fan-sign call.",
+                "conversationGoal": "Answer warmly and naturally in Korean during a fan-sign call.",
+                "counterpartRole": "idol at a video fan-sign event",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕~ 엄청 오랜만이네! 보니까 너무 좋다. 잘 지냈어?",
+                "translatedQuestion": "Hey~ It's been so long! It's so good to see you. How've you been?",
+                "userUtterance": "잘 지냈어",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "한국어가 더 는 것 같은데? 어떻게 이렇게 잘해?",
+                "questionKo": "Your Korean's gotten even better, hasn't it? How are you this good at it?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self._assert_no_hangul(result.innerThought)
+
+    def test_american_learner_fansign_song_question_role_label_answer_is_bad_inner_thought(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "아하, 귀엽네요! 마지막으로 나한테 하고 싶은 말 있어? 뭐든!",
+            "translatedQuestion": "Aha, that's cute! Anything you wanna say to me before we wrap up? Anything at all!",
+            "innerThought": "That feels sweet and playful. I like the affection, and the energy is warm.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 3,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "Video Call Fan Signing Event",
+                "briefing": "The learner is talking with their favorite idol in a short video fan-sign call.",
+                "conversationGoal": "Answer warmly and naturally in Korean during a fan-sign call.",
+                "counterpartRole": "idol at a video fan-sign event",
+            },
+            "currentTurn": {
+                "aiQuestion": "우리 노래 중에는 뭐가 제일 좋아? 왜 그 노래야?",
+                "translatedQuestion": "Which of our songs is your favorite? Why that one?",
+                "userUtterance": "나 아이돌",
+            },
+            "nextQuestion": {
+                "questionId": 104,
+                "sequence": 4,
+                "questionEn": "마지막으로 나한테 하고 싶은 말 있어? 뭐든!",
+                "questionKo": "Anything you wanna say to me before we wrap up? Anything at all!",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("sweet", result.innerThought.lower())
+        self.assertNotIn("playful", result.innerThought.lower())
+
+    def test_american_learner_fansign_final_personal_critique_is_bad_closing_inner_thought(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "아, 그렇게 느꼈다면 미안해요. 그래도 오늘 와줘서 정말 고마워요.",
+            "translatedMessage": "Ah, if it felt that way, I’m sorry. Still, thank you so much for coming today.",
+            "innerThought": "Ouch, that felt a little cold. But I appreciate the honesty.",
+            "innerThoughtType": "NORMAL",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 4,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "Video Call Fan Signing Event",
+                "briefing": "The learner is talking with their favorite idol in a short video fan-sign call.",
+                "conversationGoal": "Answer warmly and naturally in Korean during a fan-sign call.",
+                "counterpartRole": "idol at a video fan-sign event",
+            },
+            "currentTurn": {
+                "aiQuestion": "마지막으로 나한테 하고 싶은 말 있어? 뭐든!",
+                "translatedQuestion": "Anything you wanna say to me before we wrap up? Anything at all!",
+                "userUtterance": "너 너무 기계적이다.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("appreciate the honesty", result.innerThought.lower())
+
     def test_american_learner_turn_feedback_prompt_preserves_user_intent_like_korean_learner(self):
         from app.models.conversation import ServiceAudience
 
