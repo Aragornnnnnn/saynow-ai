@@ -1077,3 +1077,11 @@
 - [x] fallback acknowledgement 기본값을 사용자 발화 기반 문구나 고정 질문 단독으로 바꾼다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] 결과를 context notes에 기록하고 커밋/push한다.
+
+## American learner off-topic BAD innerThought
+
+- [x] 뜬금없는 한국어 발화가 `innerThoughtType=BAD`로 보정되는 RED 테스트를 추가한다.
+- [x] 모델이 오프토픽 답변을 장난/귀여움으로 넘겨도 BAD 속마음으로 보정하는 RED 테스트를 추가한다.
+- [x] `BAD` 기준을 대화 흐름 붕괴와 상대 당황까지 포함하도록 프롬프트와 fallback을 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 결과를 context notes에 기록하고 커밋한다.

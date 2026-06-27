@@ -523,6 +523,90 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertFalse(server_result.innerThought.startswith("They "))
         self.assertNotIn("which makes", server_result.innerThought)
 
+    def test_american_learner_off_topic_flow_break_fallback_is_bad_without_reasking_current_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: "not json"
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "One-on-One Chat with a Fellow Fan",
+                "briefing": "The learner is chatting casually with a same-age Korean K-pop fan friend.",
+                "conversationGoal": "Use casual, friendly Korean while answering the fan friend's questions.",
+                "counterpartRole": "same-age K-pop fan friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕! 어 너도 이 그룹 좋아해? 나도야! 너 최애 누구야?",
+                "translatedQuestion": "Hi! Oh, you like this group too? Me too! Who's your bias?",
+                "userUtterance": "저는 바나나를 책상 위에 두고 왔어요.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "questionKo": "OMG we have similar taste! How'd you get into them?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertIn("off-topic", result.innerThought)
+        self.assertIn("우리 취향 비슷", result.aiQuestion)
+        self.assertIn("similar taste", result.translatedQuestion)
+        self.assertNotIn("최애 누구야?", result.aiQuestion)
+        self.assertNotIn("Who's your bias?", result.translatedQuestion)
+
+    def test_american_learner_off_topic_flow_break_replaces_llm_normal_and_false_premise(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "ㅋㅋ 귀엽다. 헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+            "translatedQuestion": "Haha, that's cute. OMG we have similar taste! How'd you get into them?",
+            "innerThought": (
+                "That answer came out totally off-topic, but in a playful way. "
+                "It feels a little random, which makes the chat kind of funny."
+            ),
+            "innerThoughtType": "NORMAL",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1000,
+            "submittedTurnId": 5000,
+            "submittedSequence": 1,
+            "scenario": {
+                **self._scenario(service_audience="AMERICAN_LEARNER"),
+                "title": "One-on-One Chat with a Fellow Fan",
+                "briefing": "The learner is chatting casually with a same-age Korean K-pop fan friend.",
+                "conversationGoal": "Use casual, friendly Korean while answering the fan friend's questions.",
+                "counterpartRole": "same-age K-pop fan friend",
+            },
+            "currentTurn": {
+                "aiQuestion": "안녕! 어 너도 이 그룹 좋아해? 나도야! 너 최애 누구야?",
+                "translatedQuestion": "Hi! Oh, you like this group too? Me too! Who's your bias?",
+                "userUtterance": "저는 바나나를 책상 위에 두고 왔어요.",
+            },
+            "nextQuestion": {
+                "questionId": 102,
+                "sequence": 2,
+                "questionEn": "헐 우리 취향 비슷하다! 어쩌다 입덕했어?",
+                "questionKo": "OMG we have similar taste! How'd you get into them?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "BAD")
+        self._assert_no_hangul(result.innerThought)
+        self.assertNotIn("cute", result.innerThought.lower())
+        self.assertNotIn("which makes", result.innerThought)
+        self.assertIn("우리 취향 비슷", result.aiQuestion)
+        self.assertIn("similar taste", result.translatedQuestion)
+        self.assertNotIn("최애 누구야?", result.aiQuestion)
+
     def test_american_learner_closing_message_fallback_inner_thought_is_english(self):
         from app.models.conversation import ClosingMessageRequest
 

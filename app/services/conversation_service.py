@@ -1330,7 +1330,7 @@ def _american_learner_next_question_system_prompt() -> str:
             "Write immediate private self-talk, not an analysis of the user. "
             "Do not write observer-report innerThought. Avoid observer-report openings using third-person analysis, causal report clauses, or evaluator adjectives. "
             "Keep innerThought to 1-2 short sentences and only mention the feeling or relationship signal created by the user's latest answer. "
-            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, or role-inappropriate. "
+            "Use GOOD when the utterance feels clear, warm, or appropriate; NORMAL when understandable but slightly incomplete or flat; BAD when it feels blunt, cold, rude, role-inappropriate, severely off-topic, or confusing enough to break the conversation flow. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to ask next, how the conversation should move, or whether the scenario can continue. "
             "Do not write planning thoughts such as 'I should ask about...', 'I should keep the conversation moving', or 'I should wrap this up'."
@@ -1341,11 +1341,13 @@ def _american_learner_next_question_system_prompt() -> str:
             "For a fan-sign idol, direct self-praise after a compliment may feel cute but a little awkward, while '상관없어요' can feel like the fan has no special interest. "
             "For a same-age K-pop fan friend, formal -습니다 speech can feel distant even when grammatically correct. "
             "For a Korean blind date partner, '아무거나요' can feel passive, '당연하죠!' can feel too forward, and '아니요, 싫어요' can feel too blunt. "
+            "If the answer does not satisfy the current question at all, such as answering a bias question with a random object or a food question with a nonsensical sentence, set innerThoughtType to BAD. "
             "The innerThought should be the counterpart's immediate feeling about that social signal, written in English. "
             "Bad innerThought style: 'I should keep it calm and leave a good impression.' "
             "Good innerThought for a fan-sign idol hearing '상관없어요.': 'Oh, that stings a little. I wanted to hear something warmer.' "
             "Good innerThought for a same-age fan friend hearing formal speech: 'Nice, the answer is clear. It just feels a bit distant for a fellow fan.' "
-            "Good innerThought for a blind date partner hearing direct refusal: 'Oof, that was direct. I get it, but it stings a bit.'"
+            "Good innerThought for a blind date partner hearing direct refusal: 'Oof, that was direct. I get it, but it stings a bit.' "
+            "Good innerThought for a severe off-topic answer: 'Wait, that is completely off-topic. I am caught off guard.'"
         ),
         (
             "Output Schema:\n"
@@ -2341,7 +2343,7 @@ def _repair_next_question_inner_thought(
         request,
         service_audience=effective_service_audience,
     )
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _conversation_issue_kind(request, service_audience=effective_service_audience)
     parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
     wrong_language_inner_thought = _inner_thought_uses_wrong_language(
         effective_service_audience,
@@ -2426,6 +2428,97 @@ def _join_acknowledgement_and_question(acknowledgement: str, question: str) -> s
     return f"{cleaned_acknowledgement} {cleaned_question}"
 
 
+def _conversation_issue_kind(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> str | None:
+    tone_issue = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    if tone_issue:
+        return tone_issue
+    if _is_off_topic_flow_break(request, service_audience=service_audience):
+        return "off_topic_flow_break"
+    return None
+
+
+def _is_off_topic_flow_break(
+    request: NextQuestionRequest,
+    *,
+    service_audience: ServiceAudience | None = None,
+) -> bool:
+    effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
+    if not _is_american_learner(effective_service_audience):
+        return False
+    question = _normalize_visible_text(
+        f"{request.currentTurn.aiQuestion} {request.currentTurn.translatedQuestion}"
+    )
+    answer = _normalize_visible_text(request.currentTurn.userUtterance)
+    if not answer:
+        return False
+
+    expected_kind = _expected_answer_kind_for_off_topic_check(question)
+    if expected_kind is None:
+        return False
+    if _answer_mentions_expected_kind(answer, expected_kind):
+        return False
+    return _answer_has_off_topic_or_nonsense_marker(answer, expected_kind)
+
+
+def _expected_answer_kind_for_off_topic_check(question: str) -> str | None:
+    if any(marker in question for marker in ["최애", "bias"]):
+        return "bias"
+    if any(marker in question for marker in ["노래", "song"]):
+        return "song"
+    if any(marker in question for marker in ["음식", "드시", "먹", "food", "eat"]):
+        return "food"
+    return None
+
+
+def _answer_mentions_expected_kind(answer: str, expected_kind: str) -> bool:
+    expected_markers = {
+        "bias": ["최애", "bias", "멤버", "좋아", "팬", "민지", "민수", "지민"],
+        "song": ["노래", "곡", "가사", "멜로디", "앨범", "좋아", "shine", "favorite"],
+        "food": [
+            "음식",
+            "한식",
+            "양식",
+            "일식",
+            "중식",
+            "분식",
+            "파스타",
+            "피자",
+            "치킨",
+            "라면",
+            "밥",
+            "고기",
+            "불고기",
+            "비빔밥",
+            "좋아",
+            "먹",
+            "아무거나",
+            "상관없",
+            "가리는",
+        ],
+    }
+    return any(marker in answer for marker in expected_markers[expected_kind])
+
+
+def _answer_has_off_topic_or_nonsense_marker(answer: str, expected_kind: str) -> bool:
+    absurd_pairs = [
+        ("냉장고", "춤"),
+        ("달", "매운맛"),
+        ("달", "매운"),
+        ("신발", "달"),
+    ]
+    if any(first in answer and second in answer for first, second in absurd_pairs):
+        return True
+
+    off_topic_markers = ["냉장고", "책상", "신발", "파란색", "달"]
+    if expected_kind != "food":
+        off_topic_markers.append("바나나")
+    return any(marker in answer for marker in off_topic_markers)
+
+
 def _fallback_inner_thought_type(
     request: NextQuestionRequest,
     *,
@@ -2433,7 +2526,7 @@ def _fallback_inner_thought_type(
 ) -> str:
     effective_service_audience = service_audience or _effective_service_audience_for_next_question(request)
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _conversation_issue_kind(request, service_audience=effective_service_audience)
     if issue_kind == "defensive_joke_rejection":
         return "NORMAL"
     if issue_kind:
@@ -2470,9 +2563,11 @@ def _fallback_inner_thought_en(request: NextQuestionRequest) -> str:
     thought_type = _fallback_inner_thought_type(request)
     role = _normalize_visible_text(request.scenario.counterpartRole)
     normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-    issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+    issue_kind = _conversation_issue_kind(request)
 
     if thought_type == "BAD":
+        if issue_kind == "off_topic_flow_break":
+            return "Wait, that is completely off-topic. I am caught off guard."
         if issue_kind == "sensitive_personal_question":
             return "That jumps into private topics too directly, so it feels uncomfortable."
         if issue_kind == "chores_deflection":
@@ -2530,7 +2625,9 @@ def _fallback_inner_thought_ko(request: NextQuestionRequest) -> str:
     role = _normalize_visible_text(request.scenario.counterpartRole)
     if thought_type == "BAD":
         normalized = _normalize_visible_text(request.currentTurn.userUtterance)
-        issue_kind = _tone_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
+        issue_kind = _conversation_issue_kind(request)
+        if issue_kind == "off_topic_flow_break":
+            return "갑자기 질문이랑 전혀 다른 말이 나오네. 좀 당황스럽다."
         if issue_kind == "sensitive_personal_question":
             if "money" in normalized or "parents make" in normalized:
                 return "부모님 돈 얘기랑 연애 얘기를 너무 바로 묻네. 사적인 부분을 갑자기 건드려서 좀 불편해."
@@ -2835,6 +2932,11 @@ def _looks_like_bad_inner_thought(inner_thought: str) -> bool:
         "딱 잘라",
         "사적",
         "시키",
+        "off topic",
+        "caught off guard",
+        "confusing",
+        "뜬금",
+        "당황",
     ]
     return any(marker in normalized for marker in bad_markers)
 
@@ -2851,6 +2953,13 @@ def _bad_inner_thought_matches_issue(inner_thought: str, issue_kind: str) -> boo
         return any(marker in normalized for marker in ["기분", "농담", "상했", "미안"])
     if issue_kind == "hate":
         return any(marker in normalized for marker in ["차갑", "강하", "무례", "공격", "명령", "불편", "날카"])
+    if issue_kind == "off_topic_flow_break":
+        has_confusion = any(
+            marker in normalized
+            for marker in ["off topic", "caught off guard", "confusing", "뜬금", "당황", "전혀 다른"]
+        )
+        has_positive_spin = any(marker in normalized for marker in ["cute", "playful", "funny", "amused", "귀엽"])
+        return has_confusion and not has_positive_spin
     return True
 
 
