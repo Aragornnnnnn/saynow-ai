@@ -1525,8 +1525,14 @@ def _repair_next_question_drift(
         request.nextQuestion.questionId,
     )
     return NextQuestionResponse(
-        aiQuestion=f"{_fallback_acknowledgement_en(request)} {fixed_question_en}",
-        translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {fixed_question_ko}",
+        aiQuestion=_join_optional_acknowledgement(
+            _fallback_acknowledgement_en(request),
+            fixed_question_en,
+        ),
+        translatedQuestion=_join_optional_acknowledgement(
+            _fallback_acknowledgement_ko(request),
+            fixed_question_ko,
+        ),
         innerThought=response.innerThought,
         innerThoughtType=response.innerThoughtType,
     )
@@ -1670,11 +1676,25 @@ def _fallback_acknowledged_next_question(
     inner_thought_type: str | None = None,
 ) -> NextQuestionResponse:
     return NextQuestionResponse(
-        aiQuestion=f"{_fallback_acknowledgement_en(request)} {request.nextQuestion.questionEn}",
-        translatedQuestion=f"{_fallback_acknowledgement_ko(request)} {request.nextQuestion.questionKo}",
+        aiQuestion=_join_optional_acknowledgement(
+            _fallback_acknowledgement_en(request),
+            request.nextQuestion.questionEn,
+        ),
+        translatedQuestion=_join_optional_acknowledgement(
+            _fallback_acknowledgement_ko(request),
+            request.nextQuestion.questionKo,
+        ),
         innerThought=inner_thought or _fallback_inner_thought(request),
         innerThoughtType=inner_thought_type or _fallback_inner_thought_type(request),
     )
+
+
+def _join_optional_acknowledgement(acknowledgement: str, question: str) -> str:
+    cleaned_acknowledgement = acknowledgement.strip()
+    cleaned_question = question.strip()
+    if not cleaned_acknowledgement:
+        return cleaned_question
+    return f"{cleaned_acknowledgement} {cleaned_question}"
 
 
 def _fallback_inner_thought_type(request: NextQuestionRequest) -> str:
@@ -2297,7 +2317,7 @@ def _fallback_acknowledgement_en(request: NextQuestionRequest) -> str:
         return "Sounds tasty."
     if "not sure" in normalized or "maybe" in normalized:
         return "Maybe, yeah."
-    return "Let's keep going."
+    return ""
 
 
 def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
@@ -2346,7 +2366,7 @@ def _fallback_acknowledgement_ko(request: NextQuestionRequest) -> str:
         return tone("맛있었겠네요.")
     if "not sure" in normalized or "maybe" in normalized:
         return tone("아직 확실하진 않은가 보네요.")
-    return tone("계속 이어가 볼게요.")
+    return ""
 
 
 def _align_next_question_korean_tone(

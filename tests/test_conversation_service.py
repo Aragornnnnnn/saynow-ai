@@ -312,6 +312,21 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertFalse(result.aiQuestion.lower().startswith("got it"))
         self.assertFalse(result.translatedQuestion.startswith("좋아요"))
 
+    def test_next_question_omits_fallback_acknowledgement_when_user_utterance_is_unclear(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "I see. Do you cook often?",
+            "translatedQuestion": "그렇군요. 요리는 자주 하나요?",
+        })
+
+        result = self.service.generate_next_question(
+            self._next_question_request(user_utterance="Honey no I like veal. Tool. Pill. Pill. Pill.")
+        )
+
+        self.assertEqual(result.aiQuestion, "Do you cook often?")
+        self.assertEqual(result.translatedQuestion, "요리는 자주 하나요?")
+        self.assertNotIn("Let's keep going", result.aiQuestion)
+        self.assertNotIn("계속 이어가", result.translatedQuestion)
+
     def test_next_question_repairs_blunt_inner_thought_from_model_output(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "aiQuestion": "Okay, anywhere works. Do you cook often?",
