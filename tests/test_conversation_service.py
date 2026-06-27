@@ -602,7 +602,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIsNone(cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
-    def test_american_learner_turn_feedback_marks_thin_blind_date_weekend_answer_as_needs(self):
+    def test_american_learner_turn_feedback_allows_short_blind_date_weekend_answer_as_good(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -634,12 +634,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.generate_turn_feedback(request)
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.correctionExpression, "주말에는 보통 집에서 쉬고, 가끔 친구들이랑 카페에 가요.")
-        self.assertIsNone(cached.feedbackDetail)
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.feedbackDetail, "Your answer directly says what you do on weekends.")
+        self.assertIsNone(cached.correctionExpression)
+        self.assertIsNone(cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
 
-    def test_american_learner_turn_feedback_marks_generic_blind_date_ideal_type_as_needs(self):
+    def test_american_learner_turn_feedback_allows_short_blind_date_ideal_type_as_good(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -671,12 +672,13 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.generate_turn_feedback(request)
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.correctionExpression, "저는 대화가 잘 통하고 배려심 있는 사람이 좋아요.")
-        self.assertIsNone(cached.feedbackDetail)
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.feedbackDetail, "Your answer gives a simple ideal type.")
+        self.assertIsNone(cached.correctionExpression)
+        self.assertIsNone(cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
 
-    def test_american_learner_turn_feedback_marks_direct_blind_date_ride_acceptance_as_needs(self):
+    def test_american_learner_turn_feedback_allows_direct_blind_date_ride_acceptance_as_good(self):
         self.service.chat = lambda *args, **kwargs: json.dumps({
             "turnId": 5000,
             "feedbackType": "GOOD",
@@ -708,9 +710,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.service.generate_turn_feedback(request)
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
-        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
-        self.assertEqual(cached.correctionExpression, "그래도 될까요? 감사합니다.")
-        self.assertIsNone(cached.feedbackDetail)
+        self.assertEqual(cached.feedbackType, "GOOD")
+        self.assertEqual(cached.feedbackDetail, "Your answer accepts the ride offer clearly and politely.")
+        self.assertIsNone(cached.correctionExpression)
+        self.assertIsNone(cached.correctionReason)
         self.assertIsNone(cached.benchmarkMessage)
 
     def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
@@ -782,6 +785,10 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("당연하죠", system_prompt)
         self.assertIn("네 좋아요", system_prompt)
         self.assertIn("아니요, 싫어요", system_prompt)
+        self.assertIn("Short but valid answers", system_prompt)
+        self.assertNotIn("NEEDS_IMPROVEMENT for thin blind date weekend answer", system_prompt)
+        self.assertNotIn("NEEDS_IMPROVEMENT for generic blind date ideal-type answer", system_prompt)
+        self.assertNotIn("NEEDS_IMPROVEMENT for direct blind date ride acceptance", system_prompt)
         self.assertIn("cushion phrase", system_prompt)
         self.assertIn("Do not mark these as GOOD just because the grammar is understandable", system_prompt)
 
