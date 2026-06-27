@@ -1488,6 +1488,17 @@ def _repair_next_question_drift(
 ) -> NextQuestionResponse:
     fixed_question_en = request.nextQuestion.questionEn
     fixed_question_ko = request.nextQuestion.questionKo
+    if (
+        _looks_like_unclear_fragmented_utterance(request.currentTurn.userUtterance)
+        and _contains_text(response.aiQuestion, fixed_question_en)
+        and _contains_text(response.translatedQuestion, fixed_question_ko)
+    ):
+        return NextQuestionResponse(
+            aiQuestion=fixed_question_en,
+            translatedQuestion=fixed_question_ko,
+            innerThought=response.innerThought,
+            innerThoughtType=response.innerThoughtType,
+        )
     if _same_visible_text(response.aiQuestion, fixed_question_en) and _same_visible_text(
         response.translatedQuestion,
         fixed_question_ko,
@@ -2514,6 +2525,25 @@ def _has_overinterpreted_acknowledgement_for_vague_answer(
         "sounds interesting",
     ]
     return any(normalized_ai_question.startswith(start) for start in overinterpreted_starts)
+
+
+def _looks_like_unclear_fragmented_utterance(user_utterance: str) -> bool:
+    fragments = [
+        _normalize_visible_text(fragment)
+        for fragment in re.split(r"[.!?。！？]+", user_utterance)
+        if _normalize_visible_text(fragment)
+    ]
+    if len(fragments) < 3:
+        return False
+
+    short_fragments = [fragment for fragment in fragments if len(fragment.split()) <= 2]
+    if len(short_fragments) < 3:
+        return False
+
+    counts: dict[str, int] = {}
+    for fragment in short_fragments:
+        counts[fragment] = counts.get(fragment, 0) + 1
+    return any(count >= 2 for count in counts.values())
 
 
 def _clean_acknowledgement_fragment(value: str) -> str:
