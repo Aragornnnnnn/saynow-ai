@@ -528,6 +528,43 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Korean", cached.feedbackDetail)
         self.assertIsNone(cached.benchmarkMessage)
 
+    def test_american_learner_turn_feedback_marks_missing_bias_answer_as_needs(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "GOOD",
+            "koreanAnalogy": "To a same-age fan friend, this sounds short but friendly.",
+            "positiveFeedback": None,
+            "feedbackDetail": "Your answer directly matches the question and sounds casual.",
+            "correctionExpression": None,
+            "correctionReason": None,
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+        request = self._turn_feedback_request(
+            service_audience="AMERICAN_LEARNER",
+            user_utterance="응 좋아해.",
+        )
+        request = request.model_copy(update={
+            "scenario": request.scenario.model_copy(update={
+                "title": "One-on-One Chat with a Fellow Fan",
+                "briefing": "Talk casually with a same-age fan who likes the same K-pop group.",
+                "conversationGoal": "Answer naturally in casual Korean fan talk.",
+                "counterpartRole": "same-age K-pop fan friend",
+            }),
+            "turn": request.turn.model_copy(update={
+                "aiQuestion": "안녕! 어 너도 이 그룹 좋아해? 나도야! 너 최애 누구야?",
+                "translatedQuestion": "Hi! Oh, you like this group too? Me too! Who's your bias?",
+            }),
+        })
+
+        self.service.generate_turn_feedback(request)
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.feedbackType, "NEEDS_IMPROVEMENT")
+        self.assertEqual(cached.correctionExpression, "응, 좋아해. 내 최애는 민수야.")
+        self.assertIsNone(cached.feedbackDetail)
+        self.assertIsNone(cached.benchmarkMessage)
+
     def test_american_learner_turn_feedback_infers_audience_from_korean_turn_when_missing(self):
         captured = {}
 
@@ -578,10 +615,14 @@ class ConversationServiceTest(unittest.TestCase):
         system_prompt = self.service._turn_feedback_system_prompt(ServiceAudience.AMERICAN_LEARNER)
 
         self.assertIn("Scenario Pragmatics Rubric", system_prompt)
+        self.assertIn("Question Intent Gate", system_prompt)
+        self.assertIn("every core slot", system_prompt)
         self.assertIn("fan-sign compliment", system_prompt)
         self.assertIn("네, 저 한국어 잘해요", system_prompt)
         self.assertIn("아직 부족하지만", system_prompt)
         self.assertIn("same-age K-pop fan friend", system_prompt)
+        self.assertIn("응 좋아해", system_prompt)
+        self.assertIn("내 최애는 민수야", system_prompt)
         self.assertIn("-습니다", system_prompt)
         self.assertIn("내 최애는 민지야", system_prompt)
         self.assertIn("blind date", system_prompt)
