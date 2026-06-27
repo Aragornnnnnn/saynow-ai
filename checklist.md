@@ -1036,3 +1036,13 @@
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
 - [x] prod AI 내부 API로 live smoke를 실행하고 결과를 채팅에 요약한다.
 - [x] 결과를 context notes에 기록하고 커밋한다.
+
+## American learner Korean native score calibration
+
+- [x] `AMERICAN_LEARNER` 한국어 답변이 영어 단어 수 0개로 계산되는 점수 버그를 문서화한다.
+- [x] 한국어 GOOD 세션이 56점에 고정되지 않도록 RED 회귀 테스트를 추가한다.
+- [x] 한국어 NEEDS 세션이 43점에 고정되지 않고 개선 필요 수준으로 계산되는 RED 회귀 테스트를 추가한다.
+- [x] `AMERICAN_LEARNER` 전용 한국어 답변 길이와 복잡도 점수 산식을 구현한다.
+- [ ] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] 배포 후 live smoke로 점수 분포와 계약 필드를 재확인한다.
+- [ ] 결과를 context notes에 기록하고 커밋/push한다.

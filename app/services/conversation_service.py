@@ -531,6 +531,17 @@ def _score_turn_feedback(
     feedback: TurnFeedbackData,
     detected_patterns: tuple[DetectedErrorPattern, ...] = (),
 ) -> NativeScoreBreakdown:
+    if _is_american_learner(request.scenario.serviceAudience):
+        korean_units = _korean_units(request.turn.userUtterance)
+        return NativeScoreBreakdown(
+            attemptedWordScore=_attempted_korean_unit_score(korean_units),
+            sentenceComplexityScore=_korean_sentence_complexity_score(
+                request.turn.userUtterance,
+                korean_units,
+                detected_patterns,
+            ),
+            comprehensibilityScore=_comprehensibility_score(feedback, detected_patterns),
+        )
     words = _english_words(request.turn.userUtterance)
     return NativeScoreBreakdown(
         attemptedWordScore=_attempted_word_score(words),
@@ -970,6 +981,65 @@ def _english_words(user_utterance: str) -> list[str]:
 
 def _attempted_word_score(words: list[str]) -> int:
     return _clamp_score(round(len(words) * 8), 0, 100)
+
+
+def _korean_units(user_utterance: str) -> list[str]:
+    return re.findall(r"[가-힣]+", user_utterance)
+
+
+def _attempted_korean_unit_score(korean_units: list[str]) -> int:
+    if not korean_units:
+        return 0
+    syllable_count = sum(len(unit) for unit in korean_units)
+    return _clamp_score(round(len(korean_units) * 7 + syllable_count * 0.8), 0, 100)
+
+
+def _korean_sentence_complexity_score(
+    user_utterance: str,
+    korean_units: list[str],
+    detected_patterns: tuple[DetectedErrorPattern, ...] = (),
+) -> int:
+    if not korean_units:
+        return 35
+    normalized = _normalize_visible_text(user_utterance)
+    syllable_count = sum(len(unit) for unit in korean_units)
+    score = 40
+    if len(korean_units) >= 4:
+        score += 10
+    if len(korean_units) >= 7:
+        score += 10
+    if syllable_count >= 18:
+        score += 10
+    if any(
+        marker in normalized
+        for marker in [
+            "고",
+            "지만",
+            "그래도",
+            "그리고",
+            "그래서",
+            "니까",
+            "때문",
+            "특히",
+            "가끔",
+            "부터",
+            "혹시",
+        ]
+    ):
+        score += 15
+    if re.search(r"(요|니다|세요|까요|이에요|예요)(\s|$)", normalized):
+        score += 10
+    if len(re.findall(r"[.!?。]", user_utterance)) >= 2:
+        score += 5
+    if any(pattern.status in {"correct", "incorrect", "attempted"} for pattern in detected_patterns):
+        score += 10
+    if any(
+        pattern.status in {"correct", "incorrect", "attempted"}
+        and pattern.pattern.gamifiable
+        for pattern in detected_patterns
+    ):
+        score += 5
+    return _clamp_score(score, 0, 100)
 
 
 def _sentence_complexity_score(

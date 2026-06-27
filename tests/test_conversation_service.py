@@ -5038,6 +5038,102 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.nativeScore, 61)
         self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
 
+    def test_american_learner_good_korean_session_scores_above_old_zero_word_floor(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        utterances = [
+            "아직 많이 부족하지만 매일 한국어를 열심히 공부하고 있어요.",
+            "유튜브에서 무대 영상을 보고 입덕했고 그때부터 계속 좋아했어요.",
+            "주말에는 보통 집에서 쉬고 가끔 친구들이랑 카페에 가요.",
+            "그래도 될까요? 정말 감사해요.",
+        ]
+        responses = [
+            {
+                "turnId": 5000 + offset,
+                "feedbackType": "GOOD",
+                "koreanAnalogy": "A warm and complete Korean answer.",
+                "feedbackDetail": "The answer fits the question and keeps the conversation moving naturally.",
+                "benchmarkMessage": None,
+            }
+            for offset in range(len(utterances))
+        ]
+        responses.append({
+            "sessionId": 1000,
+            "highlightMessage": "Complete Korean answers",
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        for offset, utterance in enumerate(utterances):
+            self.service.generate_turn_feedback(
+                self._turn_feedback_request(
+                    turn_id=5000 + offset,
+                    user_utterance=utterance,
+                    service_audience="AMERICAN_LEARNER",
+                )
+            )
+
+        result = self.service.generate_session_feedback(
+            SessionFeedbackRequest.model_validate({
+                "sessionId": 1000,
+                "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+                "expectedTurnIds": [5000, 5001, 5002, 5003],
+            })
+        )
+
+        self.assertGreaterEqual(result.nativeScore, 70)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
+    def test_american_learner_needs_korean_session_counts_attempted_korean(self):
+        from app.models.conversation import SessionFeedbackRequest
+
+        utterances = [
+            "저는 어제 영화 봐요 친구랑 같이.",
+            "선생님 물 줘요 지금 목말라요.",
+            "저는 먹어요 김치를 매운 것 좋아해요.",
+            "저는 학교에가요 그리고친구만나요.",
+        ]
+        responses = [
+            {
+                "turnId": 5000 + offset,
+                "feedbackType": "NEEDS_IMPROVEMENT",
+                "koreanAnalogy": "The meaning is visible, but the Korean needs a more natural form.",
+                "positiveFeedback": "You tried to answer in Korean instead of avoiding the question.",
+                "correctionExpression": correction,
+                "correctionReason": "This version sounds more natural for the Korean conversation context.",
+                "benchmarkMessage": None,
+            }
+            for offset, correction in enumerate([
+                "저는 어제 친구랑 같이 영화를 봤어요.",
+                "선생님, 물 좀 주시겠어요? 지금 목이 말라요.",
+                "저는 매운 김치를 먹는 걸 좋아해요.",
+                "저는 학교에 가요. 그리고 친구를 만나요.",
+            ])
+        ]
+        responses.append({
+            "sessionId": 1000,
+            "highlightMessage": "Korean effort with clear fixes",
+        })
+        self.service.chat = lambda *args, **kwargs: json.dumps(responses.pop(0))
+        for offset, utterance in enumerate(utterances):
+            self.service.generate_turn_feedback(
+                self._turn_feedback_request(
+                    turn_id=5000 + offset,
+                    user_utterance=utterance,
+                    service_audience="AMERICAN_LEARNER",
+                )
+            )
+
+        result = self.service.generate_session_feedback(
+            SessionFeedbackRequest.model_validate({
+                "sessionId": 1000,
+                "scenario": self._scenario(service_audience="AMERICAN_LEARNER"),
+                "expectedTurnIds": [5000, 5001, 5002, 5003],
+            })
+        )
+
+        self.assertGreaterEqual(result.nativeScore, 55)
+        self.assertLess(result.nativeScore, 70)
+        self.assertFalse(hasattr(result, "nativeScoreBreakdown"))
+
     def test_session_feedback_replaces_english_summary_with_korean_fallback(self):
         from app.models.conversation import SessionFeedbackRequest
 
