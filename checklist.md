@@ -11,7 +11,7 @@
 - [x] live smoke에서 발견된 소개팅 차량 수락 `네 좋아요.` GOOD 오분류를 RED 테스트로 고정한다.
 - [x] 첫 소개팅 차량 수락은 완곡한 수락 표현으로 교정하도록 보정한다.
 - [x] 차량 수락 보정 후 focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] main 배포 후 live smoke로 소개팅 `terse_low_context` 4턴 전부 NEEDS를 확인한다.
+- [x] main 배포 후 live smoke로 소개팅 `terse_low_context` 4턴 전부 NEEDS를 확인한다.
 
 ## AMERICAN_LEARNER 질문 의도 충족 평가 보정
 
