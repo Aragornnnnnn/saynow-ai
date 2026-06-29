@@ -578,7 +578,7 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThought, raw_inner_thought)
         self.assertEqual(result.innerThoughtType, "NORMAL")
 
-    def test_next_question_preserves_scripted_future_inner_thought_text_when_repair_fallback_is_disabled(self):
+    def test_next_question_repairs_scripted_future_inner_thought_even_when_repair_fallback_is_disabled(self):
         from app.models.conversation import NextQuestionRequest
 
         self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
@@ -615,7 +615,9 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_next_question(request)
 
-        self.assertEqual(result.innerThought, raw_inner_thought)
+        self.assertNotEqual(result.innerThought, raw_inner_thought)
+        self.assertNotIn("파티", result.innerThought)
+        self.assertNotIn("넘어가", result.innerThought)
         self.assertEqual(result.innerThoughtType, "BAD")
 
     def test_next_question_repairs_generic_normal_inner_thought_for_detailed_good_answer(self):
@@ -1833,6 +1835,48 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("무슨 말인지는 알겠어", result.innerThought)
         self.assertNotIn("무슨 뜻", result.innerThought)
 
+    def test_next_question_repairs_inner_thought_that_previews_next_fixed_question_topic(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service._INNER_THOUGHT_REPAIR_FALLBACK_ENABLED = False
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "That sounds fair. Do you like parties?",
+            "translatedQuestion": "그럴 수 있지. 파티 좋아해?",
+            "innerThought": "역시 같이 사는 거라 정리된 방식이 좋구나. 그런데 오늘 밤 파티도 같이 갈지 궁금하네.",
+            "innerThoughtType": "GOOD",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1460,
+            "submittedTurnId": 5460,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "룸메이트와 청소와 생활 방식을 이야기합니다.",
+                "conversationGoal": "룸메이트와 공동생활 방식을 자연스럽게 조율한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "How should we split the cleaning and stuff?",
+                "translatedQuestion": "청소 같은 거 어떻게 나눌까?",
+                "userUtterance": "A schedule would be helpful. We can alternate cleaning every week and talk if plans change.",
+            },
+            "nextQuestion": {
+                "questionId": 80,
+                "sequence": 4,
+                "questionEn": "Do you like parties?",
+                "questionKo": "파티 좋아해?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.innerThoughtType, "GOOD")
+        self.assertNotIn("파티", result.innerThought)
+        self.assertNotIn("궁금", result.innerThought)
+        self.assertNotIn("그런데", result.innerThought)
+        self.assertIn("청소", result.innerThought)
+
     def test_next_question_replaces_generic_inner_thought_for_mixed_korean_english(self):
         from app.models.conversation import NextQuestionRequest
 
@@ -1911,11 +1955,13 @@ class ConversationServiceTest(unittest.TestCase):
 
         result = self.service.generate_closing_message(request)
 
-        self.assertEqual(result.aiMessage, "Got it. That was clear enough for this situation. Let's wrap up here.")
+        self.assertEqual(result.aiMessage, "Sure, I'll keep it down tonight. Good luck with your early class tomorrow.")
         self.assertEqual(result.innerThoughtType, "GOOD")
         self.assertNotIn("마무리", result.innerThought)
         self.assertIn("시끄러", result.innerThought)
-        self.assertIn("마무리", result.translatedMessage)
+        self.assertIn("조용", result.translatedMessage)
+        self.assertFalse(result.aiMessage.endswith("?"))
+        self.assertFalse(result.translatedMessage.endswith("?"))
         self.assertIn("Closing reason: GOAL_COMPLETED", captured["user"])
         self.assertIn("Counterpart role: roommate", captured["user"])
         self.assertIn("Do not ask a new follow-up question", captured["system"])
@@ -2013,6 +2059,183 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertEqual(result.innerThoughtType, "BAD")
         self.assertIn("무슨 뜻", result.innerThought)
         self.assertFalse(result.aiMessage.endswith("?"))
+
+    def test_closing_message_repairs_generic_party_acceptance_to_joining_flow(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiMessage": "Nice, glad to hear it. Thanks for letting me know, and I’ll keep that in mind.",
+            "translatedMessage": "좋아, 그렇게 말해줘서 반가워. 알려줘서 고마워, 그 점도 기억해둘게.",
+            "innerThought": "파티를 좋아한다니 반갑네. 짧지만 분위기는 괜찮았어.",
+            "innerThoughtType": "GOOD",
+        })
+        request = ClosingMessageRequest.model_validate({
+            "sessionId": 1001,
+            "submittedTurnId": 5001,
+            "submittedSequence": 4,
+            "scenario": {
+                "scenarioId": 2,
+                "title": "카페에서 수다떨면서 주말 약속 잡기",
+                "briefing": "룸메이트가 오늘 밤 파티에 같이 갈지 묻습니다.",
+                "conversationGoal": "파티 초대에 자연스럽게 반응한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "A bunch of us are going to a party tonight — you in?",
+                "translatedQuestion": "오늘 밤에 우리 여럿이 파티 가는데 너도 갈래?",
+                "userUtterance": "Oh, yeah. I like parties. Thank you.",
+            },
+            "closingReason": "GOAL_COMPLETED",
+            "goalCompletionStatus": "COMPLETED",
+        })
+
+        result = self.service.generate_closing_message(request)
+
+        self.assertIn("go together", result.aiMessage.lower())
+        self.assertIn("tonight", result.aiMessage.lower())
+        self.assertNotIn("keep that in mind", result.aiMessage.lower())
+        self.assertIn("같이", result.translatedMessage)
+        self.assertIn("가자", result.translatedMessage)
+        self.assertFalse(result.aiMessage.endswith("?"))
+        self.assertFalse(result.translatedMessage.endswith("?"))
+
+    def test_closing_message_fallback_handles_party_acceptance_and_rejection(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        cases = [
+            {
+                "utterance": "Oh, yeah. I like parties. Thank you.",
+                "closingReason": "GOAL_COMPLETED",
+                "goalCompletionStatus": "COMPLETED",
+                "expectedEn": ["go together", "tonight"],
+                "expectedKo": ["같이", "가자"],
+                "forbiddenEn": "keep that in mind",
+            },
+            {
+                "utterance": "No thanks. I want to rest tonight.",
+                "closingReason": "MAX_TURNS_REACHED",
+                "goalCompletionStatus": "PARTIAL",
+                "expectedEn": ["no worries", "another time"],
+                "expectedKo": ["괜찮아", "다음"],
+                "forbiddenEn": "that works for this situation",
+            },
+        ]
+
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(utterance=case["utterance"]):
+                self.service.chat = lambda *args, **kwargs: "not json"
+                request = ClosingMessageRequest.model_validate({
+                    "sessionId": 1010 + index,
+                    "submittedTurnId": 5010 + index,
+                    "submittedSequence": 4,
+                    "scenario": {
+                        "scenarioId": 2,
+                        "title": "카페에서 수다떨면서 주말 약속 잡기",
+                        "briefing": "룸메이트가 오늘 밤 파티에 같이 갈지 묻습니다.",
+                        "conversationGoal": "파티 초대에 자연스럽게 반응한다.",
+                        "counterpartRole": "roommate",
+                    },
+                    "currentTurn": {
+                        "aiQuestion": "A bunch of us are going to a party tonight — you in?",
+                        "translatedQuestion": "오늘 밤에 우리 여럿이 파티 가는데 너도 갈래?",
+                        "userUtterance": case["utterance"],
+                    },
+                    "closingReason": case["closingReason"],
+                    "goalCompletionStatus": case["goalCompletionStatus"],
+                })
+
+                result = self.service.generate_closing_message(request)
+
+                for expected in case["expectedEn"]:
+                    self.assertIn(expected, result.aiMessage.lower())
+                for expected in case["expectedKo"]:
+                    self.assertIn(expected, result.translatedMessage)
+                self.assertNotIn(case["forbiddenEn"], result.aiMessage.lower())
+                self.assertFalse(result.aiMessage.endswith("?"))
+                self.assertFalse(result.translatedMessage.endswith("?"))
+
+    def test_closing_message_fallback_matches_last_question_intent_across_scenarios(self):
+        from app.models.conversation import ClosingMessageRequest
+
+        cases = [
+            {
+                "title": "청소 스케줄 정하기",
+                "briefing": "룸메이트와 청소 분담을 정합니다.",
+                "goal": "청소 방식을 자연스럽게 조율한다.",
+                "role": "roommate",
+                "question": "How should we split the cleaning and stuff?",
+                "questionKo": "청소 같은 거 어떻게 나눌까?",
+                "utterance": "A schedule would be helpful. We can alternate cleaning every week.",
+                "expectedEn": ["cleaning", "alternate"],
+                "expectedKo": ["청소", "번갈"],
+            },
+            {
+                "title": "저녁 같이 먹기",
+                "briefing": "룸메이트와 저녁 식사 취향을 이야기합니다.",
+                "goal": "못 먹는 음식을 부드럽게 말한다.",
+                "role": "roommate",
+                "question": "Is there anything you really can't eat?",
+                "questionKo": "진짜 못 먹는 거 있어?",
+                "utterance": "I'd love to share dinner. I can't eat fish, but I'm fine with almost anything else.",
+                "expectedEn": ["fish"],
+                "expectedKo": ["생선"],
+            },
+            {
+                "title": "기숙사에서 조용히 해달라고 말하기",
+                "briefing": "룸메이트에게 밤에 조용히 해달라고 말합니다.",
+                "goal": "불편함을 너무 공격적이지 않게 전달하고 조용히 해달라고 요청한다.",
+                "role": "roommate",
+                "question": "What do you want me to do?",
+                "questionKo": "내가 어떻게 해주면 좋겠어?",
+                "utterance": "Could you keep it down tonight? I have an early class tomorrow.",
+                "expectedEn": ["keep it down"],
+                "expectedKo": ["조용"],
+            },
+            {
+                "title": "여행 취향 이야기하기",
+                "briefing": "친구와 여행 스타일을 이야기합니다.",
+                "goal": "여행 계획 방식과 이유를 말한다.",
+                "role": "friend",
+                "question": "Do you plan everything before a trip, or just go and figure it out?",
+                "questionKo": "여행 전에 다 계획해, 아니면 그냥 가서 해결해?",
+                "utterance": "I usually make a simple plan, but I leave one free day.",
+                "expectedEn": ["plan"],
+                "expectedKo": ["계획"],
+            },
+        ]
+
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(title=case["title"]):
+                self.service.chat = lambda *args, **kwargs: "not json"
+                request = ClosingMessageRequest.model_validate({
+                    "sessionId": 1020 + index,
+                    "submittedTurnId": 5020 + index,
+                    "submittedSequence": 4,
+                    "scenario": {
+                        "scenarioId": 20 + index,
+                        "title": case["title"],
+                        "briefing": case["briefing"],
+                        "conversationGoal": case["goal"],
+                        "counterpartRole": case["role"],
+                    },
+                    "currentTurn": {
+                        "aiQuestion": case["question"],
+                        "translatedQuestion": case["questionKo"],
+                        "userUtterance": case["utterance"],
+                    },
+                    "closingReason": "GOAL_COMPLETED",
+                    "goalCompletionStatus": "COMPLETED",
+                })
+
+                result = self.service.generate_closing_message(request)
+
+                for expected in case["expectedEn"]:
+                    self.assertIn(expected, result.aiMessage.lower())
+                for expected in case["expectedKo"]:
+                    self.assertIn(expected, result.translatedMessage)
+                self.assertFalse(result.aiMessage.endswith("?"))
+                self.assertFalse(result.translatedMessage.endswith("?"))
+                self.assertFalse(self.service._has_future_inner_thought_marker(result.innerThought))
 
     def test_closing_message_replaces_positive_inner_thought_when_expected_bad(self):
         from app.models.conversation import ClosingMessageRequest

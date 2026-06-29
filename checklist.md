@@ -1,5 +1,16 @@
 # 작업 체크리스트
 
+## LAN-28 closing-message와 innerThought 품질 개선
+
+- [x] 현재 `next-question`, `closing-message` 프롬프트와 repair/fallback 경로를 확인한다.
+- [x] `innerThought`가 다음 질문/화제를 예고하는 케이스를 RED 테스트로 고정한다.
+- [x] 파티 초대 수락/거절과 주요 closing 상황을 RED 테스트로 고정한다.
+- [x] `next-question`과 `closing-message` 프롬프트를 현재 발화 반응 중심으로 강화한다.
+- [x] closing fallback/repair가 마지막 질문 의도에 맞게 닫히도록 수정한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [ ] dev 배포 후 최소 3개 live smoke 결과를 확인한다.
+- [ ] 변경 사항을 커밋하고 origin에 반영한다.
+
 ## LAN-28 innerThoughtType 기준 재정의
 
 - [x] 기존 프롬프트와 fallback 타입 분기에서 GOOD/NORMAL/BAD 기준을 확인한다.

@@ -1078,6 +1078,8 @@ def _next_question_system_prompt() -> str:
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not leave a clear, friendly roommate answer as a generic 'I understand, but it could be more natural' thought. React to the actual content. "
             "Do not use innerThought to preview the next topic, next fixed question, or a future scenario beat. "
+            "Never mention content from Next fixed question English or Next fixed question Korean inside innerThought unless the user already said it in the current utterance. "
+            "Forbidden private-thought patterns include '그런데 ...도 궁금하네', '다음엔 ...', '이제 ... 물어봐야겠다', and any hint about what will be asked next. "
             "The private reaction must stay on what the counterpart feels after hearing the user's current utterance. "
             "Do not mention wrapping up, revealing news later, asking more, joking later, or moving to the next scene unless the user explicitly said that. "
             "Do not write what the counterpart plans to do next. "
@@ -1177,7 +1179,10 @@ def _closing_message_system_prompt() -> str:
             "Write one short English closing sentence or two short English closing sentences. "
             "The closing should acknowledge the user's last utterance and naturally wrap up. "
             "Use the Closing reason and Goal completion status. "
-            "When the goal is completed, close with calm acceptance. "
+            "React directly to the last AI question intent. If the last AI question was an invitation and the user accepts, end by moving forward together. "
+            "If the last AI question was an invitation and the user declines, accept the refusal without pressure. "
+            "If the last AI question was about cleaning, food limits, quiet hours, class, or travel, close with that concrete situation instead of a generic wrap-up. "
+            "When the goal is completed, close with calm acceptance, but do not use vague fallback lines when the situation is specific. "
             "When the max turns are reached or the goal is partial, close without pretending the goal was fully achieved. "
             "When the user's tone was blunt or rude, close calmly without scolding."
         ),
@@ -1191,6 +1196,8 @@ def _closing_message_system_prompt() -> str:
             "If there is a tradeoff, prefer an imperfect but emotionally real private thought over a polished, standardized, or tutor-like sentence. "
             "Do not mention expression quality, sentence quality, grammar, naturalness, or study feedback inside innerThought. "
             "Do not write what the counterpart plans to do next, how the lesson should progress, or whether the conversation can end. "
+            "Do not preview another topic, another question, or anything the counterpart plans to ask next. "
+            "Forbidden private-thought patterns include '그런데 ...도 궁금하네', '다음엔 ...', '이제 ... 물어봐야겠다', and future action plans. "
             "innerThoughtType must be exactly GOOD, NORMAL, or BAD. "
             "Use GOOD when the last utterance satisfies the core intent of the question or situation, is clear without guesswork, and feels acceptable for the counterpart role. "
             "Use NORMAL when the core intent is mostly satisfied but the answer lacks detail, warmth, or relationship tone, so the counterpart feels slightly unsure or underwhelmed. "
@@ -1198,6 +1205,10 @@ def _closing_message_system_prompt() -> str:
         ),
         (
             "Examples:\n"
+            "Party acceptance JSON: "
+            '{"aiMessage":"Awesome, let\'s go together tonight. It\'ll be fun.","translatedMessage":"좋아, 오늘 밤 같이 가자. 재밌을 거야.","innerThought":"파티 좋아한다니 다행이다. 같이 가면 어색하지 않겠네.","innerThoughtType":"GOOD"}\n'
+            "Party rejection JSON: "
+            '{"aiMessage":"No worries. Maybe we can hang out another time.","translatedMessage":"괜찮아. 다음에 같이 놀면 되지.","innerThought":"오늘은 쉬고 싶은가 보네. 부담 주면 안 되겠다.","innerThoughtType":"NORMAL"}\n'
             "Goal completed JSON: "
             '{"aiMessage":"Got it. That was clear enough for this situation. Let\'s wrap up here.","translatedMessage":"알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자.","innerThought":"내가 좀 시끄러웠나 보네. 내일 일찍 수업 있다니 미안하다.","innerThoughtType":"GOOD"}\n'
             "Partial goal JSON: "
@@ -1215,9 +1226,10 @@ def _closing_message_system_prompt() -> str:
             "Self-check before final JSON:\n"
             "1. aiMessage is English and does not ask a question. "
             "2. translatedMessage is Korean and does not ask a question. "
-            "3. The AI clearly speaks last and wraps up. "
+            "3. The AI clearly speaks last and wraps up in the situation of the last AI question. "
             "4. innerThought is the counterpart role's private reaction, not feedback. "
-            "5. Return one JSON object only."
+            "5. innerThought does not mention the next topic, another question, or a future action plan. "
+            "6. Return one JSON object only."
         ),
         (
             "Output Schema:\n"
@@ -1621,6 +1633,9 @@ def _repair_closing_message(
         updates["aiMessage"] = _fallback_closing_message_en(request)
     if _looks_like_question(response.translatedMessage):
         updates["translatedMessage"] = _fallback_closing_message_ko(request)
+    if _closing_message_needs_context_repair(request, response):
+        updates["aiMessage"] = _fallback_closing_message_en(request)
+        updates["translatedMessage"] = _fallback_closing_message_ko(request)
 
     expected_type = _fallback_inner_thought_type_for_closing(request)
     issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
@@ -1646,7 +1661,8 @@ def _repair_closing_message(
         or _is_meta_inner_thought(response.innerThought)
         or _has_future_inner_thought_marker(response.innerThought)
     )
-    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
+    must_replace_thought = _has_future_inner_thought_marker(response.innerThought)
+    if must_replace_thought or (_INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought):
         updates["innerThought"] = _fallback_inner_thought_for_closing(request)
 
     if not updates:
@@ -1666,6 +1682,9 @@ def _fallback_closing_message(request: ClosingMessageRequest) -> ClosingMessageR
 
 
 def _fallback_closing_message_en(request: ClosingMessageRequest) -> str:
+    contextual_closing = _contextual_closing_message_en(_closing_intent_kind(request))
+    if contextual_closing is not None:
+        return contextual_closing
     if request.closingReason == "GOAL_COMPLETED" and request.goalCompletionStatus == "COMPLETED":
         return "Got it. That works for this situation. Let's wrap up here."
     if request.closingReason == "TIME_LIMIT_REACHED":
@@ -1676,6 +1695,9 @@ def _fallback_closing_message_en(request: ClosingMessageRequest) -> str:
 
 
 def _fallback_closing_message_ko(request: ClosingMessageRequest) -> str:
+    contextual_closing = _contextual_closing_message_ko(_closing_intent_kind(request))
+    if contextual_closing is not None:
+        return contextual_closing
     if request.closingReason == "GOAL_COMPLETED" and request.goalCompletionStatus == "COMPLETED":
         return "알겠어. 이 상황에서는 충분히 전달됐어. 여기서 마무리하자."
     if request.closingReason == "TIME_LIMIT_REACHED":
@@ -1698,6 +1720,168 @@ def _looks_like_question(value: str) -> bool:
     return stripped.endswith("?") or stripped.endswith("？")
 
 
+def _closing_message_needs_context_repair(
+    request: ClosingMessageRequest,
+    response: ClosingMessageResponse,
+) -> bool:
+    intent_kind = _closing_intent_kind(request)
+    if intent_kind is None:
+        return False
+    normalized_message = _normalize_visible_text(response.aiMessage)
+    if _looks_like_generic_closing_message(normalized_message):
+        return True
+    return not _closing_message_matches_intent(response, intent_kind)
+
+
+def _looks_like_generic_closing_message(normalized_message: str) -> bool:
+    generic_markers = [
+        "thanks for letting me know",
+        "thank you for letting me know",
+        "i ll keep that in mind",
+        "ill keep that in mind",
+        "that works for this situation",
+        "let s wrap up here",
+        "lets wrap up here",
+        "pause here for now",
+    ]
+    return any(marker in normalized_message for marker in generic_markers)
+
+
+def _closing_message_matches_intent(
+    response: ClosingMessageResponse,
+    intent_kind: str,
+) -> bool:
+    normalized_en = _normalize_visible_text(response.aiMessage)
+    normalized_ko = _normalize_visible_text(response.translatedMessage)
+    if intent_kind == "party_acceptance":
+        return _contains_any(normalized_en, ["together", "come with", "join", "go with"]) and _contains_any(
+            normalized_en,
+            ["tonight", "party"],
+        )
+    if intent_kind == "party_rejection":
+        return _contains_any(normalized_en, ["no worries", "that s okay", "that is okay", "all good"]) and _contains_any(
+            normalized_en,
+            ["another time", "next time", "later"],
+        )
+    if intent_kind == "cleaning_schedule":
+        return "cleaning" in normalized_en and _contains_any(
+            normalized_en,
+            ["schedule", "alternate", "take turns", "split"],
+        )
+    if intent_kind == "food_restriction":
+        return _contains_any(normalized_en, ["fish", "seafood"]) and _contains_any(normalized_ko, ["생선", "해산물"])
+    if intent_kind == "quiet_request":
+        return _contains_any(normalized_en, ["keep it down", "be quiet", "quiet down"]) and "조용" in normalized_ko
+    if intent_kind == "travel_plan":
+        return _contains_any(normalized_en, ["plan", "planned", "balance"]) and "계획" in normalized_ko
+    return True
+
+
+def _contains_any(value: str, markers: list[str]) -> bool:
+    return any(marker in value for marker in markers)
+
+
+def _contextual_closing_message_en(intent_kind: str | None) -> str | None:
+    if intent_kind == "party_acceptance":
+        return "Awesome, let's go together tonight. It'll be fun."
+    if intent_kind == "party_rejection":
+        return "No worries. Maybe we can hang out another time."
+    if intent_kind == "cleaning_schedule":
+        return "Sounds good. Let's keep the cleaning schedule simple and alternate each week."
+    if intent_kind == "food_restriction":
+        return "Got it, no fish. We can pick something else for dinner."
+    if intent_kind == "quiet_request":
+        return "Sure, I'll keep it down tonight. Good luck with your early class tomorrow."
+    if intent_kind == "travel_plan":
+        return "That makes sense. A simple plan with a free day sounds like a good balance."
+    return None
+
+
+def _contextual_closing_message_ko(intent_kind: str | None) -> str | None:
+    if intent_kind == "party_acceptance":
+        return "좋아, 오늘 밤 같이 가자. 재밌을 거야."
+    if intent_kind == "party_rejection":
+        return "괜찮아. 다음에 같이 놀면 되지."
+    if intent_kind == "cleaning_schedule":
+        return "좋아. 청소는 매주 번갈아 하면 되겠다."
+    if intent_kind == "food_restriction":
+        return "알겠어, 생선은 빼고 다른 걸로 저녁 먹자."
+    if intent_kind == "quiet_request":
+        return "물론이야. 오늘 밤 조용히 할게. 내일 일찍 수업 잘 다녀와."
+    if intent_kind == "travel_plan":
+        return "그렇구나. 계획을 간단히 세우고 하루는 비워두는 거 좋네."
+    return None
+
+
+def _closing_intent_kind(request: ClosingMessageRequest) -> str | None:
+    normalized_question = _normalize_visible_text(request.currentTurn.aiQuestion)
+    normalized_question_ko = _normalize_visible_text(request.currentTurn.translatedQuestion)
+    normalized_utterance = _normalize_visible_text(request.currentTurn.userUtterance)
+    normalized_context = _normalize_visible_text(
+        " ".join([
+            request.scenario.title,
+            request.scenario.briefing,
+            request.scenario.conversationGoal,
+        ])
+    )
+    combined_question = f" {normalized_question} {normalized_question_ko} {normalized_context} "
+
+    if " party " in combined_question or " 파티 " in combined_question:
+        if _looks_like_rejection(normalized_utterance):
+            return "party_rejection"
+        if _looks_like_acceptance(normalized_utterance):
+            return "party_acceptance"
+    if " cleaning " in combined_question or " 청소 " in combined_question:
+        if any(marker in normalized_utterance for marker in ["schedule", "alternate", "cleaning", "week"]):
+            return "cleaning_schedule"
+    if any(marker in combined_question for marker in [" eat ", " dinner ", " food ", " 못 먹", " 저녁 ", " 식사 "]):
+        if "fish" in normalized_utterance or "생선" in normalized_utterance:
+            return "food_restriction"
+    if (
+        "keep it down" in normalized_utterance
+        or "quiet" in normalized_utterance
+        or "early class" in normalized_utterance
+        or "조용" in normalized_utterance
+    ):
+        return "quiet_request"
+    if any(marker in combined_question for marker in [" trip ", " travel ", " 여행 "]):
+        if "plan" in normalized_utterance or "free day" in normalized_utterance:
+            return "travel_plan"
+    return None
+
+
+def _looks_like_acceptance(normalized_utterance: str) -> bool:
+    acceptance_markers = [
+        "of course",
+        "sounds good",
+        "i d love",
+        "i would love",
+        "i like parties",
+        "thank you",
+    ]
+    acceptance_words = ["yes", "yeah", "yep", "sure"]
+    padded = f" {normalized_utterance} "
+    return any(f" {word} " in padded for word in acceptance_words) or any(
+        marker in normalized_utterance for marker in acceptance_markers
+    )
+
+
+def _looks_like_rejection(normalized_utterance: str) -> bool:
+    rejection_markers = [
+        "no thanks",
+        "not tonight",
+        "don t want",
+        "dont want",
+        "can t",
+        "cant",
+        "cannot",
+        "busy",
+        "rest tonight",
+        "tired",
+    ]
+    return any(marker in normalized_utterance for marker in rejection_markers)
+
+
 def _repair_next_question_inner_thought(
     request: NextQuestionRequest,
     response: NextQuestionResponse,
@@ -1705,6 +1889,7 @@ def _repair_next_question_inner_thought(
     expected_type = _fallback_inner_thought_type(request)
     issue_kind = _inner_thought_issue_kind(request.currentTurn.userUtterance, request.scenario.counterpartRole)
     parent_reason_answer = _is_parent_reason_answer(request.currentTurn.userUtterance)
+    must_replace_thought = _is_scripted_future_inner_thought(request, response.innerThought)
     should_replace_thought = (
         expected_type in {"BAD", "NORMAL"} and response.innerThoughtType != expected_type
     ) or (
@@ -1721,9 +1906,7 @@ def _repair_next_question_inner_thought(
     ) or (
         parent_reason_answer
         and "부모" not in response.innerThought
-    ) or (
-        _is_scripted_future_inner_thought(request, response.innerThought)
-    ) or (
+    ) or must_replace_thought or (
         _is_generic_normal_inner_thought(response.innerThought)
     ) or _is_meta_inner_thought(response.innerThought)
     updates: dict[str, Any] = {}
@@ -1734,7 +1917,7 @@ def _repair_next_question_inner_thought(
         and response.innerThoughtType == "NORMAL"
     ):
         updates["innerThoughtType"] = expected_type
-    if _INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought:
+    if must_replace_thought or (_INNER_THOUGHT_REPAIR_FALLBACK_ENABLED and should_replace_thought):
         updates["innerThought"] = _fallback_inner_thought(request)
     if not updates:
         return response
@@ -1999,10 +2182,15 @@ def _has_future_inner_thought_marker(inner_thought: str) -> bool:
         "빨리 알려주",
         "알려주고 싶",
         "물어봐도 되겠",
+        "물어봐야",
         "좀 더 물어",
+        "다음엔",
+        "다음에는",
         "마지막엔",
         "넘겨보자",
         "넘겨 보자",
+        "궁금하네",
+        "궁금해",
         "친해질 수 있",
         "이런 얘기 나누",
         "분위기를 풀어주",
