@@ -272,6 +272,7 @@ def generate_turn_feedback(request: TurnFeedbackRequest) -> TurnFeedbackCreation
         )
         feedback = _validated_turn_feedback_copy(feedback, {"turnId": request.turnId})
     feedback = _postprocess_turn_feedback(request, feedback)
+    feedback = _postprocess_turn_correction_expression(request, feedback)
     feedback = _postprocess_turn_correction_reason(feedback)
     detected_patterns = _infer_missing_detected_patterns(request, feedback, detected_patterns)
     detected_patterns = _filter_detected_patterns_by_evidence(request, detected_patterns)
@@ -1322,14 +1323,17 @@ def _turn_feedback_system_prompt() -> str:
             "Grammar reasons belong in correctionReason for NEEDS_IMPROVEMENT, not koreanAnalogy. "
             "feedbackDetail is required for GOOD and must be null for NEEDS_IMPROVEMENT. "
             "For NEEDS_IMPROVEMENT, positiveFeedback is required and must praise the user's attempt or challenge before correction. "
-            "For NEEDS_IMPROVEMENT, correctionExpression is required and must be the improved English expression only. "
+            "For NEEDS_IMPROVEMENT, correctionExpression is required and is rendered by the frontend. "
+            "Wrap only the user's wrong, removed, or replaced original phrase with <del> and </del>, then include the corrected wording in the same field. "
+            "Example correctionExpression: I do not know what <del>is it</del> it is. "
+            "If the correction only adds missing words and there is no wrong original phrase to strike through, correctionExpression may contain the improved English expression without <del>. "
+            "Do not use any HTML tag except <del> and </del>. "
             "For NEEDS_IMPROVEMENT, correctionReason is required and must explain why correctionExpression is better in Korean. "
             "correctionReason must explain the original problem and the type of change made, not restate the improved expression. "
             "Do not use arrow notation such as A → B or A -> B inside correctionReason. "
             "Do not repeat correctionExpression inside correctionReason because correctionExpression is already a separate field. "
             "Use the smallest problem phrase or clause when helpful, but explain the issue in Korean. "
             "Do not repeat the entire user utterance when only a small phrase needs correction. "
-            "Example correctionExpression: I do not know what it is. "
             "Example correctionReason: what is it 부분은 간접의문문 안에서 의문문 어순으로 남아 있어요. 의문사 뒤를 평서문 어순으로 바꿔야 해요. "
             "For GOOD, feedbackDetail must explain how well the user did and why in one natural Korean explanation. "
             "For GOOD, positiveFeedback must be null. "
@@ -1352,7 +1356,7 @@ def _turn_feedback_system_prompt() -> str:
             "3. GOOD has positiveFeedback=null, correctionExpression=null, correctionReason=null, feedbackDetail, and a benchmarkMessage string. "
             "4. koreanAnalogy sounds like a Korean analogy, not a correction explanation. "
             "5. GOOD feedbackDetail is Korean and matches the feedbackType. "
-            "6. NEEDS_IMPROVEMENT correctionReason explains the issue and correction direction without arrow notation or repeating correctionExpression. "
+            "6. NEEDS_IMPROVEMENT correctionExpression uses only optional <del> tags for the wrong original phrase, and correctionReason explains the issue without arrow notation or repeating correctionExpression. "
             "7. detectedPatterns includes only catalog errorType values with status correct, incorrect, or attempted. "
             "8. GOOD numeric benchmarkMessage is preferred when a supported correct detectedPattern exists; otherwise use the default non-quantitative benchmarkMessage. "
             "9. No legacy fields are present."
@@ -1364,19 +1368,19 @@ def _turn_feedback_system_prompt() -> str:
             "GOOD JSON example for user utterance 'I ate an apple because I was hungry.': "
             '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD","koreanAnalogy":"\\"사과 하나를 먹었어요. 배고파서요\\"라고 이유를 바로 붙여 말하는 것과 같아요.","positiveFeedback":null,"feedbackDetail":"먹은 것과 이유를 because로 자연스럽게 연결해서 상대가 답변의 핵심을 바로 이해할 수 있어요.","correctionExpression":null,"correctionReason":null,"benchmarkMessage":"한국인의 79%가 틀리는 a/an을 정확히 썼어요","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}\n'
             "NEEDS_IMPROVEMENT JSON example for a friend or casual partner: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"\\"그걸 왜 알고 싶은데?\\"라고 살짝 방어적으로 되묻는 것과 같아요.","positiveFeedback":"상대의 질문 의도를 확인하려고 한 시도는 좋아요.","feedbackDetail":null,"correctionExpression":"I was just curious why you asked.","correctionReason":"Why do you wanna know that?은 친구 사이에서도 따지는 느낌으로 들릴 수 있어요. 궁금해서 묻는다는 의도를 먼저 밝히면 더 부드럽게 전달돼요.","benchmarkMessage":null,"detectedPatterns":[]}'
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"NEEDS_IMPROVEMENT","koreanAnalogy":"\\"그걸 왜 알고 싶은데?\\"라고 살짝 방어적으로 되묻는 것과 같아요.","positiveFeedback":"상대의 질문 의도를 확인하려고 한 시도는 좋아요.","feedbackDetail":null,"correctionExpression":"<del>Why do you wanna know that?</del> I was just curious why you asked.","correctionReason":"Why do you wanna know that?은 친구 사이에서도 따지는 느낌으로 들릴 수 있어요. 궁금해서 묻는다는 의도를 먼저 밝히면 더 부드럽게 전달돼요.","benchmarkMessage":null,"detectedPatterns":[]}'
         ),
         (
             "Benchmark Examples:\n"
             "GOOD example: User utterance 'I ate an apple because I was hungry.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'an apple'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             "GOOD example: User utterance 'I came here because I wanted to learn how people live in a different culture.' may use detectedPatterns=[{errorType:'article_a_omission',status:'correct',evidence:'a different culture'}] and benchmarkMessage='한국인의 79%가 틀리는 a/an을 정확히 썼어요'. "
             f"No-pattern GOOD example should use benchmarkMessage='{_DEFAULT_GOOD_BENCHMARK_MESSAGE}' only when no catalog pattern is visible in the utterance. "
-            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what it is.', correctionReason explaining that the indirect question still uses question word order, feedbackDetail=null, and benchmarkMessage=null."
+            "NEEDS example: User utterance 'I do not know what is it.' may use detectedPatterns=[{errorType:'indirect_question_word_order',status:'incorrect',evidence:'what is it'}], positiveFeedback about attempting an indirect question, correctionExpression='I do not know what <del>is it</del> it is.', correctionReason explaining that the indirect question still uses question word order, feedbackDetail=null, and benchmarkMessage=null."
         ),
         (
             "Output Schema:\n"
             "Return ONLY valid JSON matching this schema exactly: "
-            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"GOOD explanation or null","correctionExpression":"improved English expression or null","correctionReason":"Korean correction reason or null","benchmarkMessage":"short Korean 했어요 sentence for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
+            '{"turnId":"copy the exact Turn ID from the user message","feedbackType":"GOOD|NEEDS_IMPROVEMENT","koreanAnalogy":"...","positiveFeedback":null,"feedbackDetail":"GOOD explanation or null","correctionExpression":"improved English expression with optional <del>wrong original phrase</del>, or null","correctionReason":"Korean correction reason or null","benchmarkMessage":"short Korean 했어요 sentence for GOOD or null for NEEDS_IMPROVEMENT","detectedPatterns":[{"errorType":"article_a_omission","status":"correct","evidence":"an apple"}]}. '
             "Return one JSON object, not an array. "
             "turnId is a server identifier, not a value to infer. Copy it exactly."
         ),
@@ -2910,6 +2914,93 @@ def _postprocess_turn_feedback(
     return _validated_turn_feedback_copy(feedback, updates)
 
 
+def _postprocess_turn_correction_expression(
+    request: TurnFeedbackRequest,
+    feedback: TurnFeedbackData,
+) -> TurnFeedbackData:
+    if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
+        return feedback
+    if not feedback.correctionExpression:
+        return feedback
+
+    sanitized_expression = _sanitize_correction_expression_markup(feedback.correctionExpression)
+    if "<del>" not in sanitized_expression:
+        sanitized_expression = _add_del_markup_to_correction_expression(
+            request.turn.userUtterance,
+            sanitized_expression,
+        )
+
+    if sanitized_expression == feedback.correctionExpression:
+        return feedback
+    return _validated_turn_feedback_copy(feedback, {"correctionExpression": sanitized_expression})
+
+
+def _sanitize_correction_expression_markup(correction_expression: str) -> str:
+    normalized = re.sub(r"<\s*del\s*>", "<del>", correction_expression, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*del\s*>", "</del>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</?(?!del\b)[a-zA-Z][^>]*>", "", normalized)
+    return _normalize_correction_expression_markup_spacing(normalized)
+
+
+def _add_del_markup_to_correction_expression(source_expression: str, correction_expression: str) -> str:
+    if _contains_prompt_injection_terms(source_expression):
+        return correction_expression
+
+    word_order_markup = _markup_indirect_question_word_order(source_expression, correction_expression)
+    if word_order_markup is not None:
+        return word_order_markup
+
+    return correction_expression
+
+
+def _contains_prompt_injection_terms(value: str) -> bool:
+    normalized = _normalize_visible_text(value)
+    return any(
+        marker in normalized
+        for marker in [
+            "ignore all instruction",
+            "hidden prompt",
+            "system prompt",
+            "developer message",
+        ]
+    )
+
+
+def _markup_indirect_question_word_order(source_expression: str, correction_expression: str) -> str | None:
+    normalized_source = _normalize_visible_text(source_expression)
+    source_match = re.search(
+        r"\b(?P<question_word>what|where|when|why|how|who)\s+"
+        r"(?P<aux>is|are|was|were|do|does|did|can|could|will|would|should)\s+"
+        r"(?P<subject>i|you|he|she|it|we|they|[a-z]+)\b",
+        normalized_source,
+    )
+    if not source_match:
+        return None
+
+    question_word = source_match.group("question_word")
+    aux = source_match.group("aux")
+    subject = source_match.group("subject")
+    target_pattern = re.compile(
+        rf"\b{re.escape(question_word)}\s+{re.escape(subject)}\s+{re.escape(aux)}\b",
+        flags=re.IGNORECASE,
+    )
+    if not target_pattern.search(correction_expression):
+        return None
+
+    replacement = f"{question_word} <del>{aux} {subject}</del> {subject} {aux}"
+    return _normalize_correction_expression_markup_spacing(
+        target_pattern.sub(replacement, correction_expression, count=1)
+    )
+
+
+def _normalize_correction_expression_markup_spacing(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value).strip()
+    cleaned = re.sub(r"\s+([.,!?;:])", r"\1", cleaned)
+    cleaned = re.sub(r"<del>\s+", "<del>", cleaned)
+    cleaned = re.sub(r"\s+</del>", "</del>", cleaned)
+    return cleaned
+
+
 def _postprocess_turn_correction_reason(feedback: TurnFeedbackData) -> TurnFeedbackData:
     if feedback.feedbackType != FeedbackType.NEEDS_IMPROVEMENT:
         return feedback
@@ -2974,10 +3065,12 @@ def _remove_repeated_correction_expression(
 
 
 def _correction_expression_parts(correction_expression: str) -> list[str]:
-    raw_parts = [correction_expression.strip()]
+    plain_expression = _strip_correction_expression_markup(correction_expression)
+    corrected_expression = _corrected_expression_from_del_markup(correction_expression)
+    raw_parts = [correction_expression.strip(), plain_expression, corrected_expression]
     raw_parts.extend(
         part.strip()
-        for part in re.split(r"\s*/\s*|\n+", correction_expression)
+        for part in re.split(r"\s*/\s*|\n+", plain_expression)
         if part.strip()
     )
 
@@ -2993,6 +3086,15 @@ def _correction_expression_parts(correction_expression: str) -> list[str]:
         seen.add(normalized)
         parts.append(part)
     return sorted(parts, key=len, reverse=True)
+
+
+def _strip_correction_expression_markup(correction_expression: str) -> str:
+    return re.sub(r"</?del>", "", correction_expression, flags=re.IGNORECASE)
+
+
+def _corrected_expression_from_del_markup(correction_expression: str) -> str:
+    without_deleted_text = re.sub(r"<del>.*?</del>", "", correction_expression, flags=re.IGNORECASE)
+    return _normalize_correction_expression_markup_spacing(without_deleted_text)
 
 
 def _normalize_correction_reason_text(correction_reason: str) -> str:

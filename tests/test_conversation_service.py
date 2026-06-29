@@ -2956,6 +2956,9 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertIn("Do not use arrow notation such as A → B", system_prompt)
         self.assertIn("Do not repeat correctionExpression inside correctionReason", system_prompt)
         self.assertIn("explain the original problem and the type of change", system_prompt)
+        self.assertIn("Wrap only the user's wrong, removed, or replaced original phrase with <del>", system_prompt)
+        self.assertIn("Do not use any HTML tag except <del> and </del>", system_prompt)
+        self.assertIn("I do not know what <del>is it</del> it is", system_prompt)
         self.assertNotIn("shortest meaningful before→after expression", system_prompt)
         self.assertNotIn("what is it → what it is", system_prompt)
         self.assertIn("Do not include legacy fields", system_prompt)
@@ -2983,12 +2986,55 @@ class ConversationServiceTest(unittest.TestCase):
         cached = self.service.get_cached_turn_feedback(1000, 5000)
 
         self.assertIsNotNone(cached)
-        self.assertEqual(cached.correctionExpression, "I don't know what it is.")
+        self.assertEqual(cached.correctionExpression, "I don't know what <del>is it</del> it is.")
         self.assertNotIn("→", cached.correctionReason)
         self.assertNotIn("->", cached.correctionReason)
         self.assertNotIn("I don't know what it is", cached.correctionReason)
         self.assertIn("간접의문문", cached.correctionReason)
         self.assertIn("평서문 어순", cached.correctionReason)
+
+    def test_turn_feedback_marks_replaced_part_inside_correction_expression(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"그게 무엇인지 모르겠어요\"라고 묻는 말의 어순이 섞인 것처럼 들려요.",
+            "positiveFeedback": "간접의문문을 써 보려는 시도는 좋아요.",
+            "feedbackDetail": None,
+            "correctionExpression": "I don't know what it is.",
+            "correctionReason": "what is it 부분은 간접의문문 안에서 의문문 어순으로 남아 있어요. 의문사 뒤를 평서문 어순으로 바꿔야 해요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [{"errorType": "indirect_question_word_order", "status": "incorrect", "evidence": "what is it"}],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I don't know what is it.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.correctionExpression, "I don't know what <del>is it</del> it is.")
+        self.assertNotIn("<del>", cached.correctionReason)
+
+    def test_turn_feedback_sanitizes_correction_expression_to_del_tags_only(self):
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "turnId": 5000,
+            "feedbackType": "NEEDS_IMPROVEMENT",
+            "koreanAnalogy": "\"어제 부산에 방문했어요\"라고 전치사가 어색하게 끼어든 것처럼 들려요.",
+            "positiveFeedback": "어제 간 장소를 말하려는 시도는 좋아요.",
+            "feedbackDetail": None,
+            "correctionExpression": "<script>alert(1)</script><del>visited to Busan</del> visited Busan.",
+            "correctionReason": "visit은 장소를 바로 목적어로 받는 동사라 to를 넣지 않는 편이 자연스러워요.",
+            "benchmarkMessage": None,
+            "detectedPatterns": [],
+        })
+
+        self.service.generate_turn_feedback(
+            self._turn_feedback_request(user_utterance="I visited to Busan yesterday.")
+        )
+        cached = self.service.get_cached_turn_feedback(1000, 5000)
+
+        self.assertEqual(cached.correctionExpression, "alert(1)<del>visited to Busan</del> visited Busan.")
+        self.assertNotIn("<script>", cached.correctionExpression)
+        self.assertNotIn("</script>", cached.correctionExpression)
 
     def test_turn_feedback_prompt_requires_quoted_korean_analogy_sentence_format(self):
         system_prompt = self.service._turn_feedback_system_prompt()

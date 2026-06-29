@@ -1,5 +1,15 @@
 # 작업 체크리스트
 
+## LAN-28 correctionExpression 취소선 마크업
+
+- [x] `correctionExpression` 하나에 `<del>` 마크업을 담는 RED 테스트를 추가한다.
+- [x] `<del>`과 `</del>` 외 HTML 태그를 제거하는 테스트를 추가한다.
+- [x] `turn-feedback` 프롬프트와 few-shot 예시를 렌더링용 `correctionExpression` 계약으로 수정한다.
+- [x] plain 개선 표현을 가능한 범위에서 `<del>` 마크업 표현으로 보정한다.
+- [x] README의 턴 피드백 계약 설명을 갱신한다.
+- [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
+- [x] 배포 없이 로컬 커밋까지 정리한다.
+
 ## LAN-28 closing-message와 innerThought 품질 개선
 
 - [x] 현재 `next-question`, `closing-message` 프롬프트와 repair/fallback 경로를 확인한다.
