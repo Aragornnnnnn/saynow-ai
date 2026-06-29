@@ -1050,6 +1050,7 @@ def _next_question_system_prompt() -> str:
             "Keep the acknowledgement easy to continue from. "
             "Do not use a standalone generic acknowledgement such as 'I see.' "
             "Do not mechanically summarize or quote the user. "
+            "Do not copy the user's full utterance as the acknowledgement. "
             "Prefer a human conversational reaction over keyword restatement."
         ),
         (
@@ -1592,6 +1593,13 @@ def _repair_next_question_drift(
         )
 
     if _has_overinterpreted_acknowledgement_for_vague_answer(request, response.aiQuestion):
+        return _fallback_acknowledged_next_question(
+            request,
+            inner_thought=response.innerThought,
+            inner_thought_type=response.innerThoughtType,
+        )
+
+    if _starts_with_user_utterance_echo(request, response.aiQuestion):
         return _fallback_acknowledged_next_question(
             request,
             inner_thought=response.innerThought,
@@ -2815,6 +2823,21 @@ def _has_overinterpreted_acknowledgement_for_vague_answer(
         "sounds interesting",
     ]
     return any(normalized_ai_question.startswith(start) for start in overinterpreted_starts)
+
+
+def _starts_with_user_utterance_echo(
+    request: NextQuestionRequest,
+    ai_question: str,
+) -> bool:
+    normalized_utterance = _normalize_visible_text(request.currentTurn.userUtterance)
+    if len(normalized_utterance) < 20:
+        return False
+    normalized_ai_question = _normalize_visible_text(ai_question)
+    normalized_fixed_question = _normalize_visible_text(request.nextQuestion.questionEn)
+    return (
+        normalized_ai_question.startswith(normalized_utterance)
+        and normalized_fixed_question in normalized_ai_question[len(normalized_utterance):]
+    )
 
 
 def _clean_acknowledgement_fragment(value: str) -> str:

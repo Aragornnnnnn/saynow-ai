@@ -1877,6 +1877,46 @@ class ConversationServiceTest(unittest.TestCase):
         self.assertNotIn("그런데", result.innerThought)
         self.assertIn("청소", result.innerThought)
 
+    def test_next_question_removes_user_utterance_echo_before_fixed_question(self):
+        from app.models.conversation import NextQuestionRequest
+
+        self.service.chat = lambda *args, **kwargs: json.dumps({
+            "aiQuestion": "A schedule would be helpful. We can alternate cleaning every week and talk if plans change. Do you like parties?",
+            "translatedQuestion": "일정을 정하면 좋겠다. 우리는 매주 번갈아 청소하고, 계획이 바뀌면 서로 얘기하자. 파티 좋아해?",
+            "innerThought": "깔끔하게 정리해서 말해줘서 마음이 놓이네.",
+            "innerThoughtType": "GOOD",
+        })
+        request = NextQuestionRequest.model_validate({
+            "sessionId": 1461,
+            "submittedTurnId": 5461,
+            "submittedSequence": 3,
+            "scenario": {
+                "scenarioId": 1,
+                "title": "입주 첫날 — charlie와 첫 만남",
+                "briefing": "룸메이트와 청소와 생활 방식을 이야기합니다.",
+                "conversationGoal": "룸메이트와 공동생활 방식을 자연스럽게 조율한다.",
+                "counterpartRole": "roommate",
+            },
+            "currentTurn": {
+                "aiQuestion": "How should we split the cleaning and stuff?",
+                "translatedQuestion": "청소 같은 거 어떻게 나눌까?",
+                "userUtterance": "A schedule would be helpful. We can alternate cleaning every week and talk if plans change.",
+            },
+            "nextQuestion": {
+                "questionId": 80,
+                "sequence": 4,
+                "questionEn": "Do you like parties?",
+                "questionKo": "파티 좋아해?",
+            },
+        })
+
+        result = self.service.generate_next_question(request)
+
+        self.assertEqual(result.aiQuestion, "Do you like parties?")
+        self.assertEqual(result.translatedQuestion, "파티 좋아해?")
+        self.assertEqual(result.innerThought, "깔끔하게 정리해서 말해줘서 마음이 놓이네.")
+        self.assertEqual(result.innerThoughtType, "GOOD")
+
     def test_next_question_replaces_generic_inner_thought_for_mixed_korean_english(self):
         from app.models.conversation import NextQuestionRequest
 
