@@ -8,8 +8,8 @@
 - [x] `next-question`과 `closing-message` 프롬프트를 현재 발화 반응 중심으로 강화한다.
 - [x] closing fallback/repair가 마지막 질문 의도에 맞게 닫히도록 수정한다.
 - [x] focused 테스트, 전체 unittest, compileall, diff check를 실행한다.
-- [ ] dev 배포 후 최소 3개 live smoke 결과를 확인한다.
-- [ ] 변경 사항을 커밋하고 origin에 반영한다.
+- [x] dev 배포 후 최소 3개 live smoke 결과를 확인한다.
+- [x] 변경 사항을 커밋하고 origin에 반영한다.
 
 ## LAN-28 innerThoughtType 기준 재정의
 
