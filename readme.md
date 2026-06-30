@@ -120,8 +120,8 @@ BE 연동 기준.
       "koreanAnalogy": "\"그게 뭔지 모르겠어\"라고 말하려다 어순이 살짝 꼬인 문장으로 말하는 것과 같아요.",
       "positiveFeedback": "어려운 간접의문문 구조에 도전한 점이 좋아요. 틀렸더라도 그 시도 자체가 다음 단계로 가는 재료예요.",
       "feedbackDetail": null,
-      "correctionExpression": "I do not know what <del>is it</del> it is.",
-      "correctionReason": "간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
+      "correctionExpression": "I do not know what it is.",
+      "correctionReason": "what is it → what it is. 간접의문문에서는 의문문 어순이 아니라 평서문 어순을 써야 해요.",
       "benchmarkMessage": null
     }
   ]
@@ -146,7 +146,7 @@ BE 연동 기준.
 
 `innerThought`는 피드백 설명문이 아니라 상대 역할의 1인칭 속마음입니다. 예를 들어 친구에게는 차갑게 들리는 말도 교수에게는 무례하거나 명령처럼 들릴 수 있습니다. `innerThoughtType`은 `GOOD`, `NORMAL`, `BAD` 중 하나입니다.
 
-`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `correctionExpression`은 프론트 렌더링용 개선 표현이며, 사용자의 원문 중 삭제되거나 교체되는 틀린 부분만 `<del>`, `</del>`로 감쌉니다. 단순히 빠진 단어를 추가하는 교정처럼 취소선으로 표시할 원문이 없으면 `<del>` 없이 개선 표현만 내려갈 수 있습니다. `correctionReason`은 한국어 이유만 담고, before→after 화살표나 개선 표현 전체 반복은 넣지 않습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요` 기본 문구를 씁니다. 턴별 정량 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다.
+`NEEDS_IMPROVEMENT`에는 `koreanAnalogy`, `positiveFeedback`, `correctionExpression`, `correctionReason`을 반드시 포함합니다. `correctionExpression`은 개선된 영어 표현만 담고, `correctionReason`은 `what is it → what it is`처럼 가장 짧은 의미 단위의 before→after와 한국어 이유를 담습니다. `feedbackDetail`과 `benchmarkMessage`는 `null`로 둡니다. `GOOD`에는 `koreanAnalogy`, `feedbackDetail`, `benchmarkMessage`를 반드시 포함하고, `positiveFeedback`, `correctionExpression`, `correctionReason`은 `null`입니다. 검증된 정량 패턴이 있으면 catalog 의미를 쓰고, 없으면 `질문에 맞는 핵심을 자연스럽게 전달했어요` 기본 문구를 씁니다. 턴별 정량 `benchmarkMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙겼어요`처럼 문장형으로 내려가고, 세션 `highlightMessage`는 `한국인의 37%가 놓치는 복수형 명사+s를 빠짐없이 챙긴 사람`처럼 칭호형으로 유지합니다. 이 값은 엄밀한 오류 진단이 아니라 재미용 학습 hook입니다.
 
 ## 한국인 오류 패턴 seed
 
